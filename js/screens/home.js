@@ -508,7 +508,12 @@ function openWho(ctx) {
 function header(ctx, M) {
   const t = ctx.t;
   const sub = M.row ? t('home.weekOf', { range: fmtWeekRange(M.row.sunday) }) : t('home.beforeStart', { date: fmtDate(shiftDays(M.eh.startSunday, -6), ctx.lang, { dow: true }) });
-  return h('header', { class: 'hm-head' },
+  const refresh = h('button', { class: 'hm-refresh icon-btn', type: 'button', 'aria-label': t('home.refresh'), title: t('home.refresh'), 'data-testid': 'home-refresh', onclick: async (e) => {
+    const b = e.currentTarget; if (b.disabled) return; b.disabled = true; b.classList.add('spin');
+    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch { /* ignore */ }   // cerca anche una nuova versione dell'app
+    setTimeout(() => location.reload(), 250);
+  } }, ctx.icon('refresh'));
+  return h('header', { class: 'hm-head' }, refresh,
     h('h1', { class: 'title hm-title' }, t('home.hello', { name: ctx.meName })),
     h('p', { class: 'hm-sub', 'data-testid': 'week-range' }, sub),
     h('button', { class: 'hm-switch', type: 'button', onclick: () => openWho(ctx) }, h('span', null, t('home.who', { name: ctx.meName })), h('b', null, t('home.changeWho'))));

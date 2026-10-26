@@ -79,3 +79,6 @@ export const en = {
   'home.moreN': '+{n} more',
   'home.rowAria': '{chore}: {who}',
 };
+
+Object.assign(it, { 'home.refresh': 'Aggiorna' });
+Object.assign(en, { 'home.refresh': 'Refresh' });

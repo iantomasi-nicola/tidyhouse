@@ -11,7 +11,7 @@ import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_H
 registerStrings(coreIt, coreEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 let pushMod = null; import('./push.js').then((m) => { pushMod = m; }).catch(() => {});
 const isMobile = () => /Android.*Mobile|iPhone|iPod/.test(navigator.userAgent) || /iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) || (/Android/.test(navigator.userAgent));
 
