@@ -172,7 +172,7 @@ export function sheet({ title, body, full = false, onClose, actions } = {}) {
     close(opts = {}) {
       if (closed) return; closed = true;
       scrim.classList.remove('on'); el.classList.remove('on');
-      scrim.style.pointerEvents = 'none'; el.style.pointerEvents = 'none';   // durante l'uscita non blocca più i click
+      scrim.style.pointerEvents = 'none'; el.style.pointerEvents = 'none'; el.setAttribute('aria-hidden', 'true'); el.removeAttribute('role');   // durante l'uscita non blocca più i click
       document.removeEventListener('keydown', onKey);
       const hadFocus = el.contains(document.activeElement);
       sheetStack = sheetStack.filter((x) => x !== api);

@@ -75,6 +75,10 @@ la restituzione è diretta la prima settimana in cui siete entrambi a casa. Tutt
 
 La **fatica** per mansione (1–5) si imposta in *Impostazioni → Regole dei turni* e serve a statistiche e "punti fatica": **non cambia chi viene assegnato**.
 
+## Per chi continua lo sviluppo
+
+Leggi [`HANDOFF.md`](HANDOFF.md) (stato e requisiti), [`TODO.md`](TODO.md) (cosa fare, a partire dall'audit di usabilità) e [`AGENTS.md`](AGENTS.md).
+
 ## Sviluppo e test
 
 ```bash
