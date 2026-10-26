@@ -11,8 +11,11 @@ import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_H
 registerStrings(coreIt, coreEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
-const VERSION = '1.2.0';
-let pushMod = null; import('./push.js').then((m) => { pushMod = m; }).catch(() => {});
+const VERSION = '1.2.1';
+let pushMod = null;
+// all'avvio controlla il browser (permesso + sottoscrizione) PRIMA di decidere se chiedere le notifiche: evita il falso "non attive"
+const pushReady = import('./push.js').then(async (m) => { await Promise.race([m.probe(), new Promise((r) => setTimeout(r, 1500))]); pushMod = m; }).catch(() => {});
+pushReady.then(() => { if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); else scheduleRender(true); });
 const isMobile = () => /Android.*Mobile|iPhone|iPod/.test(navigator.userAgent) || /iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) || (/Android/.test(navigator.userAgent));
 
 // ---------------- storage helpers ----------------
@@ -239,6 +242,7 @@ function evaluate() {
   const me = ctx.me;
   if (!me || !(house.roommates || []).some((r) => r.id === me)) { S.stage = 'who'; return renderStage(); }
   if (S.actions.rulesRequired() && !S.actions.rulesAccepted() && S.store.state.members !== undefined && memberLoaded()) { S.stage = 'rules'; return renderStage(); }
+  if (!pushMod && ctx.cloud && isMobile()) { pushReady.then(() => evaluate()); return; }   // aspetta il controllo del browser (max ~1,5 s) prima di decidere sulle notifiche
   if (needPushGate()) { S.stage = 'push'; return renderStage(); }
   const first = !S.ready;
   S.stage = 'app'; S.ready = true;

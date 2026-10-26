@@ -44,10 +44,25 @@ async function ensureSub(ctx) {
 }
 
 /** Stato delle notifiche su questo dispositivo (sincrono). */
+// La sottoscrizione push dipende dal browser, non dal cloud: la ricordiamo in locale così lo stato è corretto
+// subito all'apertura (il documento del dispositivo sul cloud arriva dopo, e prima sembrava "non attiva").
+const FLAG = 'cp:pushsub';
+const flag = () => { try { return localStorage.getItem(FLAG) === '1'; } catch { return false; } };
+const setFlag = (v) => { try { if (v) localStorage.setItem(FLAG, '1'); else localStorage.removeItem(FLAG); } catch { /* ignore */ } };
+/** Controlla davvero il browser (permesso + sottoscrizione esistente) e aggiorna il ricordo locale. */
+export async function probe() {
+  try {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') { setFlag(false); return false; }
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = !!(reg && reg.pushManager && await reg.pushManager.getSubscription());
+    setFlag(sub); return sub;
+  } catch { return flag(); }
+}
+
 export function status(ctx) {
   const ios = isIOS(), standalone = isStandalone();
   const permission = typeof Notification !== 'undefined' ? Notification.permission : 'denied';
-  const subscribed = !!(memberOf(ctx).push && memberOf(ctx).push.endpoint);
+  const subscribed = (permission === 'granted' && flag()) || !!(memberOf(ctx).push && memberOf(ctx).push.endpoint);
   let state;
   if (ios && !standalone) state = 'ios-install';
   else if (!supported()) state = 'unsupported';
@@ -69,6 +84,7 @@ export async function enable(ctx) {
     const sub = await ensureSub(ctx);
     const prefs = (ctx.prefs && ctx.prefs.notif) || {};
     await ctx.actions.touchMember({ push: sub.toJSON(), lang: ctx.lang, ...(Object.keys(prefs).length ? { prefs } : {}) });
+    setFlag(true);
     return { ok: true };
   } catch (e) { return { ok: false, reason: 'error', error: e }; }
 }
@@ -79,6 +95,7 @@ export async function disable(ctx) {
     const sub = reg && (await reg.pushManager.getSubscription());
     if (sub) await sub.unsubscribe();
   } catch { /* ignore */ }
+  setFlag(false);
   try { await ctx.actions.touchMember({ push: null }); return { ok: true }; } catch (e) { return { ok: false, reason: 'error', error: e }; }
 }
 
@@ -110,6 +127,7 @@ export async function resync(ctx) {
     const m = memberOf(ctx);
     const key = b64uToU8(ctx.house.vapidPublic);
     let sub = await reg.pushManager.getSubscription();
+    setFlag(!!sub);
     if (!sub && !(m.push && m.push.endpoint)) return { ok: true, changed: false };   // mai attivate qui
     if (sub && !sameKey(sub, key)) { await sub.unsubscribe(); sub = null; }
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
