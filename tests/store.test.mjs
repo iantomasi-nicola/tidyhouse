@@ -326,3 +326,12 @@ test('CloudBackend: Firestore inizializzato una sola volta anche con piu\' backe
   await new CloudBackend(cfg, async () => fs).open('A'); await new CloudBackend(cfg, async () => fs).open('B'); await new CloudBackend(cfg, async () => fs).open('C');
   assert.equal(inits, 1);
 });
+
+test('regole: l\'accettazione ricordata sul dispositivo vale anche se i dati del cloud non sono ancora arrivati', async () => {
+  const hub = new MemoryHub(); await mkHouse(hub);
+  let local = null;
+  const d = await client(hub, 'H1', { meId: 'x', deviceId: 'dev1', localRulesAck: () => local });
+  assert.equal(d.a.rulesAccepted(), false);
+  local = '1'; assert.equal(d.a.rulesAccepted(), true);
+  local = '0'; assert.equal(d.a.rulesAccepted(), false);
+});

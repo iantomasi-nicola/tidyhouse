@@ -25,7 +25,7 @@ export function extractCode(v) {
 }
 const put = (el, ...kids) => el.append(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
 const spinner = (label) => h('div', { class: 'onb-wait', role: 'status' }, h('i', { class: 'onb-spin', 'aria-hidden': 'true' }), h('span', null, label));
-const logo = () => h('div', { class: 'logo' }, icon('broom'));
+const logo = () => h('div', { class: 'logo' }, icon('housecheck'));
 const page = (cls, ...kids) => h('div', { class: 'gate onb ' + cls }, h('div', { class: 'panel onb-panel fade-up' }, ...kids));
 const errBox = () => h('p', { class: 'onb-err', role: 'alert', hidden: true });
 function setErr(el, msg) { el.textContent = msg || ''; el.hidden = !msg; }

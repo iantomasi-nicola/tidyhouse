@@ -201,7 +201,10 @@ export class Actions {
     this.need(!!this.me);
     await this.touchMember({ rulesAck: { version: this.rulesVersion(), at: this.ctx.now().toISOString() } });
   }
-  rulesAccepted() { const m = (this.s.state.members || {})[this.ctx.deviceId]; return !!(m && m.rulesAck && m.rulesAck.version === this.rulesVersion()); }
+  rulesAccepted() {
+    if (this.ctx.localRulesAck && this.ctx.localRulesAck() === this.rulesVersion()) return true; // ricordato su questo dispositivo (i dati del cloud possono arrivare dopo)
+    const m = (this.s.state.members || {})[this.ctx.deviceId]; return !!(m && m.rulesAck && m.rulesAck.version === this.rulesVersion());
+  }
 
   // ---- dispositivi / accessi ----
   async touchMember(patch) {

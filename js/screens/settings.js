@@ -151,7 +151,7 @@ function indexPage(ctx) {
   const hs = ctx.house; const me = ctx.me;
   const meCard = h('a', { class: 'st-me', href: '#/settings/profile', 'data-testid': 'st-me' },
     avatar(ctx.meName || '?', me ? ctx.color(me) : '#888', 'lg'),
-    h('div', { class: 'grow' }, h('div', { class: 'st-me-name' }, ctx.meName || t('setX.noWho')), h('div', { class: 'small muted' }, `${hs.name || ''} · ${ctx.cloud ? t('misc.synced') : t('misc.localOnly')}`)),
+    h('div', { class: 'grow' }, h('div', { class: 'st-me-name' }, ctx.meName || t('setX.noWho')), h('div', { class: 'small muted' }, `${hs.name || ''} · ${ctx.cloud ? t('misc.synced') : t('misc.localOnly')}${(hs.adminIds || []).length ? ' · ' + t('misc.admin') + ': ' + (hs.adminIds || []).map((i) => ctx.name(i)).join(', ') : ''}`)),
     ctx.isAdmin ? chip(t('misc.admin'), 'acc', 'shield') : null, icon('chevron'));
   const groups = INDEX.filter(([, , adm]) => !adm || ctx.isAdmin).map(([label, keys]) =>
     group(t(label), keys.map((k) => { const d = SECTIONS[k]; let sum = ''; try { sum = d.sum(ctx); } catch { /* ignore */ } return liRow({ ic: d.ic, tone: d.tone, title: t(d.title), desc: sum, href: '#/settings/' + k }); })));
@@ -336,6 +336,7 @@ function houseSection(ctx) {
     group(t('setX.house.behaviour'), [
       stepRow({ title: t('set.refreshMin'), desc: ctx.feature('refresh') ? null : t('setX.house.refreshOff'), value: Math.max(1, Number(hs.refreshMin) || 5), min: 1, max: 120, step: 1, id: 'step-refreshMin', fmt: (v) => v + ' min', onchange: (v) => setHouse(ctx, { refreshMin: v }) }),
       switchRow({ ic: 'book', title: t('setX.house.requireRules'), desc: t('setX.house.requireRulesHint'), checked: hs.requireRules !== false, id: 'sw-requireRules', onchange: (v) => setHouse(ctx, { requireRules: v }) }),
+      switchRow({ ic: 'bell', title: t('setX.house.requirePush'), desc: t('setX.house.requirePushHint'), checked: hs.requirePush !== false, id: 'sw-requirePush', onchange: (v) => setHouse(ctx, { requirePush: v }) }),
     ]));
 }
 

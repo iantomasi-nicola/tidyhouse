@@ -308,3 +308,6 @@ Object.assign(en, { 'setX.accent.all': 'Set as default colour for everyone', 'se
 
 Object.assign(it, { 'setX.admin.title': 'Cambia admin', 'setX.admin.hint': 'Scegli chi diventa admin e un nuovo PIN. I dispositivi dell\'admin attuale vengono bloccati: da quel momento serve il nuovo PIN.', 'setX.admin.who': 'Nuovo admin', 'setX.admin.done': 'Admin cambiato: usa il nuovo PIN per sbloccare', 'setX.admin.confirm': 'Passare il ruolo di admin? Questo dispositivo verrà bloccato.' });
 Object.assign(en, { 'setX.admin.title': 'Change admin', 'setX.admin.hint': 'Pick who becomes admin and a new PIN. The current admin\'s devices get locked: from now on the new PIN is needed.', 'setX.admin.who': 'New admin', 'setX.admin.done': 'Admin changed: use the new PIN to unlock', 'setX.admin.confirm': 'Hand over the admin role? This device will be locked.' });
+
+Object.assign(it, { 'setX.house.requirePush': 'Notifiche obbligatorie su mobile', 'setX.house.requirePushHint': 'Su telefono e tablet l\'app chiede di installarla e di attivare le notifiche prima di continuare (solo se le chiavi push sono configurate).' });
+Object.assign(en, { 'setX.house.requirePush': 'Notifications required on mobile', 'setX.house.requirePushHint': 'On phones and tablets the app asks to install it and turn on notifications before continuing (only if the push keys are configured).' });

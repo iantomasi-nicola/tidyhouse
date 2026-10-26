@@ -1,6 +1,6 @@
 // Service worker di Tidy House: funzionamento offline + notifiche push.
 // Per pubblicare una nuova versione dell'app basta cambiare VERSION: il nuovo worker rifà la cache da zero.
-const VERSION = '1.0.0-r1';
+const VERSION = '1.0.1';
 const CACHE = `tidyhouse-${VERSION}`;
 
 // File dell'app shell. I mancanti vengono ignorati; tutto il resto viene messo in cache la prima volta che serve.

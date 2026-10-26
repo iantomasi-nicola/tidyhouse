@@ -10,6 +10,8 @@ import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_H
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
 const VERSION = '1.0.0';
+let pushMod = null; import('./push.js').then((m) => { pushMod = m; }).catch(() => {});
+const isMobile = () => /Android.*Mobile|iPhone|iPod/.test(navigator.userAgent) || /iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) || (/Android/.test(navigator.userAgent));
 
 // ---------------- storage helpers ----------------
 const ls = {
@@ -21,6 +23,7 @@ const deviceId = (() => { let d = ls.get('cp:device'); if (!d) { d = randomCode(
 /** Un dispositivo è admin se ha sbloccato con l'epoca corrente (cambiando admin l'epoca cresce e i vecchi dispositivi si bloccano). */
 const adminOn = (id, house) => { const v = ls.get('cp:admin', {})[id]; if (!v) return false; return (v === true ? 1 : v) === ((house && house.adminEpoch) || 1); };
 const markAdmin = (id, house) => { const a = ls.get('cp:admin', {}); a[id] = (house && house.adminEpoch) || 1; ls.set('cp:admin', a); };
+const saveRulesAck = () => { const r = ls.get('cp:rules', {}); r[S.houseId] = S.actions.rulesVersion(); ls.set('cp:rules', r); };
 const registry = () => ls.get('cp:houses', []);
 const saveRegistry = (r) => ls.set('cp:houses', r);
 const regEntry = (id) => registry().find((x) => x.id === id);
@@ -57,7 +60,7 @@ async function attach(id, mode) {
   if (!res.exists) { b.close && b.close(); return { ok: false, reason: 'notfound' }; }
   S.houseId = id; S.mode = mode;
   S.store = new Store(b);
-  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date() });
+  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null) });
   S.store.on(() => { S.version++; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
   S.version++;
   return { ok: true };
@@ -112,6 +115,7 @@ const ctx = {
   async rotateCode(opts) {
     const wasAdmin = this.isAdmin, me = this.me, oldId = S.houseId, mode = S.mode, epoch = this.house.adminEpoch || 1;
     const { newId } = await S.actions.rotateCode(opts);
+    { const r = ls.get('cp:rules', {}); if (r[oldId]) { r[newId] = r[oldId]; ls.set('cp:rules', r); } }
     regRemove(oldId); { const a = ls.get('cp:admin', {}); delete a[oldId]; if (wasAdmin) a[newId] = epoch; ls.set('cp:admin', a); }
     regUpdate(newId, { name: this.house.name, mode, me, lastUsed: Date.now() });
     ls.set('cp:last', newId);
@@ -167,7 +171,7 @@ const boot = {
     const a = ls.get('cp:admin', {}); a[id] = true; ls.set('cp:admin', a); ls.set('cp:last', id);
     const r = await attach(id, useCloud ? 'cloud' : 'local');
     if (!r.ok) throw new Error('attach-' + (r.reason || 'error') + (r.error && r.error.message ? ': ' + r.error.message : ''));
-    if (r.ok) { await S.actions.touchMember({ ua: navigator.userAgent, device: deviceInfo(), lang: getLang(), firstSeen: new Date().toISOString(), rulesAck: { version: S.actions.rulesVersion(), at: new Date().toISOString() } }); evaluate(); }
+    if (r.ok) { await S.actions.touchMember({ ua: navigator.userAgent, device: deviceInfo(), lang: getLang(), firstSeen: new Date().toISOString(), rulesAck: { version: S.actions.rulesVersion(), at: new Date().toISOString() } }); saveRulesAck(); evaluate(); }
     return id;
   },
   /** Entra con codice: non imposta l'identità. */
@@ -192,7 +196,7 @@ const boot = {
   },
   setMe: (id) => ctx.setMe(id),
   unlockAdmin: (pin) => ctx.unlockAdmin(pin),
-  async acceptRules() { await S.actions.acceptRules(); evaluate(); },
+  async acceptRules() { await S.actions.acceptRules(); saveRulesAck(); evaluate(); },
   evaluate: () => evaluate(),
   async importExcel(file) { const [{ default: XLSX }, { parseWorkbook }] = await Promise.all([import('../vendor/xlsx.js'), import('./xlsx-import.js')]); return parseWorkbook(XLSX, new Uint8Array(await file.arrayBuffer())); },
 };
@@ -204,7 +208,7 @@ async function renderStage() {
   document.getElementById('boot').classList.add('gone');
   try {
     const m = await loadOnboarding();
-    const node = await m.renderGate(S.stage, boot, S.stageParams || {});
+    const node = S.stage === 'push' ? renderPushGate() : await m.renderGate(S.stage, boot, S.stageParams || {});
     clear(root); root.append(node);
     if (['landing', 'join', 'who', 'rules'].includes(S.stage)) { const panel = node.querySelector ? (node.querySelector('.panel') || node) : node; const b = installBanner(); if (b) panel.append(b); }
   } catch (e) { root.append(h('div', { class: 'gate' }, h('div', { class: 'panel' }, h('h1', null, t('error')), h('p', { class: 'muted' }, String(e && e.message || e))))); console.error(e); }
@@ -218,12 +222,31 @@ function evaluate() {
   const me = ctx.me;
   if (!me || !(house.roommates || []).some((r) => r.id === me)) { S.stage = 'who'; return renderStage(); }
   if (S.actions.rulesRequired() && !S.actions.rulesAccepted() && S.store.state.members !== undefined && memberLoaded()) { S.stage = 'rules'; return renderStage(); }
+  if (needPushGate()) { S.stage = 'push'; return renderStage(); }
   S.stage = 'app'; S.ready = true;
   registerDevice();
   document.getElementById('boot').classList.add('gone');
   renderApp(true);
 }
 const memberLoaded = () => true;
+/** Su mobile le notifiche sono obbligatorie (se il cloud e le chiavi push sono configurati e l'admin non l'ha disattivato). */
+function pushState() { try { const st = pushMod && pushMod.status(ctx); return (st && st.state) || null; } catch { return null; } }
+function needPushGate() {
+  if (!S.store || !ctx.cloud || !isMobile() || S.pushSkip) return false;
+  if (ctx.house.requirePush === false) return false;
+  return ['off', 'ios-install', 'denied'].includes(pushState());
+}
+function renderPushGate() {
+  const state = pushState(); const msg = h('p', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite' });
+  const kids = [h('div', { class: 'logo' }, icon('bell')), h('h1', null, t('onb.push.title')), h('p', { class: 'lead' }, t('onb.push.why'))];
+  if (state === 'ios-install') { kids.push(h('div', { class: 'note warn' }, icon('alert'), t('onb.push.ios'))); const b = installBanner(); if (b) kids.push(b); }
+  if (state === 'denied') kids.push(h('div', { class: 'note warn' }, icon('alert'), t('onb.push.denied')));
+  if (state === 'off') kids.push(h('button', { class: 'btn lg block', 'data-testid': 'push-enable', onclick: async () => { let r = null; try { r = await pushMod.enable(ctx); } catch { /* ignore */ } if (r && r.ok) evaluate(); else { msg.textContent = t('onb.push.fail'); } } }, icon('bell'), t('onb.push.enable')));
+  else kids.push(h('button', { class: 'btn lg block soft', 'data-testid': 'push-recheck', onclick: () => evaluate() }, icon('refresh'), t('onb.push.recheck')));
+  kids.push(msg);
+  if (ctx.isAdmin) kids.push(h('button', { class: 'btn ghost block', 'data-testid': 'push-skip', onclick: () => { S.pushSkip = true; evaluate(); } }, t('onb.push.skip')));
+  return h('div', { class: 'gate' }, h('div', { class: 'panel' }, ...kids));
+}
 
 // ---------------- invito all'installazione ----------------
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -250,7 +273,7 @@ function registerDevice() {
     lastTouch = now; const info = deviceInfo();
     const m = (S.store.state.members || {})[deviceId] || {};
     S.actions.touchMember({ ua: navigator.userAgent, device: info, lang: getLang(), name: prefs.deviceName || m.name || info.label, firstSeen: m.firstSeen || new Date().toISOString(), version: VERSION, standalone: matchMedia('(display-mode: standalone)').matches || navigator.standalone === true }).catch(() => {});
-    import('./push.js').then((p) => p.resync && p.resync(ctx)).catch(() => {});
+    import('./push.js').then(async (p) => { if (p.resync) await p.resync(ctx); const st = p.status(ctx); const stateNow = (st && st.state) || st; const m2 = (S.store.state.members || {})[deviceId]; if (stateNow !== 'on' && m2 && m2.push) S.actions.touchMember({ push: null }).catch(() => {}); }).catch(() => {});
   }
 }
 function recordView(screen) {
@@ -304,10 +327,30 @@ async function renderApp(force) {
     node = h('div', { class: 'card stack' }, h('h2', null, t('error')), h('p', { class: 'muted small' }, String(e && e.message || e)), h('a', { class: 'btn soft', href: '#/' }, t('nav.home')));
   }
   if (token !== renderToken) return;
-  clear(mainEl); mainEl.append(node);
+  let reminder = null; try { reminder = await notifReminder(); } catch { /* ignore */ }
+  if (token !== renderToken) return;
+  clear(mainEl); if (reminder) mainEl.append(reminder); mainEl.append(node);
   if (samePage) window.scrollTo(0, y); else window.scrollTo(0, 0);
   recordView(tab === '' ? 'home' : tab);
   document.title = `${ctx.house.name || 'Tidy House'} · Tidy House`;
+}
+
+/** Promemoria (chiudibile per la sessione) se le notifiche non sono ancora attive su questo dispositivo. */
+async function notifReminder() {
+  if (S.notifDismissed || !ctx.cloud || S.route.root === 'settings') return null;
+  const pm = await import('./push.js'); const st = pm.status(ctx); const state = (st && st.state) || st;
+  const close = h('button', { class: 'icon-btn', 'aria-label': t('close'), onclick: () => { S.notifDismissed = true; scheduleRender(true); } }, icon('x'));
+  if (state === 'off') {
+    return h('div', { class: 'card tonal row', style: { marginBottom: '16px' }, 'data-testid': 'notif-reminder' }, icon('bell'),
+      h('div', { class: 'grow' }, h('strong', null, t('onb.notif.title')), h('div', { class: 'small muted' }, t('onb.notif.text'))),
+      h('button', { class: 'btn sm', onclick: async () => { let r = null; try { r = await pm.enable(ctx); } catch { /* ignore */ } if (r && r.ok) { toast(t('set.notif.status.on')); S.notifDismissed = true; scheduleRender(true); } else ctx.nav('settings/notifications'); } }, t('onb.notif.enable')), close);
+  }
+  if (state === 'ios-install') {
+    return h('div', { class: 'card tonal row', style: { marginBottom: '16px' }, 'data-testid': 'notif-reminder-ios' }, icon('bell'),
+      h('div', { class: 'grow' }, h('strong', null, t('onb.notif.title')), h('div', { class: 'small muted' }, t('set.notif.status.ios'))),
+      h('a', { class: 'btn sm', href: '#/guide' }, t('more.guide')), close);
+  }
+  return null;
 }
 
 function buildShell() {
@@ -332,11 +375,12 @@ function updateNav(tab) {
     navEl.append(h('a', { href: '#/' + k, 'aria-current': tab === k ? 'page' : null, onclick: () => haptic(prefs.haptics, 6) }, icon(ic), h('span', null, t(label)), badge ? h('span', { class: 'badge' }, badge) : null));
   }
 }
+const adminLabel = () => (ctx.house.adminIds || []).map((id) => nameOf(ctx.house, id)).filter(Boolean).join(', ');
 function updateTop() {
   clear(topEl);
   const st = ctx.status;
   topEl.append(
-    h('div', { class: 'who' }, h('div', { class: 'house' }, ctx.house.name || 'Tidy House'), h('span', { class: 'sync ' + (ctx.cloud ? st : 'local'), title: ctx.cloudStatusLabel() }, h('i'), ctx.cloud ? (st === 'syncing' ? t('misc.syncing') : st === 'offline' ? t('misc.offline').split(':')[0] : '') : t('misc.localOnly'))),
+    h('div', { class: 'who' }, h('div', { class: 'house', 'data-testid': 'house-line' }, ctx.house.name || 'Tidy House', adminLabel() ? ` · ${t('misc.admin')}: ${adminLabel()}` : ''), h('span', { class: 'sync ' + (ctx.cloud ? st : 'local'), title: ctx.cloudStatusLabel() }, h('i'), ctx.cloud ? (st === 'syncing' ? t('misc.syncing') : st === 'offline' ? t('misc.offline').split(':')[0] : '') : t('misc.localOnly'))),
     h('div', { class: 'actions' },
       ctx.isAdmin ? h('span', { class: 'chip acc' }, icon('shield'), t('misc.admin')) : null,
       h('a', { class: 'icon-btn', href: '#/settings', 'aria-label': t('more.settings') }, icon('settings')),
@@ -371,7 +415,7 @@ function setupRefreshPrompt() {
       h('div', { class: 'btn-row' }, h('button', { class: 'btn soft', onclick: () => s.close() }, t('refresh.later')), h('button', { class: 'btn', onclick: () => location.reload() }, icon('refresh'), t('refresh.now')))) });
   };
   setInterval(check, 15000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { check(); registerDevice(); if (S.deferred) scheduleRender(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { check(); registerDevice(); if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
   window.addEventListener('focus', () => { if (S.deferred && !typing()) scheduleRender(true); });
   document.addEventListener('focusout', () => { setTimeout(() => { if (S.deferred && !typing()) scheduleRender(true); }, 60); });
 }
