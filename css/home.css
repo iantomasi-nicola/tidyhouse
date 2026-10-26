@@ -11,6 +11,10 @@
 .hm-title { margin: 4px 0 2px; overflow-wrap: anywhere; max-width: 100%; }
 .hm-sub { color: var(--text-2); font-size: 1.0625rem; font-weight: 500; letter-spacing: -.01em; }
 .hm-switch { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; max-width: 100%; font-size: .875rem; color: var(--text-2); }
+.hm-who-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; max-width: 100%; }
+.hm-admin { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: .875rem; font-weight: 650; color: var(--accent-ink); }
+.hm-admin svg { width: 18px; height: 18px; }
+.hm-admin.on { color: var(--text-2); font-weight: 600; }
 .hm-switch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .hm-switch b { color: var(--accent-ink); font-weight: 650; flex: none; }
 

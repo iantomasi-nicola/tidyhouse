@@ -505,6 +505,21 @@ function openWho(ctx) {
   let api = null; // (ui.sheet non permette body(api): si usa la variabile di chiusura)
   api = ctx.sheet({ title: ctx.t('join.who'), body: h('div', { class: 'who-grid', 'data-testid': 'who-sheet' }, people.map((r) => h('button', { class: 'who', type: 'button', 'aria-pressed': String(r.id === ctx.me), 'data-person': r.id, onclick: () => { api.close(); if (r.id !== ctx.me) ctx.setMe(r.id); } }, avatar(r.name, ctx.color(r.id)), h('span', { class: 'grow hm-ell' }, r.name)))) });
 }
+/** Sblocco admin direttamente dalla Home (PIN), senza passare dalle Impostazioni. */
+function openUnlock(ctx) {
+  const t = ctx.t; let api = null;
+  const pin = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'go', placeholder: t('join.adminPin'), 'aria-label': t('join.adminPin'), 'data-testid': 'home-admin-pin' });
+  const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', 'data-testid': 'home-admin-err' });
+  const form = h('form', { class: 'stack', onsubmit: async (e) => {
+    e.preventDefault(); if (!pin.value || form.__busy) return; form.__busy = true; err.textContent = '';
+    let ok = false; try { ok = await ctx.unlockAdmin(pin.value); } catch { ok = false; }
+    form.__busy = false;
+    if (ok) { api.close(); ctx.toast(t('sec.unlocked')); } else { err.textContent = t('join.wrongPin'); pin.select(); }
+  } }, pin, err, h('button', { class: 'btn block', type: 'submit', 'data-testid': 'home-admin-unlock' }, ctx.icon('unlock'), t('join.unlock')));
+  api = ctx.sheet({ title: t('home.adminUnlock'), body: form });
+  try { pin.focus({ preventScroll: true }); } catch { /* ignore */ }   // subito, dentro il gesto dell'utente: su iPhone apre la tastiera
+  setTimeout(() => { if (document.activeElement !== pin) try { pin.focus({ preventScroll: true }); } catch { /* ignore */ } }, 150);
+}
 function header(ctx, M) {
   const t = ctx.t;
   const sub = M.row ? t('home.weekOf', { range: fmtWeekRange(M.row.sunday) }) : t('home.beforeStart', { date: fmtDate(shiftDays(M.eh.startSunday, -6), ctx.lang, { dow: true }) });
@@ -518,7 +533,11 @@ function header(ctx, M) {
   return h('header', { class: 'hm-head' }, refresh,
     h('h1', { class: 'title hm-title' }, t('home.hello', { name: ctx.meName })),
     h('p', { class: 'hm-sub', 'data-testid': 'week-range' }, sub),
-    h('button', { class: 'hm-switch', type: 'button', onclick: () => openWho(ctx) }, h('span', null, t('home.who', { name: ctx.meName })), h('b', null, t('home.changeWho'))));
+    h('div', { class: 'hm-who-row' },
+      h('button', { class: 'hm-switch', type: 'button', onclick: () => openWho(ctx) }, h('span', null, t('home.who', { name: ctx.meName })), h('b', null, t('home.changeWho'))),
+      // admin: da bloccato un tocco per inserire il PIN; da sbloccato solo un'etichetta (il blocco resta in Impostazioni → Profilo)
+      ctx.isAdmin ? h('span', { class: 'hm-admin on', 'data-testid': 'home-admin-on' }, ctx.icon('unlock'), t('home.adminOn'))
+        : ctx.house.adminHash ? h('button', { class: 'hm-admin', type: 'button', 'data-testid': 'home-admin', onclick: () => openUnlock(ctx) }, ctx.icon('lock'), t('home.adminUnlock')) : null));
 }
 
 // ---------------- render ----------------

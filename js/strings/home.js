@@ -85,3 +85,6 @@ Object.assign(en, { 'home.refresh': 'Refresh' });
 
 Object.assign(it, { 'home.updateApply': 'Aggiorna', 'home.updateAria': 'Nuova versione disponibile: aggiorna l\'app' });
 Object.assign(en, { 'home.updateApply': 'Update', 'home.updateAria': 'New version available: update the app' });
+
+Object.assign(it, { 'home.adminUnlock': 'Sblocca admin', 'home.adminOn': 'Admin attivo' });
+Object.assign(en, { 'home.adminUnlock': 'Unlock admin', 'home.adminOn': 'Admin on' });
