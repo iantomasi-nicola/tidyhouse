@@ -1,0 +1,100 @@
+/* Calendario (Settimane) e fogli turno. Usa le variabili di css/app.css. */
+
+/* ---------- schermata ---------- */
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 14px; }
+.cal-head .title { margin: 0; min-width: 0; }
+.cal-head .btn { flex: none; }
+.cal-layout { display: grid; gap: 12px; }
+.cal-list { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.cal-group { margin: 10px 4px 0; }
+.cal-group:first-child { margin-top: 0; }
+.cal-more { min-height: 44px; }
+.cal-panel { display: none; }
+
+@media (min-width: 1180px) {
+  .cal-layout { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); gap: 24px; align-items: start; }
+  .cal-panel { display: block; position: sticky; top: 24px; max-height: calc(100dvh - 48px); overflow: auto; overscroll-behavior: contain; }
+}
+
+/* card settimana (la base .week/.wk-chores è in app.css) */
+.week { position: relative; cursor: pointer; font: inherit; color: inherit; }
+.week.cur { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.week.sel:not(.cur) { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow-1); }
+.week.fut { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+.week.empty .wk-chores { opacity: .55; }
+.wk-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wk-head .grow { display: grid; gap: 1px; }
+.wk-title { font-weight: 750; font-size: 1.0625rem; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wk-sub { font-size: .75rem; color: var(--text-2); font-weight: 600; }
+.week.cur .wk-sub { color: var(--accent-ink); }
+.wk-chore .l .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-rest); flex: none; }
+.dot.floor { background: var(--c-floor) !important; } .dot.bathroom { background: var(--c-bathroom) !important; } .dot.kitchen { background: var(--c-kitchen) !important; }
+.wk-chore { width: 100%; align-content: start; }
+.wk-chore .m { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; min-height: 26px; }
+.wk-chore .n { font-weight: 650; font-size: .875rem; max-width: 100%; min-height: 1.25em; }
+.wk-chore .n.none { color: var(--text-3); font-weight: 560; }
+.wk-chore .inds { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+.wk-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--text-2); font-size: .8125rem; }
+.wk-meta { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.wk-meta svg.i { width: 1.05em; height: 1.05em; flex: none; }
+
+/* indicatori */
+.ind { display: inline-grid; place-items: center; color: var(--text-2); flex: none; }
+.ind svg.i { width: 1.1em; height: 1.1em; stroke-width: 2.2; }
+.ind.ok { color: var(--ok); } .ind.bad { color: var(--bad); } .ind.warn { color: #c47600; } .ind.acc { color: var(--accent-ink); }
+:root[data-theme="dark"] .ind.warn { color: var(--warn); }
+.ind.note { color: var(--text-3); }
+.ind.plan { font-size: .625rem; font-weight: 750; text-transform: uppercase; letter-spacing: .03em; padding: 2px 6px; border-radius: 999px; background: var(--tonal-2); color: var(--accent-ink); }
+.av.cs-none { background: var(--surface-3); color: var(--text-3); }
+
+/* ---------- fogli turno ---------- */
+.tile.sm { width: 32px; height: 32px; border-radius: 10px; }
+.tile.sm svg.i { width: 1.1rem; height: 1.1rem; }
+.cs-back { align-self: start; margin-left: -8px; justify-self: start; }
+.cs-title { font-size: 1.0625rem; font-weight: 750; letter-spacing: -.01em; }
+.cs-sec { display: grid; gap: 0; }
+.cs-sec > .eyebrow { margin-top: 2px; }
+.cs-cap { margin: 8px 4px 0; }
+.cs-hero { background: var(--surface); border-radius: var(--r-xl); padding: 18px; display: grid; gap: 14px; box-shadow: var(--shadow-1); }
+.cs-top { display: flex; align-items: center; gap: 14px; }
+.cs-top .tile { width: 52px; height: 52px; border-radius: 17px; }
+.cs-name { font-size: 1.375rem; font-weight: 800; letter-spacing: -.025em; line-height: 1.15; }
+.cs-who { display: flex; align-items: center; gap: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: var(--r-lg); min-width: 0; }
+.cs-pname { font-size: 1.125rem; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.cs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-hint { color: var(--text-2); font-size: .875rem; }
+.cs-marked { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: .8125rem; }
+.cs-marked svg.i { width: 1.1em; height: 1.1em; }
+.cs-actions { display: grid; gap: 10px; }
+.cs-pick { text-align: left; }
+.cs-pick.sug { background: var(--tonal); }
+button.cs-pick:active { background: var(--tonal-2); }
+.cs-pick[aria-pressed="true"] { background: var(--tonal); }
+.cs-task .checkcircle { width: 26px; height: 26px; }
+.cs-task[aria-pressed="true"] .t { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--text-3); }
+.cs-req { background: var(--surface); border-radius: var(--r-lg); }
+.cs-mine { background: var(--surface); border-radius: var(--r-lg); }
+.cs-wa { min-height: 220px; line-height: 1.45; font-size: .9375rem; }
+.cs-pre { margin: 0; padding: 14px 16px; border-radius: var(--r-md); background: var(--surface); font: inherit; font-size: .875rem; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.cs-rank { margin-top: 6px; }
+
+/* ---------- dettaglio settimana ---------- */
+.wd { gap: 14px; }
+.wd-head { display: grid; gap: 8px; }
+.wd-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -.03em; }
+.wd-chores .chore { min-height: 68px; }
+.wd-chores .chore .s { gap: 6px 8px; }
+.wd-pn { font-weight: 560; color: var(--text); overflow-wrap: anywhere; }
+.wd-rest { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-1); }
+.wd-names { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.wd-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.wd-away .t { overflow-wrap: anywhere; }
+.wd-note { min-height: 84px; }
+.sheet .chore { background: transparent; }
+.sheet .list .chore:active { background: var(--surface-2); }
+
+@media (max-width: 380px) {
+  .wk-chores { gap: 6px; }
+  .wk-chore { padding: 8px; }
+  .week { padding: 14px; }
+}

@@ -79,7 +79,7 @@ function heroCard({ variant = '', kicker, ic, big, sub, chips = [], actions = []
     h('div', { class: 'hm-herohead' }, ic ? h('div', { class: 'tile hm-herotile' }, icon(ic)) : null, h('div', { class: 'big' }, big)),
     sub ? h('p', { class: 'hm-herosub' }, sub) : null,
     chips.length ? h('div', { class: 'meta' }, chips.map(([cls, text, ic2]) => chip(cls, text, ic2))) : null,
-    actions.length ? h('div', { class: 'hm-heroactions' }, actions) : null,
+    actions.filter(Boolean).length ? h('div', { class: 'hm-heroactions' }, actions) : null,
     list, foot);
 }
 
@@ -297,7 +297,7 @@ function widgetQuick(ctx, M) {
 // ---------------- LINKS ----------------
 function widgetLinks(ctx) {
   const t = ctx.t, L = ctx.house.links || {}, items = [];
-  const add = (ic, label, url, id) => { const u = safeUrl(url); if (u) items.push(h('a', { class: 'hm-link', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-link': id }, h('span', { class: 'hm-linkic' }, icon(ic)), h('span', { class: 'hm-ell' }, label), icon('share'))); };
+  const add = (ic, label, url, id) => { const u = safeUrl(url); if (u) items.push(h('a', { class: 'hm-link', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-link': id }, h('span', { class: 'hm-linkic' }, icon(ic)), h('span', { class: 'hm-ell grow' }, label), icon('chevron'))); };
   if (L.tricount && L.tricount.show !== false) add('tricount', t('home.tricount'), L.tricount.url, 'tricount');
   if (L.whatsapp && L.whatsapp.show !== false) add('whatsapp', t('home.waGroup'), L.whatsapp.url, 'whatsapp');
   for (const c of L.custom || []) if (c && c.show !== false) { let label = c.label; if (!label) { try { label = new URL(c.url).hostname; } catch { label = ''; } } add('link', label || t('set.customLink'), c.url, c.id || 'custom'); }
@@ -329,7 +329,7 @@ function widgetUpcoming(ctx, M) {
   if (!rows.length) return null;
   const items = rows.map((r) => h('button', { class: 'li hm-up', type: 'button', 'data-week': r.sunday, onclick: () => openWeek(ctx, r.sunday) },
     h('div', { class: 'grow' }, h('div', { class: 'hm-uphead' }, h('b', null, fmtWeekRange(r.sunday)), chip('', t('st.preview'))),
-      r.status === 'empty' ? h('div', { class: 'd' }, t('st.empty')) : h('div', { class: 'hm-upturns' }, [0, 1, 2].map((c) => h('span', { class: 'hm-upturn' }, h('span', { class: 'hm-minitile ' + CHORES[c] }, icon(IC[CHORES[c]])), r.assigned[c] ? [avatar(ctx.name(r.assigned[c]), ctx.color(r.assigned[c]), 'sm'), h('span', { class: 'hm-ell' }, ctx.name(r.assigned[c]))] : h('span', { class: 'muted' }, '–'))))),
+      r.status === 'empty' ? h('div', { class: 'd' }, t('st.empty')) : h('div', { class: 'hm-upturns' }, [0, 1, 2].map((c) => h('span', { class: 'hm-upturn' }, h('span', { class: 'hm-minitile ' + CHORES[c] }, icon(IC[CHORES[c]])), h('span', { class: 'hm-ell' + (r.assigned[c] ? '' : ' muted') }, r.assigned[c] ? ctx.name(r.assigned[c]) : '–'))))),
     h('div', { class: 'end' }, icon('chevron'))));
   return h('section', { class: 'hm-w', 'data-widget': 'upcoming' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.upcoming')), h('a', { href: '#/calendar' }, t('home.seeAll'))), h('div', { class: 'list' }, items));
 }
