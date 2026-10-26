@@ -167,3 +167,9 @@ export const en = {
   'onb.off.title': 'You\'re offline',
   'onb.off.text': 'I can\'t reach "{name}". Try again as soon as the network is back.',
 };
+
+Object.assign(it, { 'onb.install.title': 'Installa l\'app', 'onb.install.why': 'Così si apre come una vera app e puoi ricevere le notifiche dei turni.' });
+Object.assign(en, { 'onb.install.title': 'Install the app', 'onb.install.why': 'It opens like a real app and lets you receive chore notifications.' });
+
+Object.assign(it, { 'onb.install.safari': 'Su iPhone e iPad l\'installazione e le notifiche funzionano solo da Safari: copia questo link e aprilo in Safari.' });
+Object.assign(en, { 'onb.install.safari': 'On iPhone and iPad, installing and notifications only work from Safari: copy this link and open it in Safari.' });

@@ -942,6 +942,17 @@ function aiSection(ctx) {
 // ============================================================================
 // SECURITY
 // ============================================================================
+function adminChangeForm(ctx) {
+  const sel = h('select', { class: 'input', 'aria-label': t('setX.admin.who'), 'data-testid': 'newadmin-who' }, (ctx.house.roommates || []).map((r) => h('option', { value: r.id, selected: (ctx.house.adminIds || [])[0] !== r.id && r.id !== ctx.me ? null : null }, r.name)));
+  const pin = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: t('sec.newPin'), 'aria-label': t('sec.newPin'), 'data-testid': 'newadmin-pin' });
+  const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite' });
+  return h('form', { class: 'stack tight', onsubmit: async (e) => {
+    e.preventDefault(); err.textContent = '';
+    if (pin.value.length < 4) { err.textContent = t('setX.sec.short', { n: 4 }); return; }
+    if (!(await confirmDialog({ title: t('setX.admin.title'), text: t('setX.admin.confirm'), danger: true }))) return;
+    try { await ctx.actions.changeAdmin({ personId: sel.value, pin: pin.value }); pin.value = ''; ctx.toast(t('setX.admin.done')); ctx.rerender(); } catch (ex) { fail(ctx, ex); }
+  } }, h('div', { class: 't', style: { fontWeight: 700 } }, t('setX.admin.title')), h('p', { class: 'small muted' }, t('setX.admin.hint')), h('div', { class: 'field' }, h('label', null, t('setX.admin.who')), sel), pin, err, btn(t('setX.admin.title'), null, { cls: '', type: 'submit', id: 'admin-change' }));
+}
 function securitySection(ctx) {
   const cur = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'off', placeholder: t('join.adminPin'), 'aria-label': t('join.adminPin'), 'data-testid': 'pin-old' });
   const n1 = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: t('sec.newPin'), 'aria-label': t('sec.newPin'), 'data-testid': 'pin-new' });
@@ -960,6 +971,7 @@ function securitySection(ctx) {
   return h('div', { class: 'stack' },
     card(h('div', { class: 'row' }, h('div', { class: 'ico g' }, icon('unlock')), h('div', { class: 'grow t', style: { fontWeight: 650 } }, t('sec.unlocked')))),
     card(form),
+    card(adminChangeForm(ctx)),
     group(null, [h('button', { class: 'li', type: 'button', 'data-testid': 'sec-lock', onclick: () => { ctx.lockAdmin(); ctx.toast(t('sec.locked')); ctx.nav('settings'); } }, h('div', { class: 'ico r' }, icon('lock')), h('div', { class: 'grow t' }, t('sec.lock')))]),
     foot(t('sec.note')));
 }

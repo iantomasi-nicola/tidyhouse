@@ -305,3 +305,6 @@ export const en = {
 
 Object.assign(it, { 'setX.accent.all': 'Imposta come colore predefinito per tutti', 'setX.accent.house': 'Usa il colore della casa' });
 Object.assign(en, { 'setX.accent.all': 'Set as default colour for everyone', 'setX.accent.house': 'Use the house colour' });
+
+Object.assign(it, { 'setX.admin.title': 'Cambia admin', 'setX.admin.hint': 'Scegli chi diventa admin e un nuovo PIN. I dispositivi dell\'admin attuale vengono bloccati: da quel momento serve il nuovo PIN.', 'setX.admin.who': 'Nuovo admin', 'setX.admin.done': 'Admin cambiato: usa il nuovo PIN per sbloccare', 'setX.admin.confirm': 'Passare il ruolo di admin? Questo dispositivo verrà bloccato.' });
+Object.assign(en, { 'setX.admin.title': 'Change admin', 'setX.admin.hint': 'Pick who becomes admin and a new PIN. The current admin\'s devices get locked: from now on the new PIN is needed.', 'setX.admin.who': 'New admin', 'setX.admin.done': 'Admin changed: use the new PIN to unlock', 'setX.admin.confirm': 'Hand over the admin role? This device will be locked.' });

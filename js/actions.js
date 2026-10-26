@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF } from './extras.js';
+import { uid, randomCode, normCode, feature, nameOf, swapPatch, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById } from './extras.js';
 import { engineHouse } from './store.js';
 
 // ---------- PIN admin ----------
@@ -155,6 +155,15 @@ export class Actions {
   async nudge(personId, text) {
     this.need(this.admin || !!this.me);
     const id = uid(); await this.s.setDoc('requests', 'n' + id, { kind: 'nudge', to: personId, from: this.me || 'admin', text: text || '', status: 'pending', at: this.ctx.now().toISOString() });
+  }
+
+  /** Passa il ruolo di admin a un'altra persona con un nuovo PIN. I dispositivi admin precedenti vengono bloccati (adminEpoch). */
+  async changeAdmin({ personId, pin }) {
+    this.need(this.admin);
+    if (!personById(this.house, personId) || String(pin || '').length < 4) throw new Error('invalid');
+    const salt = newSalt();
+    await this.s.setHouse({ adminIds: [personId], adminEpoch: (this.house.adminEpoch || 1) + 1, adminSalt: salt, adminHash: await hashPin(pin, salt) });
+    await this.log('settings', {});
   }
 
   // ---- codice casa ----

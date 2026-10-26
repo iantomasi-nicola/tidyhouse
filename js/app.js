@@ -18,6 +18,9 @@ const ls = {
   del(k) { try { localStorage.removeItem(k); } catch { /* ignore */ } },
 };
 const deviceId = (() => { let d = ls.get('cp:device'); if (!d) { d = randomCode(12); ls.set('cp:device', d); } return d; })();
+/** Un dispositivo è admin se ha sbloccato con l'epoca corrente (cambiando admin l'epoca cresce e i vecchi dispositivi si bloccano). */
+const adminOn = (id, house) => { const v = ls.get('cp:admin', {})[id]; if (!v) return false; return (v === true ? 1 : v) === ((house && house.adminEpoch) || 1); };
+const markAdmin = (id, house) => { const a = ls.get('cp:admin', {}); a[id] = (house && house.adminEpoch) || 1; ls.set('cp:admin', a); };
 const registry = () => ls.get('cp:houses', []);
 const saveRegistry = (r) => ls.set('cp:houses', r);
 const regEntry = (id) => registry().find((x) => x.id === id);
@@ -54,7 +57,7 @@ async function attach(id, mode) {
   if (!res.exists) { b.close && b.close(); return { ok: false, reason: 'notfound' }; }
   S.houseId = id; S.mode = mode;
   S.store = new Store(b);
-  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return !!ls.get('cp:admin', {})[id]; }, deviceId, now: () => new Date() });
+  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date() });
   S.store.on(() => { S.version++; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
   S.version++;
   return { ok: true };
@@ -68,7 +71,7 @@ const ctx = {
   get houseId() { return S.houseId; }, get mode() { return S.mode; }, get cloud() { return S.mode === 'cloud'; }, get status() { return S.store ? S.store.status : 'synced'; },
   get lang() { return getLang(); }, get prefs() { return prefs; }, get route() { return S.route; },
   get me() { return (regEntry(S.houseId) || {}).me || null; },
-  get isAdmin() { return !!ls.get('cp:admin', {})[S.houseId]; },
+  get isAdmin() { return adminOn(S.houseId, S.store && S.store.state.house); },
   get meName() { return nameOf(this.house, this.me); },
   today: () => localDate(new Date()), now: () => new Date(),
   name: (id) => nameOf(S.store.state.house, id), color: (id) => colorOf(S.store.state.house, id), person: (id) => personById(S.store.state.house, id),
@@ -103,13 +106,13 @@ const ctx = {
     return out;
   },
   // ----- operazioni di casa (usate da impostazioni/onboarding) -----
-  async unlockAdmin(pin) { if (await verifyPin(this.house, pin)) { const a = ls.get('cp:admin', {}); a[S.houseId] = true; ls.set('cp:admin', a); scheduleRender(true); return true; } return false; },
+  async unlockAdmin(pin) { if (await verifyPin(this.house, pin)) { markAdmin(S.houseId, this.house); scheduleRender(true); return true; } return false; },
   lockAdmin() { const a = ls.get('cp:admin', {}); delete a[S.houseId]; ls.set('cp:admin', a); scheduleRender(true); },
   setMe(personId) { regUpdate(S.houseId, { me: personId }); if (S.actions) S.actions.touchMember({}).catch(() => {}); evaluate(); },
   async rotateCode(opts) {
-    const wasAdmin = this.isAdmin, me = this.me, oldId = S.houseId, mode = S.mode;
+    const wasAdmin = this.isAdmin, me = this.me, oldId = S.houseId, mode = S.mode, epoch = this.house.adminEpoch || 1;
     const { newId } = await S.actions.rotateCode(opts);
-    regRemove(oldId); { const a = ls.get('cp:admin', {}); delete a[oldId]; if (wasAdmin) a[newId] = true; ls.set('cp:admin', a); }
+    regRemove(oldId); { const a = ls.get('cp:admin', {}); delete a[oldId]; if (wasAdmin) a[newId] = epoch; ls.set('cp:admin', a); }
     regUpdate(newId, { name: this.house.name, mode, me, lastUsed: Date.now() });
     ls.set('cp:last', newId);
     const r = await attach(newId, mode); if (r.ok) { await S.actions.touchMember({}); evaluate(); }
@@ -122,7 +125,7 @@ const ctx = {
     await cb.write(importBackupOps(JSON.parse(JSON.stringify(bk)), newId));
     cb.close();
     const old = new LocalBackend(); await old.open(oldId); await old.wipe(); old.close();
-    regRemove(oldId); const a = ls.get('cp:admin', {}); delete a[oldId]; if (wasAdmin) a[newId] = true; ls.set('cp:admin', a);
+    regRemove(oldId); const a = ls.get('cp:admin', {}); delete a[oldId]; if (wasAdmin) a[newId] = (bk.data.house.adminEpoch || 1); ls.set('cp:admin', a);
     regUpdate(newId, { name: bk.data.house.name, mode: 'cloud', me, lastUsed: Date.now() }); ls.set('cp:last', newId);
     const r = await attach(newId, 'cloud'); if (r.ok) { await S.actions.touchMember({}); evaluate(); }
     return newId;
@@ -182,7 +185,7 @@ const boot = {
     for (const e of prev) { if (e.me && (house.roommates || []).some((x) => x.id === e.me)) me = e.me; if (ls.get('cp:admin', {})[e.id]) admin = true; regRemove(e.id); }
     const existing = regEntry(code);
     regUpdate(code, { name: house.name, mode: 'cloud', me: (existing && existing.me) || me, lastUsed: Date.now() });
-    if (admin) { const a = ls.get('cp:admin', {}); a[code] = true; ls.set('cp:admin', a); }
+    if (admin) markAdmin(code, house);
     ls.set('cp:last', code);
     evaluate();
     return { ok: true, house, autoMe: !!me };
@@ -203,6 +206,7 @@ async function renderStage() {
     const m = await loadOnboarding();
     const node = await m.renderGate(S.stage, boot, S.stageParams || {});
     clear(root); root.append(node);
+    if (['landing', 'join', 'who', 'rules'].includes(S.stage)) { const panel = node.querySelector ? (node.querySelector('.panel') || node) : node; const b = installBanner(); if (b) panel.append(b); }
   } catch (e) { root.append(h('div', { class: 'gate' }, h('div', { class: 'panel' }, h('h1', null, t('error')), h('p', { class: 'muted' }, String(e && e.message || e))))); console.error(e); }
 }
 
@@ -220,6 +224,22 @@ function evaluate() {
   renderApp(true);
 }
 const memberLoaded = () => true;
+
+// ---------------- invito all'installazione ----------------
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function installBanner() {
+  if (isStandalone()) return null;
+  const ua = navigator.userAgent; const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1); const android = /Android/.test(ua);
+  const steps = ios ? ['guide.ios1', 'guide.ios2', 'guide.ios3', 'guide.ios4'] : android ? ['guide.android1', 'guide.android2', 'guide.android3'] : ['guide.desktop1', 'guide.desktop2'];
+  const notSafari = ios && /CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(ua);
+  const card = h('div', { class: 'card tonal stack tight', 'data-testid': 'install-banner' },
+    notSafari ? h('div', { class: 'note warn', 'data-testid': 'install-safari' }, icon('alert'), t('onb.install.safari')) : null,
+    h('div', { class: 'row' }, icon('download'), h('strong', null, t('onb.install.title'))),
+    h('p', { class: 'small muted' }, t('onb.install.why')),
+    h('ol', { class: 'small', style: { margin: 0, paddingLeft: '20px', display: 'grid', gap: '4px' } }, steps.map((k) => h('li', null, t(k)))),
+    window.__bip ? h('button', { class: 'btn tonal sm', onclick: async () => { try { window.__bip.prompt(); await window.__bip.userChoice; } catch { /* ignore */ } } }, icon('download'), t('guide.install')) : null);
+  return card;
+}
 
 // ---------------- dispositivo / accessi / push ----------------
 let lastTouch = 0; const lastView = {};
