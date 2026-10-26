@@ -366,7 +366,6 @@ function houseSection(ctx) {
       h('div', { class: 'li', 'data-testid': 'start-sunday' }, h('div', { class: 'ico' }, icon('calendar')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('set.firstSunday')), h('div', { class: 'd' }, startTxt)), chip(t('setX.house.readonly'), '', 'lock')),
     ], t('setX.house.startWarn')),
     group(t('setX.house.behaviour'), [
-      stepRow({ title: t('set.refreshMin'), desc: ctx.feature('refresh') ? null : t('setX.house.refreshOff'), value: Math.max(1, Number(hs.refreshMin) || 5), min: 1, max: 120, step: 1, id: 'step-refreshMin', fmt: (v) => v + ' min', onchange: (v) => setHouse(ctx, { refreshMin: v }) }),
       switchRow({ ic: 'book', title: t('setX.house.requireRules'), desc: t('setX.house.requireRulesHint'), checked: hs.requireRules !== false, id: 'sw-requireRules', onchange: (v) => setHouse(ctx, { requireRules: v }) }),
       switchRow({ ic: 'bell', title: t('setX.house.requirePush'), desc: t('setX.house.requirePushHint'), checked: hs.requirePush !== false, id: 'sw-requirePush', onchange: (v) => setHouse(ctx, { requirePush: v }) }),
     ]));
@@ -533,7 +532,7 @@ function featuresSection(ctx) {
   const perm = ['selfDone', 'selfAway', 'coverOthers'];
   return h('div', { class: 'stack' },
     h('p', { class: 'muted' }, t('set.feat.hint')),
-    group(t('set.features'), keys.filter((k) => !perm.includes(k)).map(mk)),
+    group(t('set.features'), keys.filter((k) => !perm.includes(k) && k !== 'refresh').map(mk)),   // 'refresh' (avviso periodico) non esiste più
     group(t('setX.feat.perm'), perm.map(mk), t('setX.feat.permHint')));
 }
 

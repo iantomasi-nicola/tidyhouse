@@ -166,14 +166,12 @@ await test('notifiche personali: stato, tipi, prefs sul member', async (mk) => {
   noErrors(page);
 });
 
-await test('casa: nome, fuso, refreshMin, regole richieste, lingua', async (mk) => {
+await test('casa: nome, fuso, regole richieste, lingua', async (mk) => {
   const page = await mk(); await go(page, 'house');
   await commit(page.locator(tid('house-name')), 'Casa Nuova');
   await until(page, () => window.__app.house.name === 'Casa Nuova');
   await page.selectOption(tid('house-tz'), 'America/New_York');
   await until(page, () => window.__app.house.tz === 'America/New_York');
-  await page.click(`${tid('step-refreshMin')} button[aria-label="+"]`);
-  await until(page, () => window.__app.house.refreshMin === 6);
   await page.click(tid('sw-requireRules-row'));
   await until(page, () => window.__app.house.requireRules === true);
   await page.click(`${tid('house-lang')} button:has-text("English")`);

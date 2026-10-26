@@ -535,17 +535,8 @@ async function startFromHash() {
   S.stage = 'landing'; renderStage();
 }
 
+// (l'avviso periodico «aggiorna la pagina» è stato tolto: restano il tasto Aggiorna nella Home e l'avviso di nuova versione)
 function setupRefreshPrompt() {
-  const check = () => {
-    if (!S.ready || S.stage !== 'app' || S.refreshOpen || document.visibilityState !== 'visible') return;
-    if (!ctx.feature('refresh') || editingAnywhere() || hasOpenSheets()) return;   // mai sopra a chi sta scrivendo o ha uno sheet aperto
-    const mins = Math.max(1, Number(ctx.house.refreshMin) || 5);
-    if (Date.now() - S.lastRefresh < mins * 60000) return;
-    S.refreshOpen = true;
-    const s = sheet({ title: t('refresh.title'), onClose: () => { S.refreshOpen = false; S.lastRefresh = Date.now(); }, body: h('div', { class: 'stack' }, h('p', { class: 'muted' }, t('refresh.text')),
-      h('div', { class: 'btn-row' }, h('button', { class: 'btn soft', onclick: () => s.close() }, t('refresh.later')), h('button', { class: 'btn', onclick: () => location.reload() }, icon('refresh'), t('refresh.now')))) });
-  };
-  setInterval(check, 15000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { check(); registerDevice(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
   window.addEventListener('focus', flushDeferred);
   document.addEventListener('focusout', () => { setTimeout(flushDeferred, 60); });
