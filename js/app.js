@@ -55,7 +55,7 @@ async function attach(id, mode) {
   S.houseId = id; S.mode = mode;
   S.store = new Store(b);
   S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return !!ls.get('cp:admin', {})[id]; }, deviceId, now: () => new Date() });
-  S.store.on(() => { S.version++; scheduleRender(); });
+  S.store.on(() => { S.version++; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
   S.version++;
   return { ok: true };
 }
@@ -163,7 +163,7 @@ const boot = {
     regUpdate(id, { name: house.name, mode: useCloud ? 'cloud' : 'local', me: house.adminIds[0], lastUsed: Date.now() });
     const a = ls.get('cp:admin', {}); a[id] = true; ls.set('cp:admin', a); ls.set('cp:last', id);
     const r = await attach(id, useCloud ? 'cloud' : 'local');
-    if (r.ok) { await S.actions.touchMember({ ua: navigator.userAgent, device: deviceInfo(), lang: getLang(), firstSeen: new Date().toISOString() }); evaluate(); }
+    if (r.ok) { await S.actions.touchMember({ ua: navigator.userAgent, device: deviceInfo(), lang: getLang(), firstSeen: new Date().toISOString(), rulesAck: { version: S.actions.rulesVersion(), at: new Date().toISOString() } }); evaluate(); }
     return id;
   },
   /** Entra con codice: non imposta l'identità. */
@@ -370,6 +370,7 @@ window.addEventListener('hashchange', () => { if (S.stage === 'app') { closeAllS
 window.addEventListener('online', () => scheduleRender(true));
 window.addEventListener('offline', () => scheduleRender(true));
 window.addEventListener('resize', () => { if (S.ready && navEl) updateNav(tabOf(S.route.root)); });
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bip = e; });
 applyPrefs();
 registerSW();
 setupRefreshPrompt();

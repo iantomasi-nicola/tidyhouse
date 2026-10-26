@@ -16,7 +16,7 @@ export async function verifyPin(house, pin) { return !!(house && house.adminHash
 // ---------- creazione casa ----------
 export async function buildHouse({ id, name, startSunday, roommates, adminPersonId, pin, tz, lang }) {
   const salt = newSalt();
-  const rm = roommates.map((r, i) => ({ id: r.id || uid(), name: r.name.trim(), slot: r.slot || i + 1, from: r.from || null, to: r.to || null }));
+  const rm = roommates.map((r, i) => ({ id: r.id || uid(), name: r.name.trim(), slot: r.slot || i + 1, from: r.from || null, to: r.to || null, ...(!r.to && r.expectedTo ? { expectedTo: r.expectedTo } : {}) }));
   const admin = adminPersonId && rm.find((r) => r.id === adminPersonId || r.name === adminPersonId) ? rm.find((r) => r.id === adminPersonId || r.name === adminPersonId).id : rm[0].id;
   return {
     id, name: name.trim() || 'Casa', startSunday, roommates: rm, settings: { ...DEFAULT_SETTINGS }, features: {}, effort: {}, notif: {}, tasks: [],
