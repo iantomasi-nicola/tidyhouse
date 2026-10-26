@@ -466,7 +466,7 @@ async function rulesStage(boot) {
   try { new ResizeObserver(check).observe(box); } catch { /* ignore */ }
   window.addEventListener('resize', check);
   setTimeout(check, 50); setTimeout(check, 400);
-  return page('onb-rules wide',
+  return page('onb-rulespage wide',
     h('div', { class: 'steps', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': '3', 'aria-valuenow': '3' }, h('i', { class: 'on' }), h('i', { class: 'on' }), h('i', { class: 'on' })),
     h('div', { class: 'onb-kicker' }, t('onb.step', { n: 3, total: 3 }) + ' · ' + (house.name || '')),
     h('h1', { class: 'onb-h' }, t('rules.title')), h('p', { class: 'muted' }, t('onb.rules.lead')),

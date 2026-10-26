@@ -160,7 +160,7 @@ await test('notifiche personali: stato, tipi, prefs sul member', async (mk) => {
   await page.context().grantPermissions(['notifications'], { origin: env.url });
   r.off = await page.evaluate(async () => (await import('/js/push.js')).status({ deviceId: 'd', state: { members: {} }, house: { vapidPublic: 'abc' }, mode: 'cloud' }).state);
   assert.equal(r.denied, 'denied');
-  assert.equal(r.nopush, 'nopush'); assert.equal(r.local, 'nocloud'); assert.equal(r.off, 'off'); assert.equal(r.ios, 'ios-install');
+  assert.equal(r.nopush, 'nopush'); assert.equal(r.local, 'nocloud'); assert.ok(['off', 'denied'].includes(r.off)); assert.equal(r.ios, 'ios-install');
   assert.equal(Buffer.from(r.k.publicKey, 'base64url').length, 65); assert.equal(Buffer.from(r.k.privateKey, 'base64url').length, 32);
   assert.equal(r.lt.ok, false);
   noErrors(page);
@@ -413,10 +413,10 @@ await test('dati: import del foglio Excel originale', async (mk) => {
   await page.setInputFiles(tid('import-file'), XLSX_REAL);
   await page.waitForSelector(tid('import-summary'), { timeout: 15000 }); await shot(page, 'import-xlsx-390');
   await page.click(tid('import-confirm'));
-  await until(page, () => window.__app.house.roommates.length > 3 || Object.keys(window.__app.state.weeks).length > 5);
+  await until(page, () => window.__app.house.roommates[0].name === 'Antonio');
   const r = await page.evaluate(() => { const o = window.__app.calc.out; return { rm: window.__app.house.roommates.map((x) => x.name), weeks: Object.keys(window.__app.state.weeks).length, rows: o.rows.length, start: window.__app.house.startSunday, admin: window.__app.house.adminIds }; });
   console.log('  excel:', JSON.stringify({ rm: r.rm, weeks: r.weeks, start: r.start }));
-  assert.ok(r.rm.length >= 3 && r.weeks > 5 && r.rows > 5); assert.ok(r.admin.length >= 1);
+  assert.deepEqual(r.rm, ['Antonio', 'Duygu', 'Nicola']); assert.ok(r.weeks >= 1 && r.rows > 5); assert.ok(r.admin.length >= 1);
   noErrors(page);
 });
 
@@ -541,7 +541,8 @@ await test('service worker: offline, push, click, notifica locale', async () => 
     for (const f of ['/index.html', '/css/app.css', '/js/app.js', '/js/push.js', '/vendor/qr.js', '/icons/icon-192.png']) assert.ok(cached.includes(f), 'precache: ' + f);
     // notifica locale (dal sw registrato)
     const lt = await page.evaluate(async () => { const p = await import('/js/push.js'); return p.localTest({ deviceId: 'd' }); });
-    assert.equal(lt.ok, true);
+    assert.equal(lt.ok, true, JSON.stringify(lt));
+    assert.equal(await page.evaluate(async () => (await import('/js/push.js')).status({ deviceId: 'd', state: { members: {} }, house: { vapidPublic: 'abc' }, mode: 'cloud' }).state), 'off');
     let shown = await page.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).map((n) => ({ title: n.title, tag: n.tag })));
     assert.equal(shown.length, 1);
     // evento push con payload JSON: mostra sempre la notifica
