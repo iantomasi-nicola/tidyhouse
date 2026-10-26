@@ -465,6 +465,12 @@ export function targetsFor(n, members, house) {
 
 /** Testo localizzato per una notifica pianificata. */
 export function notifMessage(n, house, lang = 'it', weeks = {}) {
+  const m = baseMessage(n, house, lang, weeks);
+  // un solo turno da segnare: la notifica offre «Segna fatto» (l'app lo esegue rispettando la checklist)
+  if (['satDuty', 'sunMark', 'late', 'planDay'].includes(n.type) && (n.chores || []).length === 1 && n.week) m.actions = [{ action: 'done', title: tr(lang, 'n.act.done'), url: `#/do/done/${n.week}/${n.chores[0]}` }];
+  return m;
+}
+function baseMessage(n, house, lang = 'it', weeks = {}) {
   const T = (k, p) => tr(lang, k, p);
   const chores = (n.chores || []).map((c) => T('chore.' + c)).join(' + ');
   const minN = (house.settings && house.settings.minNights) || 3;

@@ -167,3 +167,10 @@ test('server notifiche: spesa raggruppata in un solo avviso e niente a chi è as
   const again = []; await runNotify({ db, send: async (s, p) => again.push(p), now: new Date(now.getTime() + 3600000), vapidPublic: 'PUB' });
   assert.ok(!again.some((p) => /Latte/.test(p.body)), 'nessuna ripetizione');
 });
+
+test('server notifiche: un solo turno da segnare => azione «Segna fatto» con il link giusto', async () => {
+  const db = fakeDb({ members: { dB: { personId: 'B', push: { endpoint: 'eB' }, lang: 'it' } }, weeks: { [wk(4)]: { result: { floor: 'done' } } } });
+  const got = []; await runNotify({ db, send: async (s, p) => got.push(p), now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'PUB' });   // sabato
+  const p = got.find((x) => x.actions && x.actions.length);
+  assert.ok(p, 'almeno una notifica con azione'); assert.equal(p.actions[0].action, 'done'); assert.match(p.actions[0].url, /^#\/do\/done\/\d{4}-\d\d-\d\d\/(floor|bathroom|kitchen)$/); assert.match(p.actions[0].title, /Segna fatto/);
+});
