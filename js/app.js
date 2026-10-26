@@ -25,12 +25,12 @@ const regUpdate = (id, patch) => { const r = registry(); const e = r.find((x) =>
 const regRemove = (id) => saveRegistry(registry().filter((x) => x.id !== id));
 
 // ---------------- preferenze di dispositivo ----------------
-const PREF_DEFAULT = { lang: null, theme: 'auto', accent: '#0a84ff', textSize: 1, reduceMotion: false, haptics: true, compact: false, home: null, useHouseHome: true, notif: {}, deviceName: '' };
+const PREF_DEFAULT = { lang: null, theme: 'auto', accent: null, textSize: 1, reduceMotion: false, haptics: true, compact: false, home: null, useHouseHome: true, notif: {}, deviceName: '' };
 let prefs = { ...PREF_DEFAULT, ...ls.get('cp:prefs', {}) };
 function applyPrefs() {
   const r = document.documentElement;
   if (prefs.theme === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', prefs.theme);
-  r.style.setProperty('--accent', prefs.accent || '#0a84ff');
+  r.style.setProperty('--accent', prefs.accent || (S.store && S.store.state.house && S.store.state.house.accent) || '#1a73e8');
   r.style.setProperty('--fs', String(prefs.textSize || 1));
   r.classList.toggle('no-motion', !!prefs.reduceMotion);
   r.classList.toggle('compact', !!prefs.compact);
@@ -163,6 +163,7 @@ const boot = {
     regUpdate(id, { name: house.name, mode: useCloud ? 'cloud' : 'local', me: house.adminIds[0], lastUsed: Date.now() });
     const a = ls.get('cp:admin', {}); a[id] = true; ls.set('cp:admin', a); ls.set('cp:last', id);
     const r = await attach(id, useCloud ? 'cloud' : 'local');
+    if (!r.ok) throw new Error('attach-' + (r.reason || 'error') + (r.error && r.error.message ? ': ' + r.error.message : ''));
     if (r.ok) { await S.actions.touchMember({ ua: navigator.userAgent, device: deviceInfo(), lang: getLang(), firstSeen: new Date().toISOString(), rulesAck: { version: S.actions.rulesVersion(), at: new Date().toISOString() } }); evaluate(); }
     return id;
   },

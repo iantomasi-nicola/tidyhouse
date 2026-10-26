@@ -316,3 +316,13 @@ test('uscita non nota: resta in casa finche\' non viene segnata; "uscita previst
   await adm.a.setRoommates(rm3);
   assert.equal(adm.a.expectedExits()[0].overdue, true);
 });
+
+test('CloudBackend: Firestore inizializzato una sola volta anche con piu\' backend nella stessa sessione', async () => {
+  let inits = 0;
+  const fs = { initializeApp: () => ({}), persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}),
+    initializeFirestore: () => { if (inits++) throw new Error('Firestore has already been started'); return { fake: true }; },
+    doc: (db, ...p) => ({ path: p.join('/'), id: p[p.length - 1] }), getDoc: async () => ({ exists: () => false }) };
+  const cfg = { apiKey: 'k', projectId: 'p-once' };
+  await new CloudBackend(cfg, async () => fs).open('A'); await new CloudBackend(cfg, async () => fs).open('B'); await new CloudBackend(cfg, async () => fs).open('C');
+  assert.equal(inits, 1);
+});

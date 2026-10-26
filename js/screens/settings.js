@@ -202,7 +202,7 @@ function profile(ctx) {
 // APPEARANCE
 // ============================================================================
 function appearance(ctx) {
-  const p = ctx.prefs; const accent = (p.accent || '#0a84ff').toLowerCase();
+  const p = ctx.prefs; const accent = (p.accent || ctx.house.accent || '#1a73e8').toLowerCase();
   const isPal = PALETTE.some((c) => c.toLowerCase() === accent);
   const theme = seg([['auto', t('set.theme.auto')], ['light', t('set.theme.light')], ['dark', t('set.theme.dark')]], p.theme || 'auto', (v) => { ctx.savePrefs({ theme: v }); saved(ctx); });
   theme.setAttribute('data-testid', 'seg-theme'); theme.setAttribute('aria-label', t('set.theme'));
@@ -217,7 +217,10 @@ function appearance(ctx) {
   range.addEventListener('change', () => { ctx.savePrefs({ textSize: Number(range.value) }); saved(ctx); });
   return h('div', { class: 'stack' },
     group(t('set.theme'), [h('div', { class: 'li' }, theme)]),
-    card(h('div', { class: 'lbl' }, t('set.accent')), sw),
+    card(h('div', { class: 'lbl' }, t('set.accent')), sw,
+      h('div', { class: 'btn-row', style: { marginTop: '12px' } },
+        ctx.isAdmin ? h('button', { type: 'button', class: 'btn tonal sm', 'data-testid': 'accent-house', onclick: async () => { try { await ctx.actions.setHouse({ accent }); ctx.toast(t('saved')); } catch { ctx.toast(t('error')); } } }, t('setX.accent.all')) : null,
+        p.accent ? h('button', { type: 'button', class: 'btn soft sm', onclick: () => { ctx.savePrefs({ accent: null }); saved(ctx); } }, t('setX.accent.house')) : null)),
     card(h('div', { class: 'row-between' }, h('div', { class: 'lbl' }, t('set.textSize')), sizeVal),
       h('div', { class: 'st-range' }, h('span', { class: 'small', 'aria-hidden': 'true' }, 'A'), range, h('span', { style: { fontSize: '1.25rem' }, 'aria-hidden': 'true' }, 'A')),
       h('p', { class: 'muted', style: { fontSize: '1rem' } }, t('setX.appearance.sample'))),

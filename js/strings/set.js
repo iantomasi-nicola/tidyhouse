@@ -302,3 +302,6 @@ export const en = {
   'setX.sec.short': 'At least {n} characters needed',
   'setX.sec.mismatch': 'The two values do not match',
 };
+
+Object.assign(it, { 'setX.accent.all': 'Imposta come colore predefinito per tutti', 'setX.accent.house': 'Usa il colore della casa' });
+Object.assign(en, { 'setX.accent.all': 'Set as default colour for everyone', 'setX.accent.house': 'Use the house colour' });

@@ -108,9 +108,18 @@ export class CloudBackend {
   async _init() {
     if (this.db) return;
     const m = (this.fs = await this.loader());
-    const app = m.initializeApp(this.config);
-    try { this.db = m.initializeFirestore(app, { localCache: m.persistentLocalCache({ tabManager: m.persistentMultipleTabManager() }) }); }
-    catch { this.db = m.initializeFirestore(app, {}); }
+    // un solo app/Firestore per sessione: richiamare initializeFirestore due volte lancia un errore
+    const key = JSON.stringify(this.config);
+    if (!CloudBackend._shared || CloudBackend._shared.key !== key) {
+      const app = m.initializeApp(this.config);
+      let db;
+      try { db = m.initializeFirestore(app, { localCache: m.persistentLocalCache({ tabManager: m.persistentMultipleTabManager() }) }); }
+      catch { db = m.initializeFirestore(app, {}); }
+      // solo per i test: ?emu=127.0.0.1:8080 collega l'app all'emulatore locale (accettati solo host locali)
+      try { const emu = new URLSearchParams(location.search).get('emu'); const mm = emu && emu.match(/^(127\.0\.0\.1|localhost):(\d{2,5})$/); if (mm && m.connectFirestoreEmulator) m.connectFirestoreEmulator(db, mm[1], +mm[2]); } catch { /* ignore */ }
+      CloudBackend._shared = { key, db };
+    }
+    this.db = CloudBackend._shared.db;
   }
   _doc(coll, id) { const m = this.fs; return coll === 'house' ? m.doc(this.db, 'houses', this.id) : m.doc(this.db, 'houses', this.id, coll, id); }
   _coll(coll) { return this.fs.collection(this.db, 'houses', this.id, coll); }

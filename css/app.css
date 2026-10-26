@@ -1,6 +1,6 @@
 /* Tidy House — minimal Apple, tonal Material. Nessuna dipendenza esterna. */
 :root {
-  --accent: #0a84ff;
+  --accent: #1a73e8;
   --on-accent: #fff;
   --bg: #f2f2f7;
   --surface: #ffffff;
@@ -10,8 +10,8 @@
   --text-2: #6c6c70;
   --text-3: #a1a1a6;
   --hair: rgba(60, 60, 67, .13);
-  --ok: #30b05a; --warn: #ff9f0a; --bad: #ff453a;
-  --c-floor: #0a84ff; --c-bathroom: #20b2a5; --c-kitchen: #ff9500; --c-rest: #8e8e93;
+  --ok: #188038; --warn: #f29900; --bad: #d93025;
+  --c-floor: #1a73e8; --c-bathroom: #00897b; --c-kitchen: #e37400; --c-rest: #8e8e93;
   --r-xl: 28px; --r-lg: 22px; --r-md: 16px; --r-sm: 12px;
   --shadow-1: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px -12px rgba(0,0,0,.10);
   --shadow-2: 0 2px 6px rgba(0,0,0,.06), 0 24px 48px -16px rgba(0,0,0,.22);
@@ -65,7 +65,7 @@ svg.i.fill { fill: currentColor; stroke: none; }
 /* boot */
 .boot { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 100; transition: opacity .3s var(--ease); }
 .boot.gone { opacity: 0; pointer-events: none; }
-.boot-mark { width: 56px; height: 56px; border-radius: 18px; background: linear-gradient(160deg, #0a84ff, #30b0a0); animation: breathe 1.4s ease-in-out infinite; }
+.boot-mark { width: 56px; height: 56px; border-radius: 18px; background: #1a73e8; animation: breathe 1.4s ease-in-out infinite; }
 @keyframes breathe { 50% { transform: scale(.88); opacity: .7; } }
 
 /* shell */
@@ -176,18 +176,18 @@ button.li:active, a.li:active { background: var(--surface-2); }
 .tile svg.i { width: 1.45rem; height: 1.45rem; }
 
 /* hero */
-.hero { background: linear-gradient(155deg, color-mix(in srgb, var(--accent) 88%, #fff) 0%, color-mix(in srgb, var(--accent) 70%, #000) 100%); color: #fff; border-radius: 34px; padding: 24px; position: relative; overflow: hidden; box-shadow: 0 20px 40px -18px color-mix(in srgb, var(--accent) 70%, transparent); }
-.hero::after { content: ""; position: absolute; width: 260px; height: 260px; right: -80px; top: -90px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,255,255,.28), transparent); pointer-events: none; }
+  .hero { background: var(--accent); color: #fff; border-radius: 34px; padding: 24px; position: relative; overflow: hidden; box-shadow: 0 12px 28px -16px color-mix(in srgb, var(--accent) 60%, transparent); }
+
 .hero .k { font-size: .8125rem; font-weight: 650; opacity: .85; letter-spacing: .01em; }
 .hero .big { font-size: 2.25rem; line-height: 1.05; font-weight: 800; letter-spacing: -.035em; margin: 6px 0 14px; }
 .hero .meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .hero .chip { background: rgba(255,255,255,.2); color: #fff; }
 .hero .btn { background: #fff; color: color-mix(in srgb, var(--accent) 75%, #000); }
 .hero .btn.glass { background: rgba(255,255,255,.2); color: #fff; }
-.hero.calm { background: linear-gradient(155deg, #34c77b, #1f9d8a); box-shadow: 0 20px 40px -18px rgba(31,157,138,.6); }
-.hero.rest { background: linear-gradient(155deg, #8e8cf0, #5e5ce6); box-shadow: 0 20px 40px -18px rgba(94,92,230,.55); }
-.hero.away { background: linear-gradient(155deg, #a1a1a6, #636366); box-shadow: none; }
-.hero.late { background: linear-gradient(155deg, #ff7a59, #e8454a); box-shadow: 0 20px 40px -18px rgba(232,69,74,.55); }
+.hero.calm { background: #188038; box-shadow: none; }
+.hero.rest { background: #00796b; box-shadow: none; }
+.hero.away { background: #5f6368; box-shadow: none; }
+.hero.late { background: #d93025; box-shadow: none; }
 
 /* chore rows */
 .chore { display: flex; align-items: center; gap: 14px; padding: 14px 16px; width: 100%; text-align: left; border-radius: var(--r-lg); transition: background .15s, transform .2s var(--spring); }
@@ -254,7 +254,7 @@ select.input { background-image: linear-gradient(45deg, transparent 50%, var(--t
 /* onboarding */
 .gate { min-height: 100dvh; display: grid; align-content: center; justify-items: center; padding: calc(var(--safe-t) + 24px) 20px calc(var(--safe-b) + 24px); }
 .gate .panel { width: min(100%, 460px); display: grid; gap: 22px; }
-.gate .logo { width: 84px; height: 84px; border-radius: 26px; background: linear-gradient(160deg, #0a84ff, #30b0a0); box-shadow: 0 18px 36px -14px rgba(10,132,255,.6); display: grid; place-items: center; color: #fff; }
+.gate .logo { width: 84px; height: 84px; border-radius: 26px; background: var(--accent); box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--accent) 70%, transparent); display: grid; place-items: center; color: #fff; }
 .gate .logo svg.i { width: 44px; height: 44px; stroke-width: 1.6; }
 .gate h1 { font-size: 2.5rem; line-height: 1.04; letter-spacing: -.04em; font-weight: 800; }
 .gate .lead { color: var(--text-2); font-size: 1.0625rem; }

@@ -22,7 +22,7 @@ export const DEFAULT_NOTIF = {
 export const NOTIF_TYPES = ['friAbsence', 'satDuty', 'sunMark', 'late', 'monNew', 'planDay', 'adminDigest', 'requests', 'needs', 'nudges'];
 export const HOME_WIDGETS = ['hero', 'alerts', 'week', 'checklist', 'quick', 'links', 'away', 'upcoming', 'makeups', 'ranking', 'needs'];
 export const DEFAULT_HOME = { order: [...HOME_WIDGETS], hidden: ['makeups', 'needs'] };
-export const PALETTE = ['#0a84ff', '#30b0a0', '#ff9f0a', '#ff375f', '#bf5af2', '#64a834', '#ff6a3d', '#5e7ce2'];
+export const PALETTE = ['#1a73e8', '#00796b', '#188038', '#e37400', '#d93025', '#c2185b', '#5f6368', '#00838f']; // Material: blu Google, teal, verde, arancio, rosso, rosa, grigio ardesia, ciano
 
 export const feature = (house, k) => ((house.features || {})[k] ?? DEFAULT_FEATURES[k]) !== false;
 export const effortOf = (house) => ({ ...DEFAULT_EFFORT, ...(house.effort || {}) });
