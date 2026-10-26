@@ -311,3 +311,6 @@ Object.assign(en, { 'setX.admin.title': 'Change admin', 'setX.admin.hint': 'Pick
 
 Object.assign(it, { 'setX.house.requirePush': 'Notifiche obbligatorie su mobile', 'setX.house.requirePushHint': 'Su telefono e tablet l\'app chiede di installarla e di attivare le notifiche prima di continuare (solo se le chiavi push sono configurate).' });
 Object.assign(en, { 'setX.house.requirePush': 'Notifications required on mobile', 'setX.house.requirePushHint': 'On phones and tablets the app asks to install it and turn on notifications before continuing (only if the push keys are configured).' });
+
+Object.assign(it, { 'setX.notif.testServer': 'Invia prova dal server', 'setX.notif.testServerSent': 'Richiesta inviata: la notifica arriva al prossimo controllo del server (puoi anticiparlo da GitHub → Actions → Run workflow).' });
+Object.assign(en, { 'setX.notif.testServer': 'Send test from server', 'setX.notif.testServerSent': 'Request sent: the notification arrives at the next server check (you can speed it up from GitHub → Actions → Run workflow).' });

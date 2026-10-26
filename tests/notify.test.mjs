@@ -122,3 +122,13 @@ test('server notifiche: sostituzioni, offerte, avvisi, spesa aggiunta e spesa co
   const n = got.length; await runNotify({ db, send: async (s, p) => got.push(p), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
   assert.equal(got.length, n, 'nessun duplicato');
 });
+
+test('server notifiche: prova dal server arriva solo al dispositivo che l\'ha chiesta, una volta', async () => {
+  const m = members(); m.dA2 = { personId: 'A', push: { endpoint: 'eA2' }, lang: 'it' };
+  const db = fakeDb({ members: m, requests: { t1: { kind: 'test', to: 'A', device: 'dA2', status: 'info' } } });
+  const got = []; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title]), now: new Date('2026-10-30T10:00:00Z'), vapidPublic: 'PUB' });
+  assert.deepEqual(got.filter((g) => /prova/i.test(g[1])), [['eA2', 'Notifica di prova']]);
+  assert.equal(db.houses.H1.requests.t1.notified, true);
+  const n = got.length; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title]), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
+  assert.equal(got.filter((g) => /prova/i.test(g[1])).length, 1, 'nessun duplicato');
+});

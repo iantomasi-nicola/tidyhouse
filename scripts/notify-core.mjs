@@ -27,7 +27,7 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
       const lang = (m) => (m && m.lang) || house.lang || 'it';
 
       const deliver = async (n, extra = {}) => {
-        const targets = targetsFor(n, members, house);
+        const targets = targetsFor(n, members, house).filter((t) => !n.onlyDevice || t.id === n.onlyDevice);
         let ok = 0;
         for (const t of targets) {
           const msg = n.custom ? n.custom(lang(t)) : notifMessage(n, house, lang(t), eh.weeks);
@@ -56,6 +56,10 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
           if (rq.notified) continue;
           const ok = await deliver({ type: 'nudges', personId: rq.to, key: 'nudge:' + rid, custom: (l) => ({ title: tr(l, 'n.nudge.title'), body: tr(l, 'n.nudge.body', { name: name(rq.from), text: rq.text || tr(l, 'n.nudge.default') }), url: '#/' }) });
           if (ok > 0 || !targetsFor({ type: 'nudges', personId: rq.to }, members, house).length) await db.setDoc(hid, 'requests', rid, { notified: true }, true);
+        } else if (rq.kind === 'test') {   // prova dal server: solo al dispositivo che l'ha chiesta
+          if (rq.notified) continue;
+          const ok = await deliver({ type: 'test', personId: rq.to, onlyDevice: rq.device, key: 'test:' + rid, custom: (l) => ({ title: tr(l, 'n.test.title'), body: tr(l, 'n.test.body'), url: '#/' }) });
+          await done(ok, { notified: true });
         } else if (rq.kind === 'notice') {
           if (rq.notified || !reqOn) continue;
           await done(await deliver({ type: 'requests', personId: rq.to, key: 'notice:' + rid, custom: (l) => ({ title: tr(l, `n.notice.${rq.code}.title`), body: tr(l, `n.notice.${rq.code}.body`, { name: name(rq.from), chore: CH(l, rq.chore) }), url: '#/' }) }), { notified: true });
