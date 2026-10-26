@@ -1,0 +1,68 @@
+/* Assenze e viaggi */
+.trips-page { display: grid; gap: 16px; align-content: start; }
+.trips-page .title { margin-bottom: 2px; }
+.trips-cta { display: grid; }
+.trips-grid { display: grid; gap: 20px; align-items: start; }
+.trips-col { display: grid; gap: 20px; align-content: start; min-width: 0; }
+.trips-sec .eyebrow { margin-top: 0; }
+.trips-sec .eyebrow .chip { height: 22px; font-variant-numeric: tabular-nums; }
+.trips-more { margin-top: 10px; justify-self: start; }
+@media (min-width: 1000px) { .trips-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; } }
+
+/* card viaggio */
+.trip { display: grid; gap: 12px; padding: 18px; }
+.trip.past { opacity: .82; }
+.trip.now { box-shadow: 0 0 0 2px var(--accent), var(--shadow-1); }
+.trip-head { display: flex; align-items: center; gap: 12px; }
+.trip-who { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.trip-name { font-weight: 700; letter-spacing: -.01em; }
+.trip-dates { color: var(--text-2); font-size: .9375rem; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.trip-del { color: var(--text-3); flex: none; width: 44px; height: 44px; margin: -6px -8px -6px 0; }
+.trip-del:hover { color: var(--bad); }
+.trip-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.trip-meta:empty { display: none; }
+.trip-note { margin: 0; font-size: .9375rem; padding: 10px 14px; border-radius: var(--r-md); background: var(--surface-2); }
+.trip-weeks { display: grid; gap: 6px; }
+.wk-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.wk-chips .chip { font-variant-numeric: tabular-nums; }
+
+/* assenza per singola settimana */
+.wk-head { padding: 16px 18px 6px; display: grid; gap: 12px; }
+.wk-list { list-style: none; margin: 0; padding: 0; }
+.wk-row { display: flex; align-items: center; gap: 12px; padding: 12px 18px; min-height: 60px; border-top: .5px solid var(--hair); }
+.wk-row.cur { background: var(--tonal); }
+.wk-range { font-weight: 600; font-variant-numeric: tabular-nums; }
+.wk-sub { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.wk-sub:empty { display: none; }
+.wk-sw { display: flex; align-items: center; gap: 10px; flex: none; }
+.wk-lbl { font-size: .8125rem; color: var(--text-2); font-weight: 600; }
+.wk-sw .switch input:disabled { cursor: not-allowed; }
+.wk-sw .switch input:disabled + i { opacity: .55; }
+.wk-foot { padding: 10px 18px 16px; margin: 0; }
+@media (max-width: 380px) { .wk-lbl { display: none; } }
+
+/* sheet nuova assenza */
+.trip-form { gap: 16px; }
+.trip-who-static { display: flex; align-items: center; gap: 12px; padding: 4px 2px; }
+.q-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.q-chip { min-height: 44px; padding: 0 16px; border-radius: 999px; background: var(--tonal); color: var(--accent-ink); font-weight: 650; font-size: .9375rem; transition: transform .2s var(--spring), background .2s; }
+.q-chip:active { transform: scale(.95); background: var(--tonal-2); }
+.trip-dates-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trip-dates-grid > .field { min-width: 0; }
+.trip-dates-grid[data-open] { grid-template-columns: 1fr; }
+.trip-dates-grid input[type="date"] { min-width: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 420px) { .trip-dates-grid { grid-template-columns: 1fr; } }
+.trip-open { padding: 4px 4px 0; min-height: 44px; }
+.trip-open-lbl { font-weight: 600; }
+.trip-pv-card { padding: 16px; background: var(--surface); }
+.trip-pv-card .eyebrow { margin: 0 0 10px; }
+.trip-preview { display: grid; gap: 12px; }
+.pv-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pv-nights { display: flex; align-items: baseline; gap: 8px; }
+.pv-nights .big-num { font-size: 2.25rem; }
+.pv-count { font-weight: 650; font-variant-numeric: tabular-nums; }
+.pv-weeks { list-style: none; margin: 0; padding: 0; display: grid; }
+.pv-week { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; padding: 8px 0; border-top: .5px solid var(--hair); font-variant-numeric: tabular-nums; }
+.pv-week:first-child { border-top: 0; }
+.pv-range { font-weight: 600; }
+.pv-n { color: var(--text-2); font-size: .8125rem; }
