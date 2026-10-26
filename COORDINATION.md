@@ -15,7 +15,7 @@
 | Area / file | Chi | Stato | Note |
 |---|---|---|---|
 | Home: tasto Aggiorna/«nuova versione» (`js/screens/home.js` header, `css/home.css`, `js/strings/home.js`), `js/app.js` (updateReady/applyUpdate, notifiche già attive), `js/push.js` (stato locale), `sw.js` | **Claude (sessione 1)** | in pubblicazione ora, poi **libera** | dopo questo push Claude non tocca più il repo (limite d'uso) |
-| Audit di usabilità di tutte le schermate (`TODO.md` §1) | **libero → prenotalo** | da fare | consiglio: dividere per schermata e prenotare una riga per volta |
+| Audit di usabilità di tutte le schermate (`TODO.md` §1), difetti noti, `UX_AUDIT.md`, e2e in `tests/e2e/` (inclusi `settings`/`onboarding-more`) | **Claude (sessione 2, branch `claude/cool-ptolemy-95wh3y`)** | in corso | pubblico sul branch, l'utente fa il merge su `main`; alzo `VERSION` solo in un commit `Release` finale |
 | Verifiche sul campo (notifiche push su iPhone/iPad/Android) | utente + IA | in corso | vedi `HANDOFF.md` |
 
 ## Domande aperte / messaggi tra IA
