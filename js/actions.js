@@ -34,6 +34,8 @@ export class Actions {
   /** ctx: { meId, isAdmin, deviceId, now:()=>Date } */
   constructor(store, ctx) { this.s = store; this.ctx = ctx; if (!ctx.now) ctx.now = () => new Date(); }
   get house() { return this.s.state.house || {}; }
+  /** Chiede al server di controllare subito le notifiche (se l'admin ha configurato l'avvio immediato). */
+  kick() { try { if (this.ctx.kick) this.ctx.kick(); } catch { /* ignore */ } }
   get me() { return this.ctx.meId; }
   get admin() { return !!this.ctx.isAdmin; }
   today() { return localDate(this.ctx.now()); }
@@ -248,9 +250,9 @@ export class Actions {
     this.need(!!this.me || this.admin);
     const clean = String(text || '').trim().slice(0, 80); if (!clean) throw new Error('invalid');
     const id = uid(); await this.s.setDoc('needs', id, { text: clean, urgent: !!urgent, by: this.me || 'admin', at: this.ctx.now().toISOString(), done: false });
-    await this.log('need', { text: clean }); return id;
+    await this.log('need', { text: clean }); this.kick(); return id;
   }
-  async setNeedDone(id, done) { await this.s.setDoc('needs', id, { done: !!done, doneBy: done ? (this.me || 'admin') : null, doneAt: done ? this.ctx.now().toISOString() : null }); }
+  async setNeedDone(id, done) { await this.s.setDoc('needs', id, { done: !!done, doneBy: done ? (this.me || 'admin') : null, doneAt: done ? this.ctx.now().toISOString() : null }); if (done) this.kick(); }
   async removeNeed(id) { await this.s.delDoc('needs', id); }
   async clearBought() { const ops = Object.entries(this.s.state.needs).filter(([, n]) => n.done).map(([id]) => ({ coll: 'needs', id, del: true })); if (ops.length) await this.s.write(ops); }
 
@@ -353,11 +355,21 @@ export class Actions {
 }
 
 /** Esporta/importa backup JSON della casa. */
-export function exportBackup(state) { return { app: 'casa-pulita', version: 1, exportedAt: new Date().toISOString(), data: JSON.parse(JSON.stringify({ ...state, members: {}, views: {} })) }; }
+export function exportBackup(state) {
+  const data = JSON.parse(JSON.stringify({ ...state, members: {}, views: {} }));
+  if (data.house) delete data.house.kick;   // il token GitHub non finisce mai in un file di backup/esportazione
+  return { app: 'casa-pulita', version: 1, exportedAt: new Date().toISOString(), data };
+}
 export function importBackupOps(backup, keepHouseId) {
   if (!backup || backup.app !== 'casa-pulita' || !backup.data || !backup.data.house) throw new Error('invalid');
   const d = backup.data; const ops = [];
   ops.push({ coll: 'house', data: { ...d.house, id: keepHouseId || d.house.id }, set: true });
   for (const c of ['weeks', 'trips', 'needs', 'log', 'requests']) for (const [id, v] of Object.entries(d[c] || {})) ops.push({ coll: c, id, data: v, set: true });
   return ops;
+}
+
+// Le azioni che generano una notifica chiedono al server di controllare subito (vedi js/kick.js).
+for (const m of ['requestCover', 'offerCover', 'answerCover', 'requestSwap', 'answerSwap', 'assignCover', 'nudge', 'testAll', 'setDelay']) {
+  const f = Actions.prototype[m];
+  Actions.prototype[m] = async function (...a) { const r = await f.apply(this, a); this.kick(); return r; };
 }

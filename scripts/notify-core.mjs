@@ -93,11 +93,10 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
       }
       if (cfg.needs.on) {
         for (const [nid, nd] of Object.entries(needs)) {
-          // 1) nuova voce aggiunta
+          // 1) nuova voce aggiunta (a tutti, anche a chi l'ha aggiunta: basta avere le notifiche attive)
           if (!nd.notified && !nd.done && now - new Date(nd.at) <= DAY) {
             let any = 0;
             for (const r of house.roommates) {
-              if (r.id === nd.by) continue;
               any += await deliver({ type: 'needs', personId: r.id, key: 'need:' + nid + ':' + r.id, custom: (l) => ({ title: tr(l, 'n.need.title'), body: tr(l, 'n.need.body', { name: nameOf(house, nd.by), text: nd.text }), url: '#/needs' }) });
             }
             if (any > 0) await db.setDoc(hid, 'needs', nid, { notified: true }, true);
@@ -106,7 +105,6 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
           if (nd.done && !nd.boughtNotified && nd.doneAt && now - new Date(nd.doneAt) <= DAY) {
             let any = 0;
             for (const r of house.roommates) {
-              if (r.id === nd.doneBy) continue;
               any += await deliver({ type: 'needs', personId: r.id, key: 'bought:' + nid + ':' + r.id, custom: (l) => ({ title: tr(l, 'n.need.bought.title'), body: tr(l, 'n.need.bought.body', { name: nameOf(house, nd.doneBy), text: nd.text }), url: '#/needs' }) });
             }
             if (any > 0) await db.setDoc(hid, 'needs', nid, { boughtNotified: true }, true);

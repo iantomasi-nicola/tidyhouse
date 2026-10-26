@@ -6,6 +6,7 @@ import { registerStrings as __reg } from '../i18n.js';
 import { it as __flowIt, en as __flowEn } from '../strings/flow.js';
 __reg(__flowIt, __flowEn);   // widget.shared & co. servono anche aprendo direttamente le impostazioni
 import { t, registerStrings, fmtDate, fmtWeekRange, LANGS } from '../i18n.js';
+import { hasKick, kickNow, repoOf } from '../kick.js';
 import { DEFAULT_TASK_PENALTY, DEFAULT_FEATURES, NOTIF_TYPES, HOME_WIDGETS, DEFAULT_HOME, PALETTE, planNotifications, notifCfg, effortOf, localParts, uid, buildStats, historyRows, toCsv, validateHouse } from '../extras.js';
 import { validateRoommates, addDays, DEFAULT_SETTINGS, CHORES } from '../engine.js';
 import { exportBackup, verifyPin, hashPin, newSalt } from '../actions.js';
@@ -612,6 +613,31 @@ export function previewNotifications(ctx, days = 7) {
   return [...groups.values()];
 }
 
+/** Admin: avvio immediato delle notifiche (token GitHub limitato a questo repository). */
+function kickBlock(ctx) {
+  const hs = ctx.house; const on = hasKick(hs); const repo = repoOf(hs);
+  const tok = h('input', { class: 'input', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'github_pat_…', 'aria-label': t('setX.kick.token'), 'data-testid': 'kick-token' });
+  const status = h('div', { class: 'small', 'aria-live': 'polite', 'data-testid': 'kick-status' });
+  return h('div', { class: 'stack tight', 'data-testid': 'kick' },
+    sectionTitle(t('setX.kick.title')),
+    card(
+      h('div', { class: 'row' }, h('div', { class: 'ico ' + (on ? 'g' : 'o') }, icon('bell')), h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 650 }, 'data-testid': 'kick-state', 'data-on': on ? '1' : '0' }, on ? t('setX.kick.on') : t('setX.kick.off')), h('div', { class: 'small muted' }, on ? t('setX.kick.onHint') : t('setX.kick.offHint')))),
+      on ? null : h('ol', { class: 'st-steps small' }, ['setX.kick.s1', 'setX.kick.s2', 'setX.kick.s3', 'setX.kick.s4'].map((k) => h('li', null, t(k, { repo: repo || 'utente/repo' })))),
+      repo ? null : note('warn', 'alert', t('setX.kick.norepo')),
+      h('form', { class: 'stack tight', onsubmit: async (e) => {
+        e.preventDefault(); const v = tok.value.trim(); if (!v) return;
+        await setHouse(ctx, { kick: { token: v } }); tok.value = '';
+      } }, tok, btn(t('save'), null, { cls: '', type: 'submit', id: 'kick-save' })),
+      on ? h('div', { class: 'btn-row' },
+        btn(t('setX.kick.test'), async () => {
+          status.textContent = t('setX.kick.testing');
+          const r = await kickNow(ctx.house);
+          status.textContent = r.ok ? t('setX.kick.testOk') : r.status === 401 || r.status === 403 ? t('setX.kick.testDenied') : r.status === 404 ? t('setX.kick.testNotFound') : t('setX.kick.testFail', { s: r.status || r.reason || '?' });
+        }, { cls: 'tonal', ic: 'bell', id: 'kick-test' }),
+        btn(t('setX.kick.remove'), () => setHouse(ctx, { kick: null }), { cls: 'soft', ic: 'trash', id: 'kick-remove' })) : null,
+      status,
+      foot(t('setX.kick.foot'))));
+}
 function notifHouse(ctx) {
   const hs = ctx.house; const cfg = notifCfg(hs);
   const patch = (k, p) => setHouse(ctx, { notif: { [k]: p } });
@@ -679,6 +705,7 @@ function notifHouse(ctx) {
     group(null, [stepRow({ title: t('sched.catchUp'), desc: t('setX.sched.catchUpHint'), value: Number(cfg.catchUpHours) || 5, min: 1, max: 12, id: 'step-catchUp', fmt: (v) => v + ' h', onchange: (v) => setHouse(ctx, { notif: { catchUpHours: v } }) })]),
     h('div', { class: 'stack tight' }, sectionTitle(t('sched.preview')), h('div', { class: 'list', 'data-testid': 'preview' }, prevRows), foot(t('setX.sched.previewNote'))),
     h('div', { class: 'stack tight' }, sectionTitle(t('sched.pushKeys')), keyBlock),
+    kickBlock(ctx),
     h('div', { class: 'stack tight' }, sectionTitle(t('setX.sched.server')), serverBlock));
 }
 
@@ -830,7 +857,7 @@ function askSecret(ctx, { title, text, ok, run, repeat = false, min = 1 }) {
   });
 }
 
-const KEEP_FIELDS = ['adminHash', 'adminSalt', 'vapidPublic', 'serverRun', 'prevIds', 'rotatedAt', 'ignoreLeft'];
+const KEEP_FIELDS = ['adminHash', 'adminSalt', 'vapidPublic', 'serverRun', 'prevIds', 'rotatedAt', 'ignoreLeft', 'kick'];
 /** Costruisce la casa da importare mantenendo PIN, chiavi push e storico dei codici di quella attuale. */
 function importedHouse(cur, incoming) {
   const hs = { ...incoming, id: cur.id };

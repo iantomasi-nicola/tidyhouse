@@ -83,7 +83,7 @@ test('server notifiche: scambi, solleciti, scorte', async () => {
   const byEp = (e) => got.filter((g) => g[0] === e).map((g) => g[1] + '|' + g[2]);
   assert.ok(byEp('eA').some((s) => /Richiesta di scambio/.test(s)), 'A riceve la richiesta di B');
   assert.ok(byEp('eC').some((s) => /Sollecito.*segna!/.test(s)));
-  assert.ok(byEp('eB').some((s) => /Sapone/.test(s)) && byEp('eC').some((s) => /Sapone/.test(s)) && !byEp('eA').some((s) => /Sapone/.test(s)), 'scorte: a tutti tranne chi le ha aggiunte');
+  assert.ok(byEp('eB').some((s) => /Sapone/.test(s)) && byEp('eC').some((s) => /Sapone/.test(s)) && byEp('eA').some((s) => /Sapone/.test(s)), 'scorte: a tutti, anche a chi le ha aggiunte');
   assert.equal(db.houses.H1.requests.r1.notified, true); assert.equal(db.houses.H1.requests.n1.notified, true);
   // non rimanda
   got.length = 0; await runNotify({ db, send: async (s) => got.push(s), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
@@ -116,8 +116,8 @@ test('server notifiche: sostituzioni, offerte, avvisi, spesa aggiunta e spesa co
   assert.match(to('eB'), /Looking for a substitute/); assert.match(to('eC'), /Cerca sostituto/); assert.doesNotMatch(to('eA'), /Cerca sostituto/, 'chi chiede non riceve');
   assert.match(to('eC'), /Si offrono di aiutarti.*Pavimenti|Si offrono di aiutarti.*Bagno/);    // offerta B -> C (assegnato)
   assert.match(to('eA'), /Qualcuno ha fatto il tuo turno/); assert.match(to('eA'), /Sostituzione concordata/, 'A sa che B accetta');
-  assert.match(to('eB'), /Sapone/); assert.match(to('eC'), /Sapone/); assert.doesNotMatch(to('eA'), /Sapone/, 'chi aggiunge non riceve');
-  assert.match(to('eA'), /Pasta/); assert.match(to('eC'), /Pasta/); assert.doesNotMatch(to('eB'), /Pasta/, 'chi ha comprato non riceve');
+  assert.match(to('eB'), /Sapone/); assert.match(to('eC'), /Sapone/); assert.match(to('eA'), /Sapone/, 'anche chi aggiunge riceve');
+  assert.match(to('eA'), /Pasta/); assert.match(to('eC'), /Pasta/); assert.match(to('eB'), /Pasta/, 'anche chi ha comprato riceve');
   assert.equal(db.houses.H1.needs.x2.boughtNotified, true); assert.equal(db.houses.H1.requests.n1.notified, true);
   const n = got.length; await runNotify({ db, send: async (s, p) => got.push(p), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
   assert.equal(got.length, n, 'nessun duplicato');

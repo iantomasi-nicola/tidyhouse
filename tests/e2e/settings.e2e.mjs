@@ -326,6 +326,29 @@ await test('admin: prova di notifica a tutti (una richiesta per persona con push
   noErrors(page);
 });
 
+await test('notifiche immediate: token, prova e avvio dopo una voce della spesa', async (mk) => {
+  const page = await mk({ houseExtra: { kick: null } });
+  const calls = [];
+  await page.route('https://api.github.com/**', (route) => { calls.push({ url: route.request().url(), auth: route.request().headers()['authorization'], body: route.request().postData() }); route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' }, body: '' }); });
+  await page.evaluate(() => { window.__app.house.id; });
+  await go(page, 'notif-house');
+  assert.equal(await page.locator(tid('kick-state')).getAttribute('data-on'), '0');
+  await page.fill(tid('kick-token'), 'github_pat_TEST'); await page.click(tid('kick-save'));
+  await until(page, () => window.__app.house.kick && window.__app.house.kick.token === 'github_pat_TEST');
+  // il repository viene dedotto solo da GitHub Pages: in locale lo impostiamo nella casa
+  await page.evaluate(() => window.__app.actions.setHouse({ kick: { token: 'github_pat_TEST', repo: 'o/r' } }));
+  await until(page, () => window.__app.house.kick.repo === 'o/r');
+  await page.waitForSelector(`${tid('kick-state')}[data-on="1"]`);
+  await page.click(tid('kick-test'));
+  await page.waitForFunction(() => /Fatto/.test(document.querySelector('[data-testid=kick-status]').textContent));
+  assert.equal(calls.length, 1); assert.match(calls[0].url, /repos\/o\/r\/actions\/workflows\/notify\.yml\/dispatches$/); assert.equal(calls[0].auth, 'Bearer github_pat_TEST'); assert.deepEqual(JSON.parse(calls[0].body), { ref: 'main' });
+  // una voce della spesa avvia il server dopo qualche secondo (e una sola volta anche con più voci)
+  await page.evaluate(async () => { await window.__app.actions.addNeed('Latte'); await window.__app.actions.addNeed('Pane'); });
+  await page.waitForTimeout(7500);
+  assert.equal(calls.length, 2, 'un solo avvio per due voci ravvicinate');
+  await shot(page, 'kick-390'); noErrors(page);
+});
+
 await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => {
   const page = await mk({ viewport: { width: 390, height: 844 } }); await go(page, 'notif-house');
   await page.selectOption(tid('dow-satDuty'), '5'); await until(page, () => window.__app.house.notif.satDuty.dow === 5);

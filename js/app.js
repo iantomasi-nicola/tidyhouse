@@ -5,6 +5,7 @@ import { t, tr, setLang, getLang, detectLang, registerStrings } from './i18n.js'
 import { it as coreIt, en as coreEn } from './strings/core.js';
 import { compute } from './engine.js';
 import { Store, LocalBackend, CloudBackend, engineHouse } from './store.js';
+import { scheduleKick } from './kick.js';
 import { Actions, buildHouse, verifyPin, localDate, importBackupOps, exportBackup, normalizeStartSunday } from './actions.js';
 import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
 
@@ -65,7 +66,7 @@ async function attach(id, mode) {
   if (!res.exists) { b.close && b.close(); return { ok: false, reason: 'notfound' }; }
   S.houseId = id; S.mode = mode;
   S.store = new Store(b);
-  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null), localRulesAckSave: (v) => saveRulesAck(v) });
+  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null), localRulesAckSave: (v) => saveRulesAck(v), kick: () => scheduleKick(() => S.store && S.store.state.house) });
   S.store.on(() => { S.version++; if (S.switching) return; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
   S.version++;
   return { ok: true };

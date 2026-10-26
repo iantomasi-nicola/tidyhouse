@@ -7,7 +7,7 @@ const CACHE = `tidyhouse-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'config.js',
   'css/app.css', 'css/settings.css',
-  'js/app.js', 'js/ui.js', 'js/i18n.js', 'js/engine.js', 'js/store.js', 'js/actions.js', 'js/extras.js', 'js/ai.js', 'js/ai-ui.js', 'js/push.js',
+  'js/app.js', 'js/ui.js', 'js/i18n.js', 'js/engine.js', 'js/store.js', 'js/actions.js', 'js/extras.js', 'js/ai.js', 'js/ai-ui.js', 'js/push.js', 'js/kick.js',
   'js/backupcrypto.js', 'js/xlsx-import.js', 'js/choresheet.js',
   'js/screens/home.js', 'js/screens/calendar.js', 'js/screens/trips.js', 'js/screens/stats.js', 'js/screens/more.js', 'js/screens/settings.js', 'js/screens/onboarding.js',
   'js/strings/set.js', 'js/strings/push.js',
