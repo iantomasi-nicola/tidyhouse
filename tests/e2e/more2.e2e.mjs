@@ -37,7 +37,7 @@ async function noOverflow(page, label) {
 }
 async function noRawKeys(page, label) {
   const txt = await body(page);
-  const m = txt.match(/\b(onb|moreX|moreY|more|needs|rules|tasks|lastout|req|act|acc|setX|guide|misc|home|chore)\.[a-zA-Z][\w.]*/);
+  const m = txt.match(/\b(onb|moreX|moreY|moreZ|more|needs|rules|tasks|lastout|req|act|acc|setX|guide|misc|home|chore)\.[a-zA-Z][\w.]*/);
   assert.doesNotMatch(txt, /\b(null|undefined|NaN)\b/, 'valori grezzi in ' + label);
   assert.ok(!m, `chiave non tradotta in ${label}: ${m && m[0]}`);
 }
@@ -141,25 +141,36 @@ await scenario('needs: Invio aggiunge e svuota, doppio invio, trim, 80 caratteri
   assert.match(first, /Detersivo/); assert.match(first, /Urgente/); assert.match(first, /Aggiunto da Anna/);
   assert.equal(await page.locator('.mx-needform .switch input').isChecked(), false, 'urgente si azzera');
   await shot(page, 'needs-list');
-  // comprato: breve animazione, poi passa a "Comprati"
-  await page.locator('.mx-need', { hasText: 'Pane' }).locator('.checkcircle').click();
+  // comprato: un tocco sulla riga intera, breve animazione, poi passa a "Comprate" (sezione chiusa) + toast Annulla
+  await page.locator('.mx-need', { hasText: 'Pane' }).locator('.mx-needmain').click();
   await page.waitForSelector('.mx-need.buying');
-  await page.waitForSelector('.mx-done .mx-need');
+  await page.waitForFunction(() => document.querySelectorAll('.mx-done .mx-need').length === 1);
+  assert.equal(await page.locator('.mx-done').isVisible(), false, 'le comprate sono collassate');
+  assert.match(await page.locator('.toast').last().innerText(), /Comprato: Pane/);
+  await page.locator('.mx-donetoggle').click();
+  assert.equal(await page.locator('.mx-done').isVisible(), true);
   assert.match(await page.locator('.mx-done').innerText(), /Comprato da Anna/);
   assert.equal(await page.locator('.mx-need.buying').count(), 0);
-  // rimetti da comprare
-  await page.locator('.mx-done .checkcircle').click();
+  // rimetti da comprare (tocco sulla riga comprata)
+  await page.locator('.mx-done .mx-needmain').click();
   await page.waitForFunction(() => !document.querySelector('.mx-done'));
-  await page.locator('.mx-need', { hasText: 'Pane' }).locator('.checkcircle').click();
-  await page.waitForSelector('.mx-done .mx-need');
+  await page.locator('.mx-need', { hasText: 'Pane' }).locator('.mx-needmain').click();
+  await page.waitForFunction(() => document.querySelectorAll('.mx-done .mx-need').length === 1);
+  // Svuota: nessuna conferma, ma Annulla nel messaggio
   await page.getByRole('button', { name: /Clear bought|Svuota comprati/ }).click();
-  await page.locator('.sheet').getByRole('button', { name: /Svuota comprati/ }).click();
+  await page.waitForFunction(() => !document.querySelector('.mx-done'));
+  assert.equal(await page.locator('.sheet').count(), 0, 'nessuna conferma');
+  assert.equal(Object.keys((await store(page)).needs).length, 2);
+  await page.locator('.toast-action', { hasText: 'Annulla' }).last().click();
+  await page.waitForFunction(() => document.querySelectorAll('.mx-done .mx-need').length === 1);
+  assert.equal(Object.keys((await store(page)).needs).length, 3, 'Annulla ha rimesso la voce comprata');
+  await page.getByRole('button', { name: /Clear bought|Svuota comprati/ }).click();
   await page.waitForFunction(() => !document.querySelector('.mx-done'));
   assert.equal(Object.keys((await store(page)).needs).length, 2);
   // elimina con "Annulla"
   await page.locator('.mx-need', { hasText: 'Detersivo' }).locator('button.icon-btn').click();
   await page.waitForFunction(() => !/Detersivo/.test(document.querySelector('.mx-needlist').innerText));
-  await page.locator('.toast-action').click();
+  await page.locator('.toast-action').last().click();
   await page.waitForFunction(() => /Detersivo/.test(document.querySelector('.mx-needlist').innerText));
   assert.ok(Object.values((await store(page)).needs).some((n) => n.text === 'Detersivo' && n.urgent === true));
   await noOverflow(page, 'needs'); await noRawKeys(page, 'needs');

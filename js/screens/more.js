@@ -6,10 +6,13 @@ import { CHORES, DEFAULT_SETTINGS, addDays } from '../engine.js';
 import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, SHARED_TEMPLATES, sharedStatus, tasksForWeek, checklistFor, nextDueWeek, weekIndex, weekOfDate, uid } from '../extras.js';
 import { it, en } from '../strings/more.js';
 import { it as it2, en as en2 } from '../strings/more2.js';
+import { it as it3, en as en3 } from '../strings/more3.js';
+import { normNeed, frequentNeeds, distinctNeeds, starterNeeds, splitPasted } from '../needs-suggest.js';
 import { it as itFlow, en as enFlow } from '../strings/flow.js';   // flow.shared.* (testi condivisi con la Home)
 
 registerStrings(it, en);
 registerStrings(it2, en2);
+registerStrings(it3, en3);
 registerStrings(itFlow, enFlow);
 
 const REPO = 'https://github.com/iantomasi-nicola/tidyhouse';
@@ -134,15 +137,27 @@ function buildNeeds(ctx, key, draft) {
   const holding = new Map();   // id -> timer: voce appena spuntata, resta ferma il tempo dell'animazione
   const pending = [];          // voci inviate non ancora confermate (ottimistiche)
   const openCache = new Map(), doneCache = new Map();
-  let painted = false; let urgent = !!(draft && draft.urgent); let stopped = false;
+  let painted = false; let urgent = !!(draft && draft.urgent); let stopped = false; let doneOpen = !!(draft && draft.doneOpen);
+  const starterTexts = [1, 2, 3, 4, 5, 6].map((i) => t('moreZ.starter.' + i));
 
   const inp = h('input', { class: 'input', id: 'mx-need', type: 'text', maxlength: String(NEED_MAX), autocomplete: 'off', autocapitalize: 'sentences', enterkeyhint: 'send', placeholder: t('needs.placeholder'), 'aria-label': t('needs.add') });
   inp.value = (draft && draft.text) || '';
   const counter = h('span', { class: 'mx-count', 'aria-hidden': 'true', hidden: true });
   const updCounter = () => { const n = inp.value.length; counter.hidden = n < NEED_MAX - 20; counter.textContent = t('moreY.need.count', { n }); counter.classList.toggle('max', n >= NEED_MAX); };
-  inp.addEventListener('input', updCounter); updCounter();
+  inp.addEventListener('input', () => { updCounter(); paintSugg(); }); updCounter();
   // Invio gestito qui (non solo dall'invio implicito del form: il browser lo ignora se arriva poco dopo il precedente)
   inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229 && !e.shiftKey) { e.preventDefault(); add(); } });
+  // incolla più righe (es. la lista scritta su WhatsApp): una riga = una voce
+  inp.addEventListener('paste', (e) => {
+    const items = splitPasted(e.clipboardData && e.clipboardData.getData('text'), NEED_MAX);
+    if (!items.length) return;
+    e.preventDefault();
+    const isUrgent = urgent; setUrgent(false);
+    const n = items.filter((x) => send(x, isUrgent)).length;
+    paint();
+    if (n > 1) ctx.toast(t('moreZ.pasted', { n }));
+    if (n) ctx.haptic(ctx.prefs.haptics, 8);
+  });
   const urgentSw = toggle(urgent, (v) => { urgent = v; }, t('needs.urgent'));
   const urgentInp = urgentSw.querySelector('input');
   const setUrgent = (v) => { urgent = v; urgentInp.checked = v; };
@@ -151,39 +166,73 @@ function buildNeeds(ctx, key, draft) {
   const openList = h('div', { class: 'list' }); const doneList = h('div', { class: 'list mx-done' });
   const emptyCard = h('div', { class: 'card' }, empty('cart', t('needs.empty')));
   const openSec = h('div', null, h('div', { class: 'eyebrow' }, t('needs.open'), openCount), openList);
-  const clearBtn = h('button', { type: 'button', onclick: async () => {
-    const n = Object.values(ctx.state.needs || {}).filter((x) => x.done).length;
-    if (!n || !(await confirmDialog({ title: t('needs.clearDone'), text: t('moreX.clearConfirm', { n }), ok: t('needs.clearDone'), danger: true }))) return;
-    await attempt(ctx, () => ctx.actions.clearBought()); paint();
-  } }, t('needs.clearDone'));
-  const doneSec = h('div', null, h('div', { class: 'eyebrow' }, h('span', { class: 'row' }, t('needs.history'), doneCount), clearBtn), doneList);
+  // «Comprate»: sezione chiusa di default; «Svuota» non chiede conferma ma offre Annulla
+  const doneToggle = h('button', { type: 'button', class: 'mx-donetoggle', 'aria-expanded': 'false', 'aria-label': t('moreZ.boughtToggle'), onclick: () => { doneOpen = !doneOpen; paint(); } }, h('span', null, t('moreZ.bought')), doneCount, icon('chevron'));
+  const clearBtn = h('button', { type: 'button', class: 'mx-clear', 'aria-label': t('needs.clearDone'), onclick: () => clearBought() }, t('moreZ.clear'));
+  const doneSec = h('div', null, h('div', { class: 'eyebrow mx-donehead' }, doneToggle, clearBtn), doneList);
   const listBox = h('div', { class: 'stack mx-needlist' });
   const triBox = h('div');
+  const noteBox = h('div');   // avviso offline
+  const suggRow = h('div', { class: 'mx-sugg', role: 'group', 'aria-label': t('moreZ.sugg.label'), hidden: true });
+  const starterChips = h('div', { class: 'mx-starter-chips' });
+  const starterCard = h('section', { class: 'card stack tight mx-starter' }, h('div', { class: 'mx-lblb' }, t('moreZ.starter.title')), h('div', { class: 'small muted' }, t('moreZ.starter.hint')), starterChips);
+  let suggSig = '', starterSig = '', chipHadFocus = false;
 
-  const findOpen = (text) => Object.entries(ctx.state.needs || {}).find(([, n]) => !n.done && String(n.text || '').trim().toLowerCase() === text.toLowerCase());
+  const findOpen = (text) => Object.entries(ctx.state.needs || {}).find(([, n]) => n && !n.done && normNeed(n.text) === normNeed(text));
   const flash = (id) => { const c = openCache.get(id); if (!c) return; c.el.classList.remove('flash'); void c.el.offsetWidth; c.el.classList.add('flash'); setTimeout(() => c.el.classList.remove('flash'), 1100); };
 
+  /** Invia una voce (ottimismo immediato). Ritorna false se è già in lista. Non tocca il campo né il focus. */
+  function send(text, isUrgent) {
+    const dup = findOpen(text);
+    if (dup) { flash(dup[0]); ctx.toast(t('moreY.need.dup', { text })); return false; }
+    const p = { tid: uid(), text, urgent: isUrgent, start: ctx.now().toISOString() };
+    const req = ctx.actions.addNeed(text, isUrgent);   // lo store si aggiorna subito (ottimistico); la riga provvisoria copre i backend lenti
+    pending.push(p);
+    req.catch((e) => {
+      console.error(e);
+      if (e && e.message === 'permission') ctx.toast(t('err.permission'));
+      else ctx.toast(t('moreY.need.addFail', { text }), 7000, { action: { label: t('moreZ.retry'), onClick: () => { send(text, isUrgent); paint(); } } });
+    }).finally(() => { const i = pending.indexOf(p); if (i >= 0) pending.splice(i, 1); paint(); });
+    return true;
+  }
   function add() {
     const text = inp.value.trim().slice(0, NEED_MAX).trim();
     inp.value = ''; updCounter();                       // svuota subito: un secondo Invio non trova nulla da inviare
-    if (!text) { inp.focus(); return; }
+    if (!text) { inp.focus(); paintSugg(); return; }
     const isUrgent = urgent; setUrgent(false);
-    const dup = findOpen(text);
-    if (dup) { flash(dup[0]); ctx.toast(t('moreY.need.dup', { text })); inp.focus(); return; }
-    const p = { tid: uid(), text, urgent: isUrgent, start: ctx.now().toISOString() };
-    const req = ctx.actions.addNeed(text, isUrgent);   // lo store si aggiorna subito (ottimistico); la riga provvisoria copre i backend lenti
-    pending.push(p); paint(); inp.focus();
-    ctx.haptic(ctx.prefs.haptics, 8);
-    req.catch((e) => {
-      console.error(e);
-      if (!inp.value) { inp.value = text; updCounter(); setUrgent(isUrgent); }
-      ctx.toast(e && e.message === 'permission' ? t('err.permission') : t('moreY.need.addFail', { text }));
-    }).finally(() => { const i = pending.indexOf(p); if (i >= 0) pending.splice(i, 1); paint(); });
+    const ok = send(text, isUrgent);
+    paint(); inp.focus();                               // il campo resta attivo: la tastiera non si chiude
+    if (ok) ctx.haptic(ctx.prefs.haptics, 8);
+  }
+  /** Tocco su un suggerimento: aggiunge la voce. Se la tastiera era aperta resta aperta; il testo digitato (filtro) si svuota. */
+  function addChip(text) {
+    const had = chipHadFocus || document.activeElement === inp; chipHadFocus = false;
+    const isUrgent = urgent; setUrgent(false);
+    inp.value = ''; updCounter();
+    const ok = send(text, isUrgent);
+    paint(); if (had) inp.focus();
+    if (ok) ctx.haptic(ctx.prefs.haptics, 8);
   }
   const addBtn = h('button', { type: 'submit', class: 'btn', 'aria-label': t('add'), onmousedown: (e) => e.preventDefault() }, icon('plus'), h('span', { class: 'mx-hide-s' }, t('add')));
   const form = h('form', { class: 'card stack tight mx-needform', autocomplete: 'off', onsubmit: (e) => { e.preventDefault(); add(); } },
     h('div', { class: 'field' }, h('label', { for: 'mx-need' }, t('needs.add'), counter), h('div', { class: 'mx-addrow' }, inp, addBtn)),
+    suggRow,
     h('div', { class: 'row-between' }, h('div', { class: 'row' }, icon('alert'), h('span', { class: 'mx-lblb' }, t('needs.urgent'))), urgentSw));
+
+  const chipBtn = (text) => h('button', { type: 'button', class: 'chip mx-chip', 'data-sugg': normNeed(text), 'aria-label': t('moreZ.sugg.add', { text }),
+    onmousedown: (e) => e.preventDefault(), onpointerdown: () => { chipHadFocus = document.activeElement === inp; }, onclick: () => addChip(text) }, icon('plus'), h('span', null, text));
+
+  /** Voci frequenti sotto il campo; si filtrano mentre si digita. Il DOM cambia solo se cambia l'elenco (nessun sfarfallio). */
+  function paintSugg() {
+    const q = inp.value;
+    const all = frequentNeeds({ needs: ctx.state.needs, log: ctx.state.log, query: '', limit: 1 });
+    const list = frequentNeeds({ needs: ctx.state.needs, log: ctx.state.log, query: q, limit: 8 });
+    const sig = list.map((x) => x.key).join('|');
+    if (sig !== suggSig) { suggSig = sig; suggRow.replaceChildren(...list.map((x) => chipBtn(x.text))); }
+    // se esiste uno storico la riga tiene il suo posto (invisibile) mentre il filtro non trova nulla: la pagina non salta
+    suggRow.hidden = !all.length;
+    suggRow.classList.toggle('none', !list.length);
+  }
 
   function toggleDone(n, makeDone) {
     if (makeDone && !reduceMotion()) {
@@ -192,6 +241,7 @@ function buildNeeds(ctx, key, draft) {
     } else { clearTimeout(holding.get(n.id)); holding.delete(n.id); }
     ctx.haptic(ctx.prefs.haptics, makeDone ? 10 : 6);
     ctx.actions.setNeedDone(n.id, makeDone).catch((e) => { holding.delete(n.id); console.error(e); ctx.toast(t('error')); paint(); });
+    if (makeDone) ctx.toast(t('moreZ.boughtToast', { text: n.text }), 5200, { action: { label: t('moreY.undo'), onClick: () => toggleDone(n, false) } });
     paint();
   }
   async function removeNeed(n) {
@@ -200,21 +250,31 @@ function buildNeeds(ctx, key, draft) {
     if (!ok) return;
     ctx.toast(t('moreY.need.removed'), 5200, { action: { label: t('moreY.undo'), onClick: () => attempt(ctx, () => ctx.store.setDoc('needs', n.id, copy, true)) } });
   }
+  async function clearBought() {
+    const list = Object.entries(ctx.state.needs || {}).filter(([, n]) => n && n.done).map(([id, n]) => ({ id, ...n }));
+    if (!list.length) return;
+    const ok = await attempt(ctx, async () => { await ctx.actions.clearBought(); return true; });
+    if (!ok) return;
+    paint();
+    ctx.toast(t('moreZ.cleared', { n: list.length }), 6000, { action: { label: t('moreY.undo'), onClick: () => attempt(ctx, () => ctx.actions.restoreNeeds(list)) } });
+  }
 
+  // La riga intera è un solo pulsante (≥56px) che segna comprato / rimette in lista; il cestino resta a parte.
   function needRow(n, st, isNew) {
     const done = st === 'done' || st === 'hold';
     const by = ctx.name(n.by);
     const desc = st === 'pending' ? t('moreY.need.saving') : done ? `${t('moreX.boughtBy', { name: ctx.name(n.doneBy) })} · ${whenLabel(ctx, n.doneAt)}` : `${t('needs.addedBy', { name: by })} · ${whenLabel(ctx, n.at)}`;
     return h('div', { class: 'li mx-need' + (done ? ' done' : '') + (st === 'hold' ? ' buying' : '') + (st === 'pending' ? ' pending' : '') + (n.urgent && !done ? ' urgent' : '') + (isNew ? ' mx-in' : ''), 'data-id': n.id || '' },
-      h('button', { type: 'button', class: 'checkcircle' + (done ? ' on' : ''), 'aria-pressed': String(done), disabled: st === 'pending', 'aria-label': (done ? t('moreX.undoBought') : t('needs.bought')) + ': ' + n.text, onclick: () => toggleDone(n, !done) }, icon('check')),
-      h('div', { class: 'grow' }, h('div', { class: 't' }, n.text, n.urgent && !done ? chip('bad mx-urg', icon('alert'), t('needs.urgent')) : null), h('div', { class: 'd' }, desc)),
+      h('button', { type: 'button', class: 'mx-needmain', 'aria-pressed': String(done), disabled: st === 'pending', 'aria-label': (done ? t('moreX.undoBought') : t('needs.bought')) + ': ' + n.text, onclick: () => toggleDone(n, !done) },
+        h('span', { class: 'checkcircle' + (done ? ' on' : '') }, icon('check')),
+        h('span', { class: 'grow' }, h('span', { class: 't' }, n.text, n.urgent && !done ? chip('bad mx-urg', icon('alert'), t('needs.urgent')) : null), h('span', { class: 'd' }, desc))),
       st === 'pending' ? null : h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('delete')}: ${n.text}`, onclick: () => removeNeed(n) }, icon('trash')));
   }
 
   function paint() {
     if (stopped) return;
     const today = ctx.today(); const me = ctx.me || 'admin';
-    const entries = Object.entries(ctx.state.needs || {}).map(([id, n]) => ({ id, ...n }));
+    const entries = Object.entries(ctx.state.needs || {}).filter(([, n]) => n && typeof n.text === 'string').map(([id, n]) => ({ id, ...n }));
     const unmatched = pending.filter((p) => !entries.some((n) => !n.done && n.by === me && n.text === p.text && String(n.at || '') >= p.start));
     const open = [
       ...entries.filter((n) => !n.done || holding.has(n.id)).map((n) => ({ n, st: n.done ? 'hold' : 'open' })),
@@ -226,21 +286,30 @@ function buildNeeds(ctx, key, draft) {
     reconcile(doneList, doneCache, done.map((n) => ({ key: n.id, sig: sig(n, 'done'), make: () => needRow(n, 'done', false) })), false);
     openCount.textContent = String(open.filter((x) => x.st !== 'hold').length);
     doneCount.textContent = String(done.length);
+    doneList.hidden = !doneOpen; doneToggle.setAttribute('aria-expanded', String(doneOpen)); doneToggle.classList.toggle('open', doneOpen);
+    // storico quasi vuoto (casa nuova): voci di partenza da toccare, escluse quelle già in lista
+    const starters = distinctNeeds({ needs: ctx.state.needs, log: ctx.state.log }) < 3 ? starterNeeds(starterTexts, ctx.state.needs) : [];
+    const ssig = starters.join('|');
+    if (ssig !== starterSig) { starterSig = ssig; starterChips.replaceChildren(...starters.map(chipBtn)); }
     // le sezioni vuote escono dal DOM (non solo nascoste)
-    const want = [open.length ? openSec : emptyCard, done.length ? doneSec : null].filter(Boolean);
+    const want = [open.length ? openSec : emptyCard, starters.length ? starterCard : null, done.length ? doneSec : null].filter(Boolean);
     if (want.length !== listBox.children.length || want.some((el, i) => listBox.children[i] !== el)) listBox.replaceChildren(...want);
+    const isOff = ctx.status === 'offline';
+    if (isOff && !noteBox.firstChild) noteBox.append(h('div', { class: 'note warn', role: 'status' }, icon('info'), t('moreZ.offline')));
+    else if (!isOff && noteBox.firstChild) clear(noteBox);
     const tri = ctx.house.links && ctx.house.links.tricount && ctx.house.links.tricount.url;
     const cur = triBox.firstChild;
     if (!tri) { if (cur) clear(triBox); } else if (!cur || cur.getAttribute('href') !== tri) { clear(triBox); triBox.append(h('a', { class: 'btn tonal block', href: tri, target: '_blank', rel: 'noopener' }, icon('tricount'), t('home.tricount'))); }
+    paintSugg();
     painted = true;
   }
 
-  const root = h('div', { class: 'mx mx-sub fade-up', 'data-testid': 'needs-page' }, head(t('needs.title')), form, h('div', { class: 'note' }, icon('info'), t('needs.rule')), listBox, triBox);
+  const root = h('div', { class: 'mx mx-sub fade-up', 'data-testid': 'needs-page' }, head(t('needs.title')), form, noteBox, listBox, h('div', { class: 'note' }, icon('info'), t('needs.rule')), triBox);
   setTimeout(() => root.classList.remove('fade-up'), 900);
   const off = ctx.store.on(() => { if (root.isConnected) paint(); });
   return {
     key, root, input: inp, paint,
-    draft: () => ({ text: inp.value, urgent }),
+    draft: () => ({ text: inp.value, urgent, doneOpen }),
     destroy() { stopped = true; off(); for (const tm of holding.values()) clearTimeout(tm); },
   };
 }

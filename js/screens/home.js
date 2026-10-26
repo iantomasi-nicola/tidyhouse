@@ -6,7 +6,9 @@ import { CHORES, validateRoommates } from '../engine.js';
 import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote, termsLine } from '../choresheet.js';
 import { planOf, buildStats, weekDays, sharedStatus } from '../extras.js';
 import { it, en } from '../strings/home.js';
+import { it as itZ, en as enZ } from '../strings/more3.js';   // moreZ.boughtToast (spesa: comprato + Annulla)
 registerStrings(it, en);
+registerStrings(itZ, enZ);
 
 const IC = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 const WEIGHT = { hero: 3.2, alerts: 1.2, week: 3.4, checklist: 2, shared: 1.8, quick: 1.4, links: 0.7, away: 1, upcoming: 2.4, makeups: 1.6, ranking: 2.2, needs: 1.6 };
@@ -488,8 +490,15 @@ function widgetNeeds(ctx) {
   const all = Object.entries(ctx.state.needs || {}).filter(([, n]) => n && !n.done).map(([id, n]) => ({ id, ...n }))
     .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.at || '').localeCompare(String(b.at || '')));
   if (!all.length) return null;
-  const rows = all.slice(0, 4).map((n) => h('div', { class: 'li hm-need', 'data-need': n.id },
-    h('button', { class: 'hm-needbtn', type: 'button', 'aria-label': `${t('needs.bought')}: ${n.text}`, onclick: async () => { try { await ctx.actions.setNeedDone(n.id, true); haptic(ctx.prefs.haptics, 8); } catch { ctx.toast(t('error')); } } }, h('span', { class: 'checkcircle' }, icon('check'))),
+  // Tutta la riga è un solo pulsante: un tocco = comprato, con «Annulla» nel messaggio
+  const buy = async (n) => {
+    try {
+      await ctx.actions.setNeedDone(n.id, true); haptic(ctx.prefs.haptics, 8);
+      ctx.toast(t('moreZ.boughtToast', { text: n.text }), 5200, { action: { label: t('flow.undo'), onClick: async () => { try { await ctx.actions.setNeedDone(n.id, false); } catch { ctx.toast(t('error')); } } } });
+    } catch { ctx.toast(t('error')); }
+  };
+  const rows = all.slice(0, 4).map((n) => h('button', { class: 'li hm-need', type: 'button', 'data-need': n.id, 'aria-label': `${t('needs.bought')}: ${n.text}`, onclick: () => buy(n) },
+    h('span', { class: 'hm-needbtn', 'aria-hidden': 'true' }, h('span', { class: 'checkcircle' }, icon('check'))),
     h('div', { class: 'grow' }, h('div', { class: 't hm-ell' }, n.text), n.by ? h('div', { class: 'd hm-ell' }, t('needs.addedBy', { name: ctx.name(n.by) === '?' ? t('misc.admin') : ctx.name(n.by) })) : null),
     n.urgent ? chip('bad', t('needs.urgent')) : null));
   if (all.length > 4) rows.push(h('a', { class: 'li hm-more', href: '#/needs' }, h('div', { class: 'grow muted' }, t('home.moreN', { n: all.length - 4 })), h('div', { class: 'end' }, icon('chevron'))));
