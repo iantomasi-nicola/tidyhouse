@@ -296,6 +296,23 @@ await test('link: Tricount, WhatsApp, personalizzati, validazione https', async 
   noErrors(page);
 });
 
+await test('notifiche attive: diagnosi registrazione sul server e prove sempre disponibili', async (mk) => {
+  const page = await mk({ houseExtra: { vapidPublic: 'BAAA', serverRun: '2026-10-28T09:30:00.000Z' } });
+  // «attive» solo sul browser (permesso + sottoscrizione ricordata), cloud simulato, nessun push salvato sul server: il caso «attive ma non arrivano»
+  await page.evaluate(() => { localStorage.setItem('cp:pushsub', '1'); Object.defineProperty(window.__app, 'mode', { get: () => 'cloud', configurable: true }); Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true }); });
+  await go(page, 'notifications');
+  assert.equal(await page.locator(tid('push-state')).getAttribute('data-state'), 'on');
+  assert.ok(await page.locator(tid('push-test')).isVisible()); assert.ok(await page.locator(tid('push-test-server')).isVisible());
+  assert.equal(await page.locator(tid('diag-saved')).getAttribute('data-ok'), '0');
+  assert.equal(await page.locator(tid('diag-server')).getAttribute('data-ok'), '1');
+  assert.ok(await page.locator(tid('push-repair')).isVisible());
+  // richiesta di prova dal server: compare «in attesa»
+  await page.click(tid('push-test-server'));
+  await until(page, () => Object.values(window.__app.state.requests).some((r) => r.kind === 'test'));
+  await page.waitForSelector(tid('diag-pending'));
+  await shot(page, 'notifications-diag-390'); noErrors(page);
+});
+
 await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => {
   const page = await mk({ viewport: { width: 390, height: 844 } }); await go(page, 'notif-house');
   await page.selectOption(tid('dow-satDuty'), '5'); await until(page, () => window.__app.house.notif.satDuty.dow === 5);

@@ -285,14 +285,28 @@ function notifications(ctx) {
   };
   const buttons = [];
   if (s === 'off') buttons.push(btn(t('set.notif.enable'), () => run(push.enable, t('push.enabled')), { cls: '', ic: 'bell', id: 'push-enable' }));
-  // le prove restano sempre disponibili quando le notifiche sono attive su questo dispositivo (anche se lo stato calcolato oscilla)
-  const active = s === 'on' || (st.permission === 'granted' && st.subscribed && s !== 'ios-install' && s !== 'unsupported');
+  // le prove (e la diagnosi) restano sempre disponibili finché le notifiche sono attive su questo dispositivo
+  const active = s === 'on';
   if (active) buttons.push(btn(t('set.notif.test'), () => run(push.localTest, t('set.notif.testSent')), { cls: 'tonal', ic: 'bell', id: 'push-test' }),
     btn(t('setX.notif.testServer'), async () => { try { await ctx.store.setDoc('requests', 'test' + Date.now().toString(36), { kind: 'test', to: ctx.me, device: ctx.deviceId, status: 'info', at: new Date().toISOString() }); ctx.toast(t('setX.notif.testServerSent'), 6000); } catch { ctx.toast(t('error')); } }, { cls: 'soft', ic: 'refresh', id: 'push-test-server' }), btn(t('set.notif.disable'), () => run(push.disable, t('push.disabled')), { cls: 'soft', ic: 'bellOff', id: 'push-disable' }));
   sbox.append(
     h('div', { class: 'row' }, h('div', { class: 'ico ' + (s === 'on' ? 'g' : s === 'denied' ? 'r' : '') }, icon(s === 'on' ? 'bell' : 'bellOff')),
       h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 650 }, 'data-testid': 'push-state', 'data-state': s }, statusText))),
     buttons.length ? h('div', { class: 'btn-row' }, buttons) : null);
+  if (active) {
+    // diagnosi «attive ma non arrivano»: il server invia solo ai dispositivi con la sottoscrizione salvata nel cloud
+    const mine = (ctx.state.members || {})[ctx.deviceId] || {};
+    const reg = !!(mine.push && mine.push.endpoint);
+    let host = ''; try { host = reg ? new URL(mine.push.endpoint).host : ''; } catch { /* ignore */ }
+    const srun = ctx.house.serverRun; const stale = !srun || ctx.now().getTime() - new Date(srun).getTime() > 3 * 3600000;
+    const pending = Object.values(ctx.state.requests || {}).filter((q) => q.kind === 'test' && q.device === ctx.deviceId && !q.notified).length;
+    const dg = (ok, title, desc, id) => h('div', { class: 'row', 'data-testid': id, 'data-ok': ok ? '1' : '0' }, h('div', { class: 'ico ' + (ok ? 'g' : 'o') }, icon(ok ? 'check' : 'alert')), h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 600 } }, title), desc ? h('div', { class: 'small muted' }, desc) : null));
+    sbox.append(h('div', { class: 'stack tight', 'data-testid': 'push-diag' },
+      dg(reg, reg ? t('setX.notif.diag.saved') : t('setX.notif.diag.notSaved'), reg ? host : t('setX.notif.diag.notSavedHint'), 'diag-saved'),
+      dg(!stale, srun ? t('sched.lastRun', { when: rel(ctx, srun) }) : t('sched.noRun'), stale ? t('setX.notif.diag.serverHint') : null, 'diag-server'),
+      pending ? dg(true, t('setX.notif.diag.pending'), t('setX.notif.diag.pendingHint'), 'diag-pending') : null,
+      btn(t('setX.notif.diag.repair'), () => run(push.enable, t('push.enabled')), { cls: 'soft sm', ic: 'refresh', id: 'push-repair' })));
+  }
   if (s === 'ios-install') sbox.append(h('ol', { class: 'st-steps' }, ['guide.ios1', 'guide.ios2', 'guide.ios3', 'guide.ios4'].map((k) => h('li', null, t(k)))));
   if (s === 'denied') sbox.append(h('p', { class: 'small muted' }, t('setX.notif.deniedHelp')));
 
