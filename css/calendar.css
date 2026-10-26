@@ -149,3 +149,16 @@ button.cs-pick:active { background: var(--tonal-2); }
 .fl-incmeta { color: var(--bad); font-weight: 650; }
 .ind.bad svg.i { stroke-width: 2.4; }
 .sheet .stack, .cal-panel .stack { grid-template-columns: minmax(0, 1fr); }
+
+/* scelta "con recupero" / "favore" */
+.fl-terms { display: grid; gap: 10px; }
+.fl-term { display: grid; gap: 6px; text-align: left; padding: 14px 16px; border-radius: var(--r-lg); background: var(--surface); box-shadow: inset 0 0 0 2px transparent; transition: box-shadow .2s, background .2s; min-height: 44px; }
+.fl-term.on { background: var(--tonal); box-shadow: inset 0 0 0 2px var(--accent); }
+.fl-termhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fl-termradio { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--text-3); display: grid; place-items: center; flex: none; color: #fff; }
+.fl-term.on .fl-termradio { background: var(--accent); border-color: var(--accent); }
+.fl-termradio svg.i { width: .85rem; height: .85rem; stroke-width: 3; }
+.fl-termt { font-weight: 700; letter-spacing: -.01em; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fl-termd { color: var(--text-2); font-size: .875rem; }
+.fl-terme { font-size: .8125rem; font-weight: 650; color: var(--accent-ink); overflow-wrap: anywhere; }
+.fl-dialog .fl-terme { padding: 10px 12px; border-radius: var(--r-sm); background: var(--tonal); }

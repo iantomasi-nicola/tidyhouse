@@ -787,6 +787,18 @@ const reqPlain = (ctx, r) => (reqKind(r) === 'swap'
   ? t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: t('chore.' + r.fromChore), b: t('chore.' + r.toChore), week: wkLabel(r) })
   : reqLine(ctx, r));
 const statusChip = (r) => (r.status === 'accepted' ? chip('ok', icon('check'), t('moreY.st.agreed')) : r.status === 'declined' ? chip('bad', icon('x'), t('moreY.st.declined')) : chip('warn', icon('clock'), t('req.pending')));
+const termsOf = (r) => (reqKind(r) === 'swap' ? null : r.terms === 'gift' ? 'gift' : 'repay');
+const termsChip = (r) => { const k = termsOf(r); return k ? (k === 'gift' ? chip('ok mx-terms', icon('sparkles'), t('moreY.terms.gift')) : chip('warn mx-terms', icon('refresh'), t('moreY.terms.repay'))) : null; };
+/** Una riga di spiegazione + (prima di rispondere) le conseguenze per chi fa il turno e per chi lo chiede. */
+function termsBlock(ctx, r, { consequences = false } = {}) {
+  const k = termsOf(r); if (!k) return null;
+  const doer = ctx.name(reqKind(r) === 'cover' ? (r.status === 'accepted' && r.by ? r.by : ctx.me) : r.from);
+  const requester = ctx.name(reqKind(r) === 'cover' ? r.from : r.to);
+  return h('div', { class: 'mx-termsbox', 'data-testid': 'terms-' + r.id },
+    h('p', { class: 'small muted mx-termsline' }, t('moreY.terms.' + k + '.line')),
+    consequences ? h('div', { class: 'note mx-conseq' }, icon('info'), h('div', { class: 'grow' }, h('div', { class: 'lbl mx-lblb' }, t('moreY.terms.ifYes')),
+      h('ul', { class: 'mx-conseqlist' }, h('li', null, t('moreY.terms.' + k + '.doer', { doer })), h('li', null, t('moreY.terms.' + k + '.requester', { requester }))))) : null);
+}
 const kindChip = (r) => chip('mx-kind ' + reqKind(r), t('moreY.req.kind.' + reqKind(r)));
 function noticeText(ctx, r) {
   const o = { name: personName(ctx, r.from), chore: choreLow(r.chore), week: wkLabel(r) };
@@ -830,13 +842,14 @@ function requestsPage(ctx) {
     const k = reqKind(r); const open = k === 'cover' && !r.to;
     return h('div', { class: 'card stack tight mx-req mx-reqcard', 'data-testid': 'req-' + r.id },
       h('div', { class: 'row' }, avatar(ctx.name(r.from), ctx.color(r.from)), h('div', { class: 'grow' },
-        h('div', { class: 'mx-kindrow' }, kindChip(r), open ? chip('', icon('users'), t('moreY.req.openForAll')) : null),
+        h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r), open ? chip('', icon('users'), t('moreY.req.openForAll')) : null),
         h('p', { class: 'mx-rt' }, reqLine(ctx, r)), h('div', { class: 'small muted' }, whenLabel(ctx, r.at)))),
+      termsBlock(ctx, r, { consequences: true }),
       h('div', { class: 'btn-row' }, open ? null : btnDecline(r), btnAccept(r, k === 'cover' ? t('moreY.req.takeIt') : null)));
   };
   const listRow = (r, { cancelable, answerable, hist }) => h('div', { class: 'li mx-req' + (answerable ? ' adm' : ''), 'data-testid': 'req-' + r.id },
     avatar(ctx.name(r.from), ctx.color(r.from), 'sm'),
-    h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), statusChip(r)), h('div', { class: 't' }, hist || answerable ? reqPlain(ctx, r) : reqLine(ctx, r)),
+    h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r), statusChip(r)), h('div', { class: 't' }, hist || answerable ? reqPlain(ctx, r) : reqLine(ctx, r)), termsBlock(ctx, r, { consequences: answerable }),
       h('div', { class: 'd' }, hist ? [whenLabel(ctx, r.answeredAt || r.at), r.status === 'accepted' && r.by ? ` · ${t('moreY.req.will', { name: ctx.name(r.by) })}` : ''] : whenLabel(ctx, r.at))),
     cancelable ? btnCancel(r) : null,
     answerable ? h('div', { class: 'btn-row mx-req-actions' }, btnDecline(r), btnAccept(r)) : null);
@@ -861,10 +874,11 @@ let actLimit = 60;
 const ACT_ICON = { done: ['check', 'g'], cover: ['swap', 'p'], skipped: ['x', 'r'], reset: ['refresh', ''], away: ['plane', 'o'], back: ['home', 'g'], trip: ['plane', 'o'], plan: ['calendar', ''], swap: ['swap', 'p'], need: ['cart', 'o'], task: ['list', 'g'], settings: ['settings', ''], roommates: ['users', ''], import: ['upload', ''],
   incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'], shared: ['refresh', 'g'] };
 const ACT_NEW = new Set(['incomplete', 'volunteer', 'delay', 'agreed', 'shared']);
+const agreedKey = (p) => 'moreY.act.agreed' + (p.terms === 'gift' ? 'Gift' : p.terms === 'repay' ? 'Repay' : '');
 function actText(ctx, e) {
   const p = e.p || {};
   if (!ACT_ICON[e.type]) return t('act.generic', { name: personName(ctx, e.by), text: p.text || e.type || '' });
-  const key = ACT_NEW.has(e.type) ? 'moreY.act.' + e.type + (e.type === 'incomplete' && Number(p.n) === 1 ? '1' : '') : 'act.' + e.type;
+  const key = e.type === 'agreed' ? agreedKey(p) : ACT_NEW.has(e.type) ? 'moreY.act.' + e.type + (e.type === 'incomplete' && Number(p.n) === 1 ? '1' : '') : 'act.' + e.type;
   return t(key, {
     name: personName(ctx, e.by), chore: p.chore ? t('chore.' + p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '',
     day: p.day ? `${dowLong(p.day, ctx.lang)} ${fmtDate(p.day, ctx.lang)}` : '', text: p.text || '', n: p.n ?? '',

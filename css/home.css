@@ -191,3 +191,5 @@
 .hm-sharedinvite .ico { background: var(--tonal); }
 .hm-wrap { overflow-wrap: anywhere; }
 @media (max-width: 359px) { .hm-shareddone { padding: 0 12px; gap: 4px; } .hm-shared { gap: 10px; padding-left: 12px; } }
+.hm-terms { margin-top: 6px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--tonal); color: var(--accent-ink); font-weight: 600; font-size: .8125rem; }
+.hm-terms[data-terms="gift"] { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); color: var(--text); }

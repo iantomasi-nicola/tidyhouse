@@ -132,7 +132,7 @@ export function flowChips(ctx, sunday, chore) {
   const wk = weekDoc(ctx, sunday); const res = row.res[c]; const t = ctx.t; const out = [];
   const open = !res.kind;
   const ag = (wk.agreed || {})[chore];
-  if (ag && open) out.push({ key: 'agreed', tone: 'acc', ic: 'users', text: t('flow.agreedWith', { name: ctx.name(ag) }) });
+  if (ag && open && ag !== row.assigned[c]) out.push({ key: 'agreed', tone: 'acc', ic: 'users', text: t('flow.agreedWith', { name: ctx.name(ag) }) });
   const dl = delayOf(houseW(ctx), sunday, chore);
   if (dl && open) out.push({ key: 'delay', tone: 'warn', ic: 'clock', text: t('flow.delayUntil', { date: fmtDate(dl, ctx.lang) }) });
   const vol = (wk.volunteer || {})[chore];
@@ -166,6 +166,23 @@ export function taskNote(ctx, x) {
   if (x.reason === 'arrears') return x.owner === ctx.me ? t('flow.arrearsMine', { date }) : t('flow.arrearsOther', { date, name: ctx.name(x.owner) });
   if (x.status === 'overdue') return t('tasks.overdue', { date });
   return x.owner && x.owner !== ctx.me ? t('flow.ownerIs', { name: ctx.name(x.owner) }) : t('tasks.due');
+}
+
+/** Frase breve sulle conseguenze di una richiesta/offerta (con recupero o favore), per chi deve rispondere. a = assegnato, b = chi lo fa. */
+export function termsLine(ctx, terms, aId, bId) {
+  const k = terms === 'gift' ? 'gift' : 'repay';
+  return ctx.t('flow.terms.' + k + '.line', { a: ctx.name(aId), b: bId ? ctx.name(bId) : ctx.t('flow.terms.whoAccepts') });
+}
+/** Scelta tra "con recupero" e "favore": due schede grandi con spiegazione e conseguenze per entrambe le persone. */
+function termsPicker(ctx, { mode, a, b, value, onPick }) {
+  const card = (k) => {
+    const on = value === k;
+    return h('button', { type: 'button', class: 'fl-term' + (on ? ' on' : '') + (k === 'gift' ? ' gift' : ''), 'data-terms': k, 'aria-pressed': String(on), onclick: () => onPick(k) },
+      h('span', { class: 'fl-termhead' }, h('span', { class: 'fl-termradio' }, on ? icon('check') : null), h('span', { class: 'fl-termt' }, ctx.t(`flow.terms.${k}.${mode}.title`)), k === 'gift' ? chip(ctx.t('flow.terms.favor'), 'acc', 'sparkles') : null),
+      h('span', { class: 'fl-termd' }, ctx.t(`flow.terms.${k}.${mode}.desc`)),
+      h('span', { class: 'fl-terme', 'data-testid': 'terms-effect-' + k }, ctx.t(`flow.terms.${k}.eff`, { a: ctx.name(a), b: b ? ctx.name(b) : ctx.t('flow.terms.whoAccepts') })));
+  };
+  return h('div', { class: 'fl-terms', role: 'group', 'aria-label': ctx.t('flow.terms.group') }, h('div', { class: 'eyebrow' }, ctx.t('flow.terms.title')), card('repay'), card('gift'));
 }
 
 const confettiAt = (el) => { try { const r = el.getBoundingClientRect(); confetti(r.left + r.width / 2, r.top + r.height / 2); } catch { /* ignore */ } };
@@ -278,6 +295,7 @@ export function openAssignSheet(ctx, sunday, chore) {
     return h('div', { class: 'stack' },
       h('div', { class: 'row' }, tile(chore, 'sm'), h('div', { class: 'grow' }, h('b', null, ctx.t('chore.' + chore)), h('span', { class: 'muted' }, ' · ' + fmtWeekRange(sunday, ctx.lang)))),
       h('p', { class: 'muted small' }, ctx.t('flow.assignHint')),
+      row.assigned[c] ? h('p', { class: 'muted small' }, ctx.t('flow.assignNote', { name: ctx.name(row.assigned[c]) })) : null,
       sug && ids.includes(sug) ? h('div', { class: 'note ok' }, icon('sparkles'), ctx.t('chore.suggestedSub', { name: ctx.name(sug) })) : null,
       h('div', { class: 'list' }, ids.map((id) => h('button', { type: 'button', class: 'li cs-pick' + (id === sug ? ' sug' : ''), 'data-who': id, 'aria-pressed': String(id === cur), onclick: () => pick(id) },
         person(ctx, id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(id)),
@@ -291,7 +309,7 @@ export function openAssignSheet(ctx, sunday, chore) {
 export function openChoreSheet(ctx, sunday, chore, opts = {}) {
   const c = ci(chore);
   if (c < 0 || !rowOf(ctx, sunday)) return null;
-  const st = { view: opts.view || 'main', delay: null, coverTo: '*' };   // stato che non deve perdersi nei ridisegni
+  const st = { view: opts.view || 'main', delay: null, coverTo: '*', terms: 'repay' };   // stato che non deve perdersi nei ridisegni
 
   const build = (sh) => {
     const go = (v) => { st.view = v; sh.focusFirst = true; sh.draw(true); };
@@ -367,12 +385,23 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
         back(ctx, () => go('main')),
         h('div', { class: 'cs-title' }, t('flow.askTitle')),
         h('p', { class: 'muted small' }, t('flow.askHint')),
-        h('div', { class: 'list', role: 'group' },
+        h('div', { class: 'list', role: 'group', 'aria-label': t('flow.askTitle') },
           opt('*', h('div', { class: 'ico' }, icon('users')), t('flow.askAnyone'), t('flow.askAnyoneHint')),
           ids.map((id) => opt(id, person(ctx, id), ctx.name(id), null, id === sug ? chip(t('cal.suggested'), 'acc', 'sparkles') : null))),
+        termsPicker(ctx, { mode: 'ask', a: assigned, b: st.coverTo === '*' ? null : st.coverTo, value: st.terms, onPick: (k) => { st.terms = k; sh.draw(true); } }),
         h('button', { type: 'button', class: 'btn lg block', 'data-act': 'ask-send', onclick: async () => {
-          if (await run(ctx, () => A.requestCover({ week: sunday, chore, to: st.coverTo === '*' ? null : st.coverTo }), t('flow.askSent'))) go('main');
+          if (await run(ctx, () => A.requestCover({ week: sunday, chore, to: st.coverTo === '*' ? null : st.coverTo, terms: st.terms }), t('flow.askSent'))) { st.terms = 'repay'; go('main'); }
         } }, icon('swap'), t('flow.askSend')));
+    }
+    if (st.view === 'offer') {
+      return h('div', { class: 'stack' },
+        back(ctx, () => go('main')),
+        h('div', { class: 'cs-title' }, t('flow.offerTitle')),
+        h('p', { class: 'muted small' }, t('flow.offerHint', { name: aName })),
+        termsPicker(ctx, { mode: 'offer', a: assigned, b: me, value: st.terms, onPick: (k) => { st.terms = k; sh.draw(true); } }),
+        h('button', { type: 'button', class: 'btn lg block', 'data-act': 'offer-send', onclick: async () => {
+          if (await run(ctx, () => A.offerCover({ week: sunday, chore, terms: st.terms }), t('flow.offerSent', { name: aName }))) { st.terms = 'repay'; go('main'); }
+        } }, icon('user'), t('flow.offerSend')));
     }
     if (st.view === 'delay') {
       const today = ctx.today();
@@ -484,6 +513,8 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       const rows = reqs.map(([id, q]) => {
         const mineReq = q.from === me;
         let title, desc = null, buttons = null, ic = 'swap';
+        const tl = q.kind === 'cover' ? termsLine(ctx, q.terms, q.from, q.to || (q.from === me ? null : me)) : termsLine(ctx, q.terms, q.to, q.from);
+        desc = tl;
         if (q.kind === 'cover') {
           if (mineReq) { title = q.to ? t('flow.req.mineTo', { name: ctx.name(q.to) }) : t('flow.req.mineAny'); buttons = [h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'req-cancel', 'data-req': id, onclick: () => run(ctx, () => A.cancelSwap(id), t('flow.req.cancelled')) }, t('req.cancel'))]; }
           else if (me && (!q.to || q.to === me)) {
@@ -521,13 +552,14 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       const rows = [];
       if (ctx.feature('requests') && agreed !== me) {
         if (myOffer) rows.push(h('div', { class: 'li fl-act muted', 'data-act': 'offer-pending' }, h('div', { class: 'ico' }, icon('clock')), h('div', { class: 'grow' }, t('flow.req.offerMine', { name: aName }))));
-        else rows.push(actRow('user', '', t('flow.offerBtn'), t('flow.offerHint', { name: aName }), { 'data-act': 'offer' }, () => run(ctx, () => A.offerCover({ week: sunday, chore }), t('flow.offerSent', { name: aName }))));
+        else rows.push(actRow('user', '', t('flow.offerBtn'), t('flow.offerHint', { name: aName }), { 'data-act': 'offer' }, () => { st.terms = 'repay'; go('offer'); }));
       }
       if (canVol) rows.push(actRow('sparkles', 'o', t('flow.volBtn'), null, { 'data-act': 'volunteer' }, async (ev) => {
         const el = ev.currentTarget;
-        const choice = await choiceDialog(ctx, { title: t('flow.volTitle'), content: [h('p', { class: 'muted' }, t('flow.volText', { name: aName }))], choices: [
-          { key: 'ok', label: t('flow.volConfirm'), icon: 'check' }, { key: 'cancel', label: t('cancel'), cls: 'ghost' }] });
+        const choice = await choiceDialog(ctx, { title: t('flow.volTitle'), content: [h('p', { class: 'muted' }, t('flow.volText', { name: aName })), h('p', { class: 'small fl-terme' }, t('flow.terms.repay.eff', { a: aName, b: ctx.meName }))], choices: [
+          { key: 'ok', label: t('flow.volConfirm'), icon: 'check' }, { key: 'gift', label: t('flow.volGift'), icon: 'sparkles', cls: 'soft' }, { key: 'cancel', label: t('cancel'), cls: 'ghost' }] });
         if (choice === 'ok' && (await markDoneFlow(ctx, sunday, chore, { volunteer: true, el }))) sh.close();
+        else if (choice === 'gift' && (await run(ctx, () => A.offerCover({ week: sunday, chore, terms: 'gift' }), t('flow.offerSent', { name: aName })))) sh.draw(true);
       }));
       out.push(section(t('flow.sec.others'), h('div', { class: 'list' }, rows)));
     }

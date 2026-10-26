@@ -170,13 +170,13 @@ await scenario('needs: Invio aggiunge e svuota, doppio invio, trim, 80 caratteri
 
 // ---------------------------------------------------------------- richieste
 const REQ = {
-  r1: { kind: 'cover', week: SUN, chore: 'kitchen', from: 'bruno', to: null, status: 'pending', at: '2026-10-27T10:00:00.000Z' },
-  r2: { kind: 'cover', week: SUN, chore: 'floor', from: 'carla', to: 'anna', status: 'pending', at: '2026-10-27T10:30:00.000Z' },
-  r3: { kind: 'offer', week: SUN, chore: 'bathroom', from: 'bruno', to: 'anna', status: 'pending', at: '2026-10-27T11:00:00.000Z' },
+  r1: { kind: 'cover', terms: 'gift', week: SUN, chore: 'kitchen', from: 'bruno', to: null, status: 'pending', at: '2026-10-27T10:00:00.000Z' },
+  r2: { kind: 'cover', terms: 'repay', week: SUN, chore: 'floor', from: 'carla', to: 'anna', status: 'pending', at: '2026-10-27T10:30:00.000Z' },
+  r3: { kind: 'offer', terms: 'gift', week: SUN, chore: 'bathroom', from: 'bruno', to: 'anna', status: 'pending', at: '2026-10-27T11:00:00.000Z' },
   r4: { kind: 'cover', week: SUN, chore: 'bathroom', from: 'anna', to: null, status: 'pending', at: '2026-10-27T12:00:00.000Z' },
   r5: { kind: 'offer', week: SUN, chore: 'kitchen', from: 'anna', to: 'carla', status: 'pending', at: '2026-10-27T12:30:00.000Z' },
   r6: { kind: 'notice', code: 'volunteer', week: '2026-10-25', chore: 'kitchen', from: 'bruno', to: 'anna', status: 'info', at: '2026-10-26T09:00:00.000Z' },
-  r7: { kind: 'cover', week: '2026-10-25', chore: 'floor', from: 'anna', to: null, status: 'accepted', by: 'carla', at: '2026-10-20T09:00:00.000Z', answeredAt: '2026-10-21T09:00:00.000Z' },
+  r7: { kind: 'cover', terms: 'repay', week: '2026-10-25', chore: 'floor', from: 'anna', to: null, status: 'accepted', by: 'carla', at: '2026-10-20T09:00:00.000Z', answeredAt: '2026-10-21T09:00:00.000Z' },
   r8: { kind: 'cover', week: SUN, chore: 'floor', from: 'bruno', to: 'carla', status: 'pending', at: '2026-10-27T13:00:00.000Z' },
   r9: { kind: 'offer', week: '2026-10-25', chore: 'bathroom', from: 'carla', to: 'bruno', status: 'declined', at: '2026-10-20T10:00:00.000Z', answeredAt: '2026-10-21T10:00:00.000Z' },
   r10: { week: '2026-10-25', from: 'carla', to: 'anna', fromChore: 'kitchen', toChore: 'floor', status: 'accepted', at: '2026-10-20T11:00:00.000Z', answeredAt: '2026-10-21T11:00:00.000Z' },
@@ -195,6 +195,15 @@ await scenario('requests: sostituzioni, offerte, avvisi, stato, annulla, badge h
   assert.match(t, /Bruno si offre di fare bagno al posto tuo/);
   assert.match(t, /Cerchi un sostituto per bagno/); assert.match(t, /Ti sei offerto di fare cucina al posto di Carla/);
   assert.match(t, /Bruno ha pulito cucina al posto tuo/); assert.match(t, /Solo informativo/);
+  // condizioni: chip, spiegazione di una riga, conseguenze prima di rispondere
+  assert.match(await page.locator('[data-testid=req-r1]').innerText(), /Regalo/);
+  assert.match(await page.locator('[data-testid=terms-r1]').innerText(), /Regalo: il turno passa a chi se ne fa carico, nessun recupero\./);
+  assert.match(await page.locator('[data-testid=terms-r1]').innerText(), /Se accetti[\s\S]*Il turno passa a Anna[\s\S]*Bruno non deve recuperarlo/);
+  assert.match(await page.locator('[data-testid=terms-r2]').innerText(), /Con recupero: la settimana prossima il turno si recupera, chi lo fa guadagna un riposo\./);
+  assert.match(await page.locator('[data-testid=terms-r2]').innerText(), /Anna fa il turno e guadagna un riposo[\s\S]*Carla lo recupera la settimana prossima/);
+  assert.match(await page.locator('[data-testid=terms-r3]').innerText(), /Il turno passa a Bruno/);
+  assert.match(await page.locator('[data-testid=req-r4]').innerText(), /Con recupero/, 'senza terms = con recupero');
+  assert.match(await page.locator('[data-testid=req-history] [data-testid=req-r7]').innerText(), /Con recupero/);
   assert.match(t, /Concordata/); assert.match(t, /Rifiutata/); assert.match(t, /Lo farà Carla/);
   assert.match(t, /Altre richieste in attesa/); assert.match(t, /Bruno ha chiesto a Carla di fare pavimenti al suo posto/);
   assert.equal(await page.locator('[data-testid=req-r1] [data-testid=req-decline-r1]').count(), 0, 'sostituzione aperta a tutti: solo "Ci penso io"');
@@ -353,6 +362,8 @@ await scenario('activity: nuovi tipi di log (incomplete, volunteer, delay, agree
     l5: { at: '2026-10-26T19:00:00', by: 'anna', type: 'trip', p: { who: 'carla' } },
     l6: { at: '2026-10-25T19:00:00', by: 'bruno', type: 'reset', p: { week: SUN, chore: 'kitchen', who: null } },
     l7: { at: '2026-10-24T19:00:00', by: 'anna', type: 'incomplete', p: { week: SUN, chore: 'bathroom', n: 1 } },
+    l8: { at: '2026-10-23T19:00:00', by: 'carla', type: 'agreed', p: { week: SUN, chore: 'kitchen', who: 'carla', terms: 'repay' } },
+    l9: { at: '2026-10-22T19:00:00', by: 'carla', type: 'agreed', p: { week: SUN, chore: 'floor', who: 'anna', terms: 'gift' } },
   };
   const s = S(); s['cp:h:' + HID].log = log;
   const page = await open({ seed: s });
@@ -362,6 +373,7 @@ await scenario('activity: nuovi tipi di log (incomplete, volunteer, delay, agree
   assert.match(t, /Bruno ha pulito cucina al posto di Carla, di sua iniziativa/);
   assert.match(t, /Carla pulirà bagno in ritardo, martedì 3 nov/);
   assert.match(t, /Concordato: Bruno farà pavimenti/);
+  assert.match(t, /Concordato con recupero: Carla farà cucina, il turno si recupera la settimana prossima/); assert.match(t, /Regalo: Anna farà pavimenti al posto dell'assegnato, nessun recupero/);
   assert.match(t, /Anna ha aggiunto un'assenza per Carla/); assert.match(t, /Bruno ha rimesso cucina da fare/);
   assert.match(t, /ma mancava 1 voce della checklist/);
   assert.deepEqual((await page.locator('.eyebrow').allInnerTexts()).slice(0, 2), ['Oggi', 'Ieri']);

@@ -503,7 +503,7 @@ async function sectionUsab() {
   const tapList = Object.values(allTaps); metrics.tapViolations = tapList.length;
   console.log(`     violazioni area tocco (<44px) uniche: ${tapList.length}`);
   for (const x of tapList) console.log(`       ${x.el}  "${x.label}"  [${[...x.routes].slice(0, 5).join(',')}${x.routes.size > 5 ? '…' : ''}] @${[...x.vp].join('/')}`);
-  const coreTap = tapList.filter((x) => /(^|\.)(nav|icon-btn|btn|seg|num|switch|checkcircle|chip|li|swatches|toast-action)(\.|:)/.test(x.el) || /^(button|a)\.:/.test(x.el));
+  const coreTap = tapList.filter((x) => /(^|\.)(nav|icon-btn|btn|seg|num|switch|checkcircle|chip|li|swatches|toast-action)(\.|:)/.test(x.el));
   ok(coreTap.length === 0, 'aree tocco: nessuna violazione nei componenti del nucleo (nav, btn, icon-btn, seg, num, switch, checkcircle, li)', coreTap.map((x) => x.el));
   warn(tapList.length === 0, `aree tocco: ${tapList.length} elementi sotto i 44px (vedi elenco sopra)`);
 

@@ -3,7 +3,7 @@
 import { h, icon, avatar, loadCss, confetti, haptic, promptDialog, confirmDialog } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, validateRoommates } from '../engine.js';
-import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote } from '../choresheet.js';
+import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote, termsLine } from '../choresheet.js';
 import { planOf, buildStats, weekDays, sharedStatus } from '../extras.js';
 import { it, en } from '../strings/home.js';
 registerStrings(it, en);
@@ -249,7 +249,7 @@ function requestRows(ctx, M) {
       const cover = q.kind === 'cover';
       rows.push(alertRow({ tone: 'p', ic: cover ? 'users' : 'user', testid: 'req-' + id,
         title: cover ? t(q.to ? 'flow.alert.coverTo' : 'flow.alert.cover', { name: ctx.name(q.from), chore }) : t('flow.alert.offer', { name: ctx.name(q.from), chore }),
-        desc: cover ? t('flow.alert.coverDesc', { range }) : t('flow.alert.offerDesc', { range }),
+        desc: [cover ? t('flow.alert.coverDesc', { range }) : t('flow.alert.offerDesc', { range }), h('div', { class: 'hm-terms', 'data-terms': q.terms === 'gift' ? 'gift' : 'repay' }, termsLine(ctx, q.terms, cover ? q.from : q.to, cover ? me : q.from))],
         actions: [h('button', { class: 'btn sm', type: 'button', 'data-act': 'req-yes', onclick: answer(() => ctx.actions.answerCover(id, true), cover ? t('flow.req.agreedMe') : t('flow.req.agreedHim', { name: ctx.name(q.from) })) }, icon('check'), cover ? t('flow.req.canDo') : t('req.accept')),
           h('button', { class: 'btn sm soft', type: 'button', 'data-act': 'req-no', onclick: answer(() => ctx.actions.answerCover(id, false), t('flow.req.declined')) }, cover ? t('flow.req.cant') : t('req.decline'))] }));
     } else if (q.to === me) {
