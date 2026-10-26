@@ -1,10 +1,11 @@
 // Onboarding: schermate a pieno schermo senza shell (landing, join, chi sei, nuova casa, regole, link non valido, offline).
 // Esporta `renderGate(stage, boot, params)`; `boot` è l'oggetto di js/app.js.
-import { h, icon, loadCss, clear, copyText, confirmDialog, confetti, avatar } from '../ui.js';
+import { h, icon, loadCss, clear, copyText, confirmDialog, avatar } from '../ui.js';
 import { t, getLang, fmtDate, fmtWeekRange, registerStrings } from '../i18n.js';
+import { normalizeStartSunday } from '../actions.js';
 import { it, en } from '../strings/onb.js';
 import { normCode, fmtCode, colorOf, PALETTE } from '../extras.js';
-import { todayStr, weekEnd, isSunday, dayNum } from '../engine.js';
+import { todayStr, dayNum } from '../engine.js';
 
 registerStrings(it, en);
 
@@ -14,7 +15,6 @@ const MIN_PIN = 4;
 
 // ---------------------------------------------------------------- utilità
 const isIso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '') && !Number.isNaN(dayNum(s));
-const toSunday = (s) => (isSunday(s) ? s : weekEnd(s));
 const weekLabel = (sunday) => `${fmtWeekRange(sunday)} ${sunday.slice(0, 4)}`;
 const norm = (s) => String(s || '').trim().replace(/\s+/g, ' ');
 const same = (a, b) => norm(a).toLowerCase() === norm(b).toLowerCase();
@@ -129,10 +129,23 @@ function joinStage(boot, params) {
     showForm(joinError(r && r.reason));
   };
   if (code.length === 12) {
-    swap([spinner(t('join.checking'))]);
-    // parte solo quando il nodo è nel DOM: boot.join può ridisegnare lo stage subito
-    const go = () => (root.isConnected ? run() : setTimeout(go, 30));
-    setTimeout(go, 30);
+    // casa già salvata in questo browser e link di una casa diversa: una riga di domanda; stessa casa (o nessuna casa): si entra senza chiedere
+    const saved = [...(boot.houses || [])].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+    const known = saved.some((x) => normCode(x.id) === code);
+    const start = () => {
+      swap([spinner(t('join.checking'))]);
+      // parte solo quando il nodo è nel DOM: boot.join può ridisegnare lo stage subito
+      const go = () => (root.isConnected ? run() : setTimeout(go, 30));
+      setTimeout(go, 30);
+    };
+    if (saved.length && !known && boot.cloudAvailable) {
+      const cur = saved[0].name || fmtCode(saved[0].id);
+      swap([h('section', { class: 'card onb-card onb-ask', role: 'group', 'aria-label': t('onb.join.ask', { current: cur }) },
+        h('p', { class: 'onb-askq' }, t('onb.join.ask', { current: cur })),
+        h('div', { class: 'btn-row' },
+          h('button', { type: 'button', class: 'btn soft', id: 'onb-join-no', onclick: () => { try { boot.resume(); } catch (e) { console.error(e); boot.go('landing'); } } }, t('onb.join.keep')),
+          h('button', { type: 'button', class: 'btn', id: 'onb-join-yes', onclick: start }, icon('plus'), t('onb.join.add'))))]);
+    } else start();
   } else {
     showForm(params.code ? { text: t('join.invalid') } : null);
   }
@@ -182,36 +195,53 @@ function whoStage(boot) {
   };
   paint();
   return page('onb-who', logo(),
-    h('div', { class: 'onb-hero' }, h('h1', { class: 'onb-h' }, t('join.welcome', { house: house.name || 'Tidy House' })), h('p', { class: 'lead' }, t('join.who')), h('p', { class: 'muted small' }, t('join.whoHint'))),
+    h('div', { class: 'onb-hero' }, h('div', { class: 'onb-kicker' }, t('onb.who.kicker')), h('h1', { class: 'onb-h onb-housename' }, house.name || 'Tidy House'), h('p', { class: 'lead onb-whoq' }, t('join.who')), h('p', { class: 'muted small' }, t('onb.who.tap'))),
     body,
     h('div', { class: 'center' }, h('button', { type: 'button', class: 'onb-textbtn small', onclick: () => boot.go('landing') }, t('onb.switchHouse'))));
 }
 
-// ---------------------------------------------------------------- NUOVA CASA (wizard)
+// ---------------------------------------------------------------- NUOVA CASA (wizard in 3 passi: nome -> persone -> PIN)
 let wiz = null;
+const blankPerson = () => ({ name: '', from: '', to: '', expectedTo: '', adv: false });
 function newWiz() {
   return {
-    step: 1, name: '', startSunday: toSunday(todayStr()), startAdjusted: false,
-    mode: 'local', people: [{ name: '', from: '', to: '', expectedTo: '', adv: false }, { name: '', from: '', to: '', expectedTo: '', adv: false }, { name: '', from: '', to: '', expectedTo: '', adv: false }],
-    adminIdx: 0, pin: '', pin2: '', showPin: false, imported: null, importing: false, importErr: '', busy: false, err: '',
+    step: 1, name: t('onb.defaultName'), startSunday: normalizeStartSunday(todayStr()), startAdjusted: false, optsOpen: false,
+    mode: 'local', people: [blankPerson(), blankPerson(), blankPerson()],
+    adminIdx: 0, adminOpen: false, pin: '', hidePin: false, imported: null, importing: false, importErr: '', busy: false, err: '',
   };
 }
-const peopleNow = () => (wiz.imported ? wiz.imported.roommates.map((r) => ({ name: r.name, from: r.from || '', to: r.to || '', expectedTo: '' })) : wiz.people);
+/** Persone realmente compilate (le righe vuote si ignorano). */
+const named = () => wiz.people.filter((p) => norm(p.name));
+const peopleNow = () => (wiz.imported ? wiz.imported.roommates.map((r) => ({ name: r.name, from: r.from || '', to: r.to || '', expectedTo: '' })) : named());
 
 function createStage(boot) {
   if (!wiz) { wiz = newWiz(); wiz.mode = boot.cloudAvailable ? 'cloud' : 'local'; }
   const W = wiz;
+  const TOTAL = 3;
   const content = h('div', { class: 'onb-step', tabindex: '-1' });
-  const stepsEl = h('div', { class: 'steps', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': '4' });
+  const stepsEl = h('div', { class: 'steps', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': String(TOTAL) });
   const labelEl = h('div', { class: 'onb-steplabel' });
   const nav = h('div', { class: 'onb-nav' });
   const exit = () => { wiz = null; boot.go('landing'); };
 
-  const goStep = (n, focus = true) => {
-    W.step = n; W.err = '';
-    render();
-    if (focus) { const hd = content.querySelector('h2'); if (hd) { hd.setAttribute('tabindex', '-1'); hd.focus({ preventScroll: true }); } window.scrollTo(0, 0); }
+  /** Porta il cursore nel campo principale del passo (sul telefono apre subito la tastiera). */
+  const focusMain = (sel, selectAll) => {
+    let n = 0;
+    const go = () => {
+      const el = content.querySelector(sel);
+      if (el && el.isConnected) { el.focus({ preventScroll: true }); if (selectAll && el.select) { try { el.select(); el.setSelectionRange(0, el.value.length); } catch { /* ignore */ } } }
+      else if (n++ < 30) setTimeout(go, 50);
+    };
+    setTimeout(go, 30);
   };
+  const focusStep = () => {
+    if (W.step === 1) focusMain('#onb-name', true);
+    else if (W.step === 2) {
+      if (W.imported) return;
+      setTimeout(() => { const ins = [...content.querySelectorAll('.onb-prow input[type=text]')]; const el = ins.find((i) => !i.value) || ins[0]; if (el) el.focus({ preventScroll: true }); }, 60);
+    } else focusMain('#onb-pin');
+  };
+  const goStep = (n) => { W.step = n; W.err = ''; render(); window.scrollTo(0, 0); focusStep(); };
 
   // ---- validazione passo
   const validate = (n) => {
@@ -221,10 +251,9 @@ function createStage(boot) {
       return '';
     }
     if (n === 2 && !W.imported) {
-      const list = W.people;
+      const list = named();
       if (!list.length) return t('setup.minPeople');
       if (list.length > MAX_PEOPLE) return t('setup.maxPeople');
-      if (list.some((p) => !norm(p.name))) return t('onb.err.emptyName');
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) if (same(list[i].name, list[j].name)) return t('onb.err.dupName');
       if (list.some((p) => (p.from && !isIso(p.from)) || (p.to && !isIso(p.to)) || (p.expectedTo && !isIso(p.expectedTo)) || (p.from && p.to && p.to <= p.from))) return t('onb.err.dates');
       return '';
@@ -232,7 +261,6 @@ function createStage(boot) {
     if (n === 3) {
       if (!peopleNow().length) return t('setup.minPeople');
       if (W.pin.length < MIN_PIN) return t('setup.pinShort');
-      if (W.pin !== W.pin2) return t('onb.err.pinMismatch');
       return '';
     }
     return '';
@@ -241,15 +269,16 @@ function createStage(boot) {
   // ---- passi
   const field = (label, input, hint, id) => h('div', { class: 'field' }, h('label', { for: id }, label), input, hint ? h('p', { class: 'onb-hint' }, hint) : null);
 
+  /** Passo 1: solo il nome (già proposto e selezionato). Il resto è sotto «Altre opzioni». */
   const step1 = () => {
-    const nameI = h('input', { class: 'input', id: 'onb-name', type: 'text', maxlength: '40', autocomplete: 'off', placeholder: t('setup.houseNamePh'), value: W.name, oninput: (e) => { W.name = e.target.value; } });
+    const nameI = h('input', { class: 'input lg', id: 'onb-name', type: 'text', maxlength: '40', autocomplete: 'off', enterkeyhint: 'next', placeholder: t('setup.houseNamePh'), value: W.name, oninput: (e) => { W.name = e.target.value; } });
     const preview = h('div', { class: 'chip acc onb-weekchip' });
     const note = h('p', { class: 'onb-hint onb-adjusted', hidden: !W.startAdjusted });
     const upd = () => { preview.replaceChildren(icon('calendar'), t('onb.firstWeekPreview', { range: weekLabel(W.imported ? W.imported.startSunday : W.startSunday) })); note.textContent = W.startAdjusted ? t('onb.firstWeekAdjusted', { date: fmtDate(W.startSunday, getLang(), { dow: true, year: true }) }) : ''; note.hidden = !W.startAdjusted; };
     const dateI = h('input', { class: 'input', id: 'onb-start', type: 'date', value: W.imported ? W.imported.startSunday : W.startSunday, disabled: !!W.imported, onchange: (e) => {
       const v = e.target.value;
       if (!isIso(v)) { e.target.value = W.startSunday; return; }
-      const s = toSunday(v); W.startAdjusted = s !== v; W.startSunday = s; e.target.value = s; upd();
+      const s = normalizeStartSunday(v); W.startAdjusted = s !== v; W.startSunday = s; e.target.value = s; upd();
     } });
     upd();
     const opt = (val, ic, title, desc, off) => {
@@ -260,28 +289,45 @@ function createStage(boot) {
     const choices = h('div', { class: 'onb-choices', role: 'radiogroup', 'aria-label': t('onb.mode.title') },
       opt('cloud', 'users', t('join.cloudMode'), boot.cloudAvailable ? t('onb.mode.cloud.desc') : t('onb.mode.cloudOff'), !boot.cloudAvailable),
       opt('local', 'device', t('join.localMode'), t('onb.mode.local.desc'), false));
+    const more = h('details', { class: 'onb-opts', open: W.optsOpen, ontoggle: (e) => { W.optsOpen = e.target.open; } },
+      h('summary', null, t('onb.moreOpts')),
+      h('div', { class: 'stack onb-opts-body' },
+        field(t('setup.firstSunday'), dateI, W.imported ? t('onb.firstWeekImported') : t('onb.firstWeekHelp'), 'onb-start'), preview, note,
+        h('div', { class: 'lbl onb-lbl' }, t('onb.mode.title')), choices));
     return [
       h('h2', null, t('onb.s1.title')), h('p', { class: 'muted' }, t('onb.s1.lead')),
       field(t('setup.houseName'), nameI, null, 'onb-name'),
-      field(t('setup.firstSunday'), dateI, W.imported ? t('onb.firstWeekImported') : t('onb.firstWeekHelp'), 'onb-start'), preview, note,
-      h('div', { class: 'lbl onb-lbl' }, t('onb.mode.title')), choices,
       !boot.cloudAvailable ? h('div', { class: 'note' }, icon('info'), h('div', { class: 'stack tight' }, h('div', null, t('join.cloudMissing')), readmeLink())) : null,
+      more, importBlock(),
     ];
   };
 
+  /** Passo 2: nomi come semplici campi; Invio passa al successivo o aggiunge una riga; il primo sei tu. */
   const step2 = () => {
     if (W.imported) {
       return [h('h2', null, t('onb.s2.title')), h('p', { class: 'muted' }, t('onb.imported.lock')),
         h('div', { class: 'list' }, W.imported.roommates.map((r, i) => h('div', { class: 'li' }, avatar(r.name, PALETTE[i % PALETTE.length]), h('div', { class: 'grow' }, h('div', { class: 't' }, r.name), r.from || r.to ? h('div', { class: 'd' }, [r.from ? t('onb.from') + ' ' + fmtDate(r.from, getLang(), { year: true }) : '', r.to ? t('onb.to') + ' ' + fmtDate(r.to, getLang(), { year: true }) : ''].filter(Boolean).join(' · ')) : null)))),
         h('button', { type: 'button', class: 'btn soft', onclick: () => { W.imported = null; W.adminIdx = 0; render(); } }, t('setup.skipImport'))];
     }
+    while (W.people.length < 3) W.people.push(blankPerson());
     const list = h('div', { class: 'onb-people' });
-    const addBtn = h('button', { type: 'button', class: 'btn tonal block', onclick: () => { if (W.people.length >= MAX_PEOPLE) return; W.people.push({ name: '', from: '', to: '', expectedTo: '', adv: false }); paint(true); } }, icon('plus'), t('setup.addPerson'));
-    const paint = (focusLast) => {
+    const addBtn = h('button', { type: 'button', class: 'btn tonal block', onclick: () => addRow() }, icon('plus'), t('setup.addPerson'));
+    const addRow = () => { if (W.people.length >= MAX_PEOPLE) return false; W.people.push(blankPerson()); paint(W.people.length - 1); return true; };
+    const paint = (focusIdx) => {
       clear(list);
       W.people.forEach((p, i) => {
         const av = avatar(p.name || '?', PALETTE[i % PALETTE.length]);
-        const inp = h('input', { class: 'input', type: 'text', maxlength: '24', autocomplete: 'off', placeholder: t('setup.namePh'), 'aria-label': t('onb.person', { n: i + 1 }), value: p.name, oninput: (e) => { p.name = e.target.value; av.textContent = (p.name.trim().slice(0, 1) || '?').toUpperCase(); } });
+        const inp = h('input', { class: 'input', type: 'text', maxlength: '24', autocomplete: 'off', autocapitalize: 'words', enterkeyhint: 'next', placeholder: i === 0 ? t('onb.youPh') : t('setup.namePh'), 'aria-label': t('onb.person', { n: i + 1 }), value: p.name,
+          oninput: (e) => { p.name = e.target.value; av.textContent = (p.name.trim().slice(0, 1) || '?').toUpperCase(); },
+          onkeydown: (e) => {
+            if (e.key !== 'Enter' || e.isComposing) return;
+            e.preventDefault();
+            const inputs = [...list.querySelectorAll('.onb-prow input[type=text]')];
+            const k = inputs.indexOf(e.target);
+            if (k < inputs.length - 1) inputs[k + 1].focus();               // riga successiva
+            else if (norm(p.name) && addRow()) { /* aggiunta rapida: nuova riga con il cursore */ }
+            else next();                                                      // ultima riga: avanti
+          } });
         const adv = h('div', { class: 'onb-adv', hidden: !p.adv },
           h('div', { class: 'field' }, h('label', null, t('onb.from')), h('input', { class: 'input', type: 'date', value: p.from, 'aria-label': t('onb.from') + ' ' + (p.name || i + 1), onchange: (e) => { p.from = e.target.value; } })),
           h('div', { class: 'field' }, h('label', null, t('onb.to')), h('input', { class: 'input', type: 'date', value: p.to, 'aria-label': t('onb.to') + ' ' + (p.name || i + 1), onchange: (e) => { p.to = e.target.value; } })),
@@ -292,7 +338,7 @@ function createStage(boot) {
         const toggleAdv = h('button', { type: 'button', class: 'icon-btn' + (p.adv || p.from || p.to || p.expectedTo ? ' on' : ''), 'aria-label': t('onb.advanced'), 'aria-expanded': String(!!p.adv), title: t('onb.advanced'), onclick: () => { p.adv = !p.adv; paint(); } }, icon('calendar'));
         const rm = W.people.length > 1 ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('onb.removePerson', { name: p.name || (i + 1) }), onclick: () => { W.people.splice(i, 1); paint(); } }, icon('x')) : null;
         list.append(h('div', { class: 'onb-person' }, h('div', { class: 'onb-prow' }, av, inp, toggleAdv, rm), adv));
-        if (focusLast && i === W.people.length - 1) setTimeout(() => inp.focus(), 20);
+        if (focusIdx === i) setTimeout(() => inp.focus(), 20);
       });
       addBtn.disabled = W.people.length >= MAX_PEOPLE;
       addBtn.title = W.people.length >= MAX_PEOPLE ? t('setup.maxPeople') : '';
@@ -302,7 +348,8 @@ function createStage(boot) {
       W.people.length >= MAX_PEOPLE ? h('p', { class: 'onb-hint center' }, t('setup.maxPeople')) : null];
   };
 
-  const importBlock = () => {
+  /** Importa il foglio Excel: opzione secondaria, sotto le altre opzioni del passo 1. */
+  function importBlock() {
     const box = h('div', { class: 'stack tight onb-import' });
     const paintImp = () => {
       clear(box);
@@ -315,7 +362,7 @@ function createStage(boot) {
             const res = await boot.importExcel(f);
             W.imported = res; W.startSunday = res.startSunday; W.startAdjusted = false; W.adminIdx = 0;
           } catch (err) { console.warn('import', err); W.importErr = t('setup.importFail'); }
-          W.importing = false; render(W.step);
+          W.importing = false; render();
         } });
         put(box, h('div', { class: 'onb-cardhead' }, h('div', { class: 'ico g' }, icon('upload')), h('div', null, h('h3', null, t('onb.import.title')), h('p', { class: 'muted small' }, t('setup.importHint')))),
           h('label', { class: 'btn tonal onb-file', for: 'onb-xlsx' }, icon('upload'), t('setup.import'), file),
@@ -338,40 +385,29 @@ function createStage(boot) {
           h('dt', null, t('onb.import.data')), h('dd', null, t('onb.import.weeks', { n: nWeeks }))),
         warn.length ? h('div', { class: 'note warn', role: 'status' }, icon('alert'), h('div', { class: 'stack tight' }, h('strong', null, t('onb.import.warnings')), h('ul', { class: 'onb-warn' }, warn.map((x) => h('li', null, x))),
           (im.warnings || []).some((w) => w.code === 'unknownName') ? h('p', { class: 'small' }, t('onb.import.unknownHint')) : null)) : null,
-        h('button', { type: 'button', class: 'btn soft sm', onclick: () => { W.imported = null; W.adminIdx = 0; render(W.step); } }, t('setup.skipImport')));
+        h('button', { type: 'button', class: 'btn soft sm', onclick: () => { W.imported = null; W.adminIdx = 0; render(); } }, t('setup.skipImport')));
     };
     paintImp();
     return h('section', { class: 'card flat onb-card' }, box);
-  };
+  }
 
+  /** Passo 3: solo il PIN (l'admin è già «tu»; si cambia da un link). Tastiera numerica, nessuna conferma. */
   const step3 = () => {
     const people = peopleNow();
     if (W.adminIdx >= people.length) W.adminIdx = 0;
-    const radios = h('div', { class: 'onb-admins', role: 'radiogroup', 'aria-label': t('setup.adminWho') }, people.map((p, i) => h('label', { class: 'onb-admin' + (W.adminIdx === i ? ' on' : '') },
-      h('input', { type: 'radio', class: 'sr', name: 'onb-admin', checked: W.adminIdx === i, onchange: () => { W.adminIdx = i; [...radios.children].forEach((c, k) => c.classList.toggle('on', k === i)); } }),
+    const adminName = (people[W.adminIdx] || { name: '' }).name;
+    const radios = h('div', { class: 'onb-admins', role: 'radiogroup', 'aria-label': t('setup.adminWho'), hidden: !W.adminOpen }, people.map((p, i) => h('label', { class: 'onb-admin' + (W.adminIdx === i ? ' on' : '') },
+      h('input', { type: 'radio', class: 'sr', name: 'onb-admin', checked: W.adminIdx === i, onchange: () => { W.adminIdx = i; [...radios.children].forEach((c, k) => c.classList.toggle('on', k === i)); who.textContent = p.name; } }),
       avatar(p.name, PALETTE[i % PALETTE.length]), h('span', { class: 'grow' }, p.name), h('i', { class: 'onb-radio', 'aria-hidden': 'true' }))));
-    const pin = h('input', { class: 'input', id: 'onb-pin', type: W.showPin ? 'text' : 'password', autocomplete: 'new-password', placeholder: '••••', value: W.pin, oninput: (e) => { W.pin = e.target.value; } });
-    const pin2 = h('input', { class: 'input', id: 'onb-pin2', type: W.showPin ? 'text' : 'password', autocomplete: 'new-password', placeholder: '••••', value: W.pin2, oninput: (e) => { W.pin2 = e.target.value; } });
-    const eye = h('button', { type: 'button', class: 'btn ghost sm', 'aria-pressed': String(W.showPin), onclick: () => { W.showPin = !W.showPin; pin.type = pin2.type = W.showPin ? 'text' : 'password'; eye.setAttribute('aria-pressed', String(W.showPin)); } }, icon('eye'), t('onb.showPin'));
+    const who = h('strong', null, adminName);
+    const adminLine = people.length > 1 ? h('div', { class: 'onb-adminline' },
+      h('span', null, icon('shield'), t('onb.adminIs'), ' ', who),
+      h('button', { type: 'button', class: 'onb-textbtn small', 'aria-expanded': String(W.adminOpen), onclick: () => { W.adminOpen = !W.adminOpen; radios.hidden = !W.adminOpen; } }, t('onb.adminChange'))) : null;
+    const pin = h('input', { class: 'input lg onb-pin', id: 'onb-pin', type: W.hidePin ? 'password' : 'text', inputmode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', enterkeyhint: 'done', placeholder: '••••', value: W.pin, oninput: (e) => { W.pin = e.target.value; } });
+    const eye = h('button', { type: 'button', class: 'btn ghost sm', 'aria-pressed': String(W.hidePin), onclick: () => { W.hidePin = !W.hidePin; pin.type = W.hidePin ? 'password' : 'text'; eye.setAttribute('aria-pressed', String(W.hidePin)); eye.replaceChildren(icon('eye'), W.hidePin ? t('onb.showPin') : t('onb.hidePin')); } }, icon('eye'), W.hidePin ? t('onb.showPin') : t('onb.hidePin'));
     return [h('h2', null, t('onb.s3.title')), h('p', { class: 'muted' }, t('onb.s3.lead')),
-      h('div', { class: 'lbl onb-lbl' }, t('setup.adminWho')), radios,
-      field(t('setup.pin'), pin, t('setup.pinHint'), 'onb-pin'), field(t('onb.pinConfirm'), pin2, null, 'onb-pin2'), h('div', null, eye),
-      importBlock()];
-  };
-
-  const step4 = () => {
-    const people = peopleNow();
-    const adminP = people[W.adminIdx] || people[0] || { name: '' };
-    const start = W.imported ? W.imported.startSunday : W.startSunday;
-    const row = (k, v) => [h('dt', null, k), h('dd', null, v)];
-    return [h('h2', null, t('onb.s4.title')), h('p', { class: 'muted' }, t('onb.s4.lead')),
-      h('dl', { class: 'onb-dl card' },
-        row(t('onb.sum.house'), norm(W.name)), row(t('onb.sum.start'), weekLabel(start)),
-        row(t('onb.sum.mode'), W.mode === 'cloud' ? t('join.cloudMode') : t('join.localMode')),
-        row(t('onb.sum.people'), h('div', { class: 'onb-chips' }, people.map((p, i) => h('span', { class: 'chip' }, avatar(p.name, PALETTE[i % PALETTE.length], 'sm'), p.name)))),
-        row(t('onb.sum.admin'), h('span', { class: 'chip acc' }, icon('shield'), adminP.name)),
-        W.imported ? row(t('onb.sum.import'), t('setup.importDone', { n: W.imported.roommates.length, w: Object.keys(W.imported.weeks || {}).length })) : null),
-      W.mode === 'local' ? h('div', { class: 'note' }, icon('info'), t('onb.sum.localNote')) : null];
+      field(t('onb.pinLabel'), pin, t('setup.pinHint'), 'onb-pin'), h('div', null, eye),
+      adminLine, adminLine ? radios : null];
   };
 
   // ---- creazione
@@ -381,7 +417,7 @@ function createStage(boot) {
     W.busy = true; W.err = ''; render();
     try {
       const id = await boot.createHouse({
-        name: norm(W.name), startSunday: W.imported ? W.imported.startSunday : toSunday(W.startSunday),
+        name: norm(W.name), startSunday: W.imported ? W.imported.startSunday : normalizeStartSunday(W.startSunday),
         roommates: people.map((p) => ({ name: norm(p.name), from: p.from || null, to: p.to || null, ...(!p.to && p.expectedTo ? { expectedTo: p.expectedTo } : {}) })),
         adminName: adminP.name, pin: W.pin, mode: boot.cloudAvailable ? W.mode : 'local', imported: W.imported || undefined,
       });
@@ -394,13 +430,12 @@ function createStage(boot) {
     }
   };
 
-  function render(n) {
-    if (typeof n === 'number') W.step = n;
+  function render() {
     const s = W.step;
-    clear(stepsEl); for (let i = 1; i <= 4; i++) stepsEl.append(h('i', { class: i <= s ? 'on' : '' }));
-    stepsEl.setAttribute('aria-valuenow', String(s)); stepsEl.setAttribute('aria-valuetext', t('onb.step', { n: s, total: 4 }) + ' · ' + t('setup.step' + s));
-    labelEl.textContent = t('onb.step', { n: s, total: 4 }) + ' · ' + t('setup.step' + s);
-    const kids = s === 1 ? step1() : s === 2 ? step2() : s === 3 ? step3() : step4();
+    clear(stepsEl); for (let i = 1; i <= TOTAL; i++) stepsEl.append(h('i', { class: i <= s ? 'on' : '' }));
+    stepsEl.setAttribute('aria-valuenow', String(s)); stepsEl.setAttribute('aria-valuetext', t('onb.step', { n: s, total: TOTAL }) + ' · ' + t('onb.stepName' + s));
+    labelEl.textContent = t('onb.step', { n: s, total: TOTAL }) + ' · ' + t('onb.stepName' + s);
+    const kids = s === 1 ? step1() : s === 2 ? step2() : step3();
     const err = h('p', { class: 'onb-err', role: 'alert', hidden: !W.err }, W.err);
     const form = h('form', { class: 'stack onb-form', novalidate: true, onsubmit: (e) => { e.preventDefault(); next(); } }, ...kids, err, h('button', { type: 'submit', class: 'sr', tabindex: '-1', 'aria-hidden': 'true' }, t('next')));
     const pane = h('div', { class: 'onb-pane fade-up' }, form);
@@ -408,29 +443,39 @@ function createStage(boot) {
     clear(nav);
     nav.append(
       h('button', { type: 'button', class: 'btn soft', disabled: W.busy, onclick: () => (s === 1 ? exit() : goStep(s - 1)) }, icon('back'), s === 1 ? t('cancel') : t('back')),
-      s < 4 ? h('button', { type: 'button', class: 'btn', onclick: next }, t('next'), icon('chevron'))
-        : h('button', { type: 'button', class: 'btn lg', disabled: W.busy, onclick: create }, W.busy ? [h('i', { class: 'onb-spin sm on-accent' }), t('onb.creating')] : [icon('check'), t('setup.create')]));
+      s < TOTAL ? h('button', { type: 'button', class: 'btn', onclick: next }, t('next'), icon('chevron'))
+        : h('button', { type: 'button', class: 'btn lg', disabled: W.busy, onclick: next }, W.busy ? [h('i', { class: 'onb-spin sm on-accent' }), t('onb.creating')] : [icon('check'), t('setup.create')]));
   }
   function next() {
-    if (W.step === 3 && W.importing) return;
+    if (W.step === 1 && W.importing) return;
     const err = validate(W.step);
     if (err) { W.err = err; const e = content.querySelector('.onb-err'); if (e) { e.textContent = err; e.hidden = false; } return; }
-    if (W.step < 4) goStep(W.step + 1); else create();
+    if (W.step === 2 && !W.imported) W.people = named();   // via le righe vuote
+    if (W.step < TOTAL) goStep(W.step + 1); else create();
   }
   render();
+  focusStep();
   return page('onb-create wide',
     h('div', { class: 'onb-top' }, logo(), h('div', { class: 'grow' }, h('div', { class: 'onb-kicker' }, t('setup.title')), labelEl)),
     stepsEl, content, nav);
 }
 
 // ---- "Casa creata!" (overlay sopra l'app: boot.createHouse ha già avviato l'app dietro le quinte)
-function showCreated(boot, { name, mode, id }) {
+async function inviteQr(link) {
+  try {
+    const { default: qrcode } = await import('../../vendor/qr.js');
+    const q = qrcode(0, 'M'); q.addData(link); q.make();
+    return h('div', { class: 'qr', 'data-testid': 'invite-qr', role: 'img', 'aria-label': t('inv.qr'), html: q.createSvgTag({ cellSize: 4, margin: 0 }) });
+  } catch (e) { console.warn('qr', e); return null; }
+}
+async function showCreated(boot, { name, mode, id }) {
   const app = window.__app || {};
   const code = (app.code && app.code()) || fmtCode(id);
   const link = (app.joinLink && app.joinLink()) || `${location.origin}${location.pathname}#/join/${id}`;
   const url = (app.baseUrl && app.baseUrl()) || location.origin + location.pathname;
   const cloud = mode === 'cloud';
   const msg = t('inv.msg', { house: name, link, code, url });
+  const qr = cloud ? await inviteQr(link) : null;
   const close = () => { ov.remove(); document.body.classList.remove('onb-lock'); try { location.hash = '#/'; } catch { /* ignore */ } try { boot.evaluate(); } catch (e) { console.error(e); } };
   const heading = h('h1', { class: 'onb-h', tabindex: '-1', id: 'onb-done-title' }, t('setup.created'));
   const ov = h('div', { class: 'gate onb onb-done', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'onb-done-title' },
@@ -438,18 +483,19 @@ function showCreated(boot, { name, mode, id }) {
       h('div', { class: 'logo onb-check' }, icon('check')),
       h('div', { class: 'onb-hero' }, heading, h('p', { class: 'lead' }, name)),
       cloud ? h('div', { class: 'stack' },
-        h('p', { class: 'muted' }, t('setup.next.invite')),
-        h('div', { class: 'card onb-card stack tight' },
-          h('div', { class: 'lbl' }, t('inv.code')), h('div', { class: 'codebox', 'data-testid': 'house-code' }, code),
-          h('div', { class: 'lbl' }, t('inv.link')), h('div', { class: 'onb-linkbox' }, link)),
+        h('p', { class: 'muted' }, t('onb.done.scan')),
+        qr ? h('div', { class: 'center' }, qr) : null,
         h('div', { class: 'btn-row' },
           h('button', { type: 'button', class: 'btn tonal', onclick: async () => { const ok = await copyText(link); boot.toast(ok ? t('copied') : t('error')); } }, icon('copy'), t('inv.copyLink')),
           h('a', { class: 'btn tonal', href: 'https://wa.me/?text=' + encodeURIComponent(msg), target: '_blank', rel: 'noopener' }, icon('whatsapp'), t('inv.shareWa'))),
+        h('div', { class: 'card onb-card stack tight' },
+          h('div', { class: 'lbl' }, t('inv.code')), h('div', { class: 'codebox', 'data-testid': 'house-code' }, code),
+          h('div', { class: 'lbl' }, t('inv.link')), h('div', { class: 'onb-linkbox' }, link)),
         h('p', { class: 'muted small' }, t('inv.hint')))
         : h('div', { class: 'note' }, icon('info'), t('onb.done.localLead')),
       h('button', { type: 'button', class: 'btn lg block', onclick: close, id: 'onb-go' }, icon('home'), t('onb.done.go'))));
   document.body.append(ov); document.body.classList.add('onb-lock');
-  setTimeout(() => { heading.focus({ preventScroll: true }); confetti(Math.round(innerWidth / 2), Math.round(innerHeight / 4)); }, 60);
+  setTimeout(() => { heading.focus({ preventScroll: true }); }, 60);
 }
 
 // ---------------------------------------------------------------- REGOLE (gate obbligatorio)

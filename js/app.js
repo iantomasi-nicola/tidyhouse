@@ -218,6 +218,8 @@ const boot = {
   unlockAdmin: (pin) => ctx.unlockAdmin(pin),
   async acceptRules() { await S.actions.acceptRules(); saveRulesAck(); evaluate(); },
   evaluate: () => evaluate(),
+  /** Rinuncia a un link d'invito di un'altra casa: torna alla casa salvata (o alla landing). */
+  resume() { try { history.replaceState(null, '', '#/'); } catch { /* ignore */ } return startFromHash(); },
   async importExcel(file) { const [{ default: XLSX }, { parseWorkbook }] = await Promise.all([import('../vendor/xlsx.js'), import('./xlsx-import.js')]); return parseWorkbook(XLSX, new Uint8Array(await file.arrayBuffer())); },
 };
 window.__boot = boot;
