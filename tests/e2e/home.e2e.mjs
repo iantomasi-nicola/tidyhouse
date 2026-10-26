@@ -24,6 +24,7 @@ const curRow = (s) => { const o = plan(s); return o.rows[o.cur]; };
 let env; const results = [];
 async function open({ s, viewport = MOBILE, dark = false, lang = 'it-IT', now = NOW, hash = '#/' } = {}) {
   const page = await env.page({ now, viewport, lang, dark, seed: s });
+  page.on('response', (r) => { if (r.status() === 404 && /home|screens\/home|strings\/home/.test(r.url())) (page.__404 ||= []).push(r.url()); });
   await page.goto(env.url + '/' + hash);
   await page.waitForSelector('[data-screen="home"]', { timeout: 8000 });
   await page.waitForTimeout(700);
@@ -31,7 +32,8 @@ async function open({ s, viewport = MOBILE, dark = false, lang = 'it-IT', now = 
 }
 const shot = (page, name, full = true) => page.screenshot({ path: path.join(SHOTS, name + '.png'), fullPage: full });
 const noOverflow = async (page) => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'overflow orizzontale');
-const noErrors = (page) => assert.deepEqual(page.__errors || [], [], 'errori in console');
+// i 404 di risorse di altri moduli (in lavorazione in parallelo) si ignorano: i nostri file si controllano in open()
+const noErrors = (page) => { assert.deepEqual((page.__errors || []).filter((e) => !/Failed to load resource/.test(e)), [], 'errori in console'); assert.deepEqual(page.__404 || [], [], 'file della Home mancanti'); };
 const widgets = (page) => page.$$eval('[data-widget]', (els) => els.map((e) => e.dataset.widget));
 const text = (page, sel) => page.locator(sel).first().innerText();
 async function test(name, fn) {

@@ -817,7 +817,7 @@ function confirmImport(ctx, { lines, warnings = [], build }) {
     warnings.length ? note('warn', 'alert', h('div', null, warnings.map((w) => h('div', null, w)))) : null,
     note('bad', 'alert', t('data.importReplace')),
     h('p', { class: 'small muted' }, t('setX.data.keepPin')),
-    h('div', { class: 'btn-row' }, btn(t('cancel'), () => sh.close(), { id: 'import-cancel' }), btn(t('data.import').split(' ')[0], async () => {
+    h('div', { class: 'btn-row' }, btn(t('cancel'), () => sh.close(), { id: 'import-cancel' }), btn(t('setX.data.doImport'), async () => {
       sh.close();
       try { ctx.toast(t('data.importing')); await ctx.importBackup(build()); ctx.toast(t('data.imported')); ctx.rerender(); } catch (e) { console.warn(e); ctx.toast(t('error')); }
     }, { cls: 'danger', ic: 'upload', id: 'import-confirm' }))) });
