@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor } from './extras.js';
+import { uid, randomCode, normCode, feature, nameOf, swapPatch, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners } from './extras.js';
 import { engineHouse } from './store.js';
 
 // ---------- PIN admin ----------
@@ -78,9 +78,12 @@ export class Actions {
   // ---- completamento con checklist, annulla, volontari, sostituzioni, ritardi ----
   weekDoc(sunday) { return (this.s.state.weeks || {})[sunday] || {}; }
   /** Voci di checklist ancora da spuntare per una mansione di una settimana. */
-  pendingChecklist(sunday, chore) {
-    const eh = { ...this.house, weeks: { ...(this.s.state.weeks || {}) } };
-    return checklistFor(eh, eh.weeks, sunday, chore).filter((x) => x.status !== 'done').map((x) => ({ id: x.task.id, text: x.task.text, status: x.status }));
+  pendingChecklist(sunday, chore, { all = false } = {}) {
+    const weeks = { ...(this.s.state.weeks || {}) }; const eh = { ...this.house, weeks }; const out = this.out();
+    const row = out.rows.find((r) => r.sunday === sunday); const assignee = row && row.assigned[CHORES.indexOf(chore)];
+    return checklistOwners(eh, out, weeks, sunday)
+      .filter((x) => x.chore === chore && x.status !== 'done' && (all || x.owner === assignee))   // gli arretrati di un altro (se a casa) non bloccano chi ha la mansione ora
+      .map((x) => ({ id: x.task.id, text: x.task.text, status: x.status, owner: x.owner, reason: x.reason }));
   }
   /**
    * Segna una mansione come fatta (value 'done' oppure 'by:ID') verificando la checklist.

@@ -281,3 +281,27 @@ test('ritardo annunciato: niente solleciti fino a quel giorno, promemoria il gio
   const after = planNotifications({ house: h, weeks, now: nowRome('2026-11-06T08:10:00Z') }).filter((x) => x.type === 'late');
   assert.ok(Array.isArray(after));
 });
+
+test('checklist non fatta: scala alla settimana dopo e tocca a chi non l\'ha fatta, se è a casa', async () => {
+  const { checklistOwners } = await import('../js/extras.js');
+  const h = house({ tasks: [{ id: 'k', chore: 'bathroom', text: 'Tappetino', every: 2, anchor: START, enabled: true }] });
+  const out0 = compute(h, wk(0), 12); const doer = out0.rows[0].assigned[1];
+  const o1 = checklistOwners(h, out0, {}, wk(0)); assert.equal(o1[0].status, 'due'); assert.equal(o1[0].owner, doer);
+  // settimana 1: arretrato (non fatto) → di nuovo a chi aveva il bagno alla settimana 0, se è a casa
+  const out1 = compute(h, wk(0), 12); const cur1 = out1.rows[1].assigned[1];
+  const r1 = checklistOwners(h, out1, {}, wk(1))[0];
+  assert.equal(r1.status, 'overdue'); assert.equal(r1.owner, doer); assert.equal(r1.reason, doer === cur1 ? 'assignee' : 'arrears');
+  // se chi non l'ha fatto è assente quella settimana: passa a chi ha la mansione adesso
+  const hAway = house({ tasks: h.tasks, weeks: { [wk(1)]: { away: [doer] } } });
+  const outA = compute(hAway, wk(0), 12); const rA = checklistOwners(hAway, outA, hAway.weeks, wk(1))[0];
+  assert.equal(rA.owner, outA.rows[1].assigned[1]); assert.notEqual(rA.owner, doer);
+  // fatto in ritardo: sparisce
+  const weeksDone = { [wk(1)]: { tasksDone: { k: { by: doer } } } };
+  assert.equal(checklistOwners({ ...h, weeks: weeksDone }, compute({ ...h, weeks: weeksDone }, wk(0), 12), weeksDone, wk(1)).filter((x) => x.status !== 'done').length, 0);
+  // notifica a chi ha solo arretrati (senza turno da fare), il sabato
+  const o = compute(h, wk(0), 12);
+  if (doer !== o.rows[1].assigned[1]) {
+    const n = planNotifications({ house: h, weeks: {}, now: nowRome('2026-10-17T09:15:00Z') }).filter((x) => x.type === 'tasks' || x.type === 'satDuty');
+    assert.ok(n.some((x) => x.type === 'satDuty') || n.some((x) => x.type === 'tasks'));
+  }
+});

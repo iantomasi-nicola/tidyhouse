@@ -50,7 +50,14 @@ function codeForm(boot, { initial = '', label, cta, onGo }) {
   const guide = h('div', { class: 'onb-guide', hidden: true }, readmeLink(), h('button', { type: 'button', class: 'btn soft sm', onclick: () => boot.go('create') }, t('onb.tryLocal')));
   const btn = h('button', { type: 'submit', class: 'btn block', disabled: true }, cta || t('join.enter'));
   let busy = false;
-  const sync = () => { const c = extractCode(inp.value); inp.value = fmtCode(c); btn.disabled = busy || c.length !== 12; };
+  const sync = () => {
+    const raw = inp.value, pos = inp.selectionStart, c = extractCode(raw), f = fmtCode(c);
+    if (f !== raw) {   // riformatta mantenendo il cursore dov'era (conta i caratteri validi prima del cursore)
+      const n = pos === null || pos === undefined || pos >= raw.length ? c.length : Math.min(c.length, extractCode(raw.slice(0, pos)).length);
+      inp.value = f; if (document.activeElement === inp) { const np = n ? n + Math.floor((n - 1) / 4) : 0; try { inp.setSelectionRange(np, np); } catch { /* ignore */ } }
+    }
+    btn.disabled = busy || c.length !== 12;
+  };
   inp.addEventListener('input', sync);
   if (initial) { inp.value = fmtCode(extractCode(initial)); }
   const form = h('form', { class: 'onb-code', novalidate: true, onsubmit: async (e) => {

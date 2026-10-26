@@ -4,7 +4,7 @@ import { h, icon, avatar } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong } from '../i18n.js';
 import { CHORES } from '../engine.js';
 import { planOf } from '../extras.js';
-import { openWeekSheet, renderWeekDetail, weekStatus, outcomeOf } from '../choresheet.js';
+import { openWeekSheet, renderWeekDetail, weekStatus, outcomeOf, flowChips } from '../choresheet.js';
 
 const WIDE = '(min-width: 1180px)';
 const BACK = 6, AHEAD = 12, STEP = 8;
@@ -26,6 +26,7 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
   const house = { ...ctx.house, weeks: ctx.state.weeks || {} };
   const empty = row.status === 'empty' || row.status === 'none';
 
+  const flows = [];
   const chores = CHORES.map((chore, c) => {
     const id = row.assigned[c];
     const oc = outcomeOf(ctx, row, c);
@@ -35,6 +36,9 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
     if (id && row.isMakeup[c]) inds.push(h('span', { class: 'ind acc', title: ctx.t('st.makeup') }, icon('refresh')));
     if (id && row.swapped[c]) inds.push(h('span', { class: 'ind acc', title: ctx.t('st.swapped') }, icon('swap')));
     if (id && plan) inds.push(h('span', { class: 'ind plan', title: ctx.t('cal.chosenDay', { day: `${dowLong(plan, ctx.lang)} ${fmtDate(plan, ctx.lang)}` }) }, ctx.t('dow.' + dowIdx(plan))));
+    const fl = id ? flowChips(ctx, row.sunday, chore) : [];
+    for (const f of fl) inds.push(h('span', { class: 'ind ' + f.tone, title: f.text, 'aria-label': f.text, 'data-flow': f.key }, icon(f.ic)));
+    flows.push(...fl.filter((f) => f.key === 'incomplete').map((f) => ctx.t('chore.' + chore)));
     return h('span', { class: 'wk-chore', 'data-chore': chore },
       h('span', { class: 'l' }, h('i', { class: 'dot ' + chore }), ctx.t('chore.' + chore + '.short')),
       h('span', { class: 'm' }, id ? avatar(ctx.name(id), ctx.color(id), 'sm') : h('span', { class: 'av sm cs-none' }, '–'), h('span', { class: 'inds' }, inds)),
@@ -44,6 +48,7 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
   const foot = [];
   if (row.rest.length) foot.push(h('span', { class: 'wk-meta' }, icon('moon'), ctx.t('cal.restNames', { names: row.rest.map((id) => ctx.name(id)).join(', ') })));
   if (row.away.length && !empty) foot.push(h('span', { class: 'wk-meta' }, icon('plane'), ctx.t('cal.awayNames', { names: row.away.map((id) => ctx.name(id)).join(', ') })));
+  if (flows.length) foot.push(h('span', { class: 'wk-meta fl-incmeta', 'data-flow': 'incomplete' }, icon('alert'), ctx.t('flow.incompleteIn', { chores: flows.join(', ') })));
   if (empty) foot.push(h('span', { class: 'wk-meta' }, icon('home2'), ctx.t('cal.emptyHouse')));
 
   const card = h('button', {

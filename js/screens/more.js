@@ -1,12 +1,14 @@
 // Schermata "Altro": hub + sotto-pagine (scorte, regole, ultimo che esce, checklist, scambi, registro, guida, info).
 // Esporta anche `renderRulesContent(houseOrCtx)` (usato dal gate regole) e `openLastOutSheet(ctx)`.
 import { h, icon, loadCss, liRow, empty, avatar, toggle, stepper, seg, confirmDialog, confetti, clear } from '../ui.js';
-import { t, getLang, fmtDate, fmtWeekRange, dowLong, registerStrings } from '../i18n.js';
+import { t, tr, getLang, fmtDate, fmtWeekRange, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, DEFAULT_SETTINGS, addDays } from '../engine.js';
-import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, tasksForWeek, nextDueWeek, weekIndex, weekOfDate, uid } from '../extras.js';
+import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, tasksForWeek, checklistFor, nextDueWeek, weekIndex, weekOfDate, uid } from '../extras.js';
 import { it, en } from '../strings/more.js';
+import { it as it2, en as en2 } from '../strings/more2.js';
 
 registerStrings(it, en);
+registerStrings(it2, en2);
 
 const REPO = 'https://github.com/iantomasi-nicola/tidyhouse';
 const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -43,14 +45,23 @@ function head(title, { back = '#/more', right = null } = {}) {
 function offPage(title) {
   return h('div', { class: 'mx mx-sub' }, head(title), empty('lock', t('moreX.off'), t('moreX.offHint')));
 }
-const shell = (...kids) => { loadCss('css/more.css'); return h('div', { class: 'mx mx-sub fade-up' }, ...kids); };
+/** Contenitore di pagina. L'animazione di ingresso parte solo quando si apre la pagina, non a ogni aggiornamento dei dati (niente sfarfallii). */
+let lastShell = { path: '', at: 0 };
+const shell = (...kids) => {
+  loadCss('css/more.css');
+  const path = location.hash; const now = Date.now();
+  const again = lastShell.path === path && now - lastShell.at < 2500;
+  lastShell = { path, at: now };
+  return h('div', { class: 'mx mx-sub' + (again ? '' : ' fade-up') }, ...kids);
+};
+const reduceMotion = () => document.documentElement.classList.contains('no-motion') || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 // ================================================================ hub
 function hub(ctx) {
   const f = (k) => ctx.feature(k);
   const house = ctx.house;
   const needsOpen = Object.values(ctx.state.needs || {}).filter((n) => !n.done).length;
-  const inReq = ctx.badges().more || 0;
+  const inReq = awaitingMe(ctx).length;   // calcolato qui: ctx.badges() non conta le sostituzioni aperte a tutti
   const tasksOn = (house.tasks || []).filter((x) => x.enabled !== false).length;
   const badge = (n, cls = 'bad') => (n > 0 ? chip(cls, String(n)) : undefined);
   const row = (o) => liRow(o);
@@ -73,7 +84,7 @@ function hub(ctx) {
     profile,
     group(t('moreX.g.house'), [
       f('needs') ? row({ ic: 'cart', tone: 'o', title: t('more.needs'), desc: needsOpen ? t('moreX.needsOpen', { n: needsOpen }) : t('needs.empty'), end: badge(needsOpen, 'warn'), href: '#/needs' }) : null,
-      f('requests') ? row({ ic: 'swap', tone: 'p', title: t('more.requests'), desc: t('moreX.d.requests'), end: badge(inReq), href: '#/requests' }) : null,
+      f('requests') ? row({ ic: 'swap', tone: 'p', title: t('more.requests'), desc: inReq ? t('moreY.hub.awaiting', { n: inReq }) : t('moreY.hub.requests'), end: badge(inReq), href: '#/requests' }) : null,
       f('lastout') ? row({ ic: 'plane', tone: 'g', title: t('more.lastout'), desc: t('moreX.d.lastout'), href: '#/lastout' }) : null,
       f('tasks') ? row({ ic: 'list', tone: '', title: t('more.tasks'), desc: tasksOn ? t('moreX.tasksOn', { n: tasksOn }) : t('moreX.d.tasks'), href: '#/tasks' }) : null,
       f('rules') ? row({ ic: 'book', tone: 'r', title: t('more.rules'), desc: t('moreX.d.rules'), href: '#/rules' }) : null,
@@ -93,57 +104,172 @@ function hub(ctx) {
 }
 
 // ================================================================ scorte e spesa
-let needDraft = { text: '', urgent: false };
-function needsPage(ctx) {
-  if (!ctx.feature('needs')) return offPage(t('needs.title'));
-  const house = ctx.house;
-  const inp = h('input', { class: 'input', id: 'mx-need', type: 'text', maxlength: '80', autocomplete: 'off', enterkeyhint: 'done', placeholder: t('needs.placeholder'), 'aria-label': t('needs.add'), value: needDraft.text, oninput: (e) => { needDraft.text = e.target.value; } });
-  const urgentSw = toggle(needDraft.urgent, (v) => { needDraft.urgent = v; }, t('needs.urgent'));
-  const listBox = h('div', { class: 'stack' });
+// La pagina è costruita UNA volta (campo di testo incluso) e riusata a ogni render dell'app: il campo non viene mai
+// ricreato, quindi non perde testo, caret o focus. L'elenco si aggiorna sul posto (riconciliazione per chiave) e anche
+// direttamente dagli aggiornamenti dello store, senza aspettare il rerender dell'app (che resta sospeso mentre si scrive).
+const NEED_MAX = 80;
+let NU = null;
 
-  const add = async () => {
-    const text = inp.value.trim();
+/** Aggiorna `parent` in modo che contenga, nell'ordine, i nodi di `items` ({key, sig, make(isNew)}); riusa i nodi invariati. */
+function reconcile(parent, cache, items, animate) {
+  const seen = new Set(); let ref = parent.firstChild;
+  for (const it of items) {
+    seen.add(it.key);
+    let c = cache.get(it.key); const isNew = !c;
+    if (!c || c.sig !== it.sig) {
+      const el = it.make(isNew && animate);
+      if (c && c.el.parentNode === parent) { if (ref === c.el) ref = c.el.nextSibling; c.el.remove(); }
+      c = { el, sig: it.sig }; cache.set(it.key, c);
+    }
+    if (c.el === ref) ref = ref.nextSibling; else parent.insertBefore(c.el, ref);
+  }
+  for (const [k, c] of [...cache]) if (!seen.has(k)) { c.el.remove(); cache.delete(k); }
+}
+
+function buildNeeds(ctx, key, draft) {
+  const holding = new Map();   // id -> timer: voce appena spuntata, resta ferma il tempo dell'animazione
+  const pending = [];          // voci inviate non ancora confermate (ottimistiche)
+  const openCache = new Map(), doneCache = new Map();
+  let painted = false; let urgent = !!(draft && draft.urgent); let stopped = false;
+
+  const inp = h('input', { class: 'input', id: 'mx-need', type: 'text', maxlength: String(NEED_MAX), autocomplete: 'off', autocapitalize: 'sentences', enterkeyhint: 'send', placeholder: t('needs.placeholder'), 'aria-label': t('needs.add') });
+  inp.value = (draft && draft.text) || '';
+  const counter = h('span', { class: 'mx-count', 'aria-hidden': 'true', hidden: true });
+  const updCounter = () => { const n = inp.value.length; counter.hidden = n < NEED_MAX - 20; counter.textContent = t('moreY.need.count', { n }); counter.classList.toggle('max', n >= NEED_MAX); };
+  inp.addEventListener('input', updCounter); updCounter();
+  // Invio gestito qui (non solo dall'invio implicito del form: il browser lo ignora se arriva poco dopo il precedente)
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229 && !e.shiftKey) { e.preventDefault(); add(); } });
+  const urgentSw = toggle(urgent, (v) => { urgent = v; }, t('needs.urgent'));
+  const urgentInp = urgentSw.querySelector('input');
+  const setUrgent = (v) => { urgent = v; urgentInp.checked = v; };
+
+  const openCount = h('span', { class: 'chip' }); const doneCount = h('span', { class: 'chip' });
+  const openList = h('div', { class: 'list' }); const doneList = h('div', { class: 'list mx-done' });
+  const emptyCard = h('div', { class: 'card' }, empty('cart', t('needs.empty')));
+  const openSec = h('div', null, h('div', { class: 'eyebrow' }, t('needs.open'), openCount), openList);
+  const clearBtn = h('button', { type: 'button', onclick: async () => {
+    const n = Object.values(ctx.state.needs || {}).filter((x) => x.done).length;
+    if (!n || !(await confirmDialog({ title: t('needs.clearDone'), text: t('moreX.clearConfirm', { n }), ok: t('needs.clearDone'), danger: true }))) return;
+    await attempt(ctx, () => ctx.actions.clearBought()); paint();
+  } }, t('needs.clearDone'));
+  const doneSec = h('div', null, h('div', { class: 'eyebrow' }, h('span', { class: 'row' }, t('needs.history'), doneCount), clearBtn), doneList);
+  const listBox = h('div', { class: 'stack mx-needlist' });
+  const triBox = h('div');
+
+  const findOpen = (text) => Object.entries(ctx.state.needs || {}).find(([, n]) => !n.done && String(n.text || '').trim().toLowerCase() === text.toLowerCase());
+  const flash = (id) => { const c = openCache.get(id); if (!c) return; c.el.classList.remove('flash'); void c.el.offsetWidth; c.el.classList.add('flash'); setTimeout(() => c.el.classList.remove('flash'), 1100); };
+
+  function add() {
+    const text = inp.value.trim().slice(0, NEED_MAX).trim();
+    inp.value = ''; updCounter();                       // svuota subito: un secondo Invio non trova nulla da inviare
     if (!text) { inp.focus(); return; }
-    const ok = await attempt(ctx, async () => { await ctx.actions.addNeed(text, needDraft.urgent); return true; });
-    if (!ok) return;
-    needDraft = { text: '', urgent: false }; inp.value = ''; urgentSw.querySelector('input').checked = false;
-    ctx.haptic(ctx.prefs.haptics, 8); paint(); inp.focus();
-  };
-  const form = h('form', { class: 'card stack tight mx-needform', onsubmit: (e) => { e.preventDefault(); add(); } },
-    h('div', { class: 'field' }, h('label', { for: 'mx-need' }, t('needs.add')), h('div', { class: 'mx-addrow' }, inp, h('button', { type: 'submit', class: 'btn', 'aria-label': t('add') }, icon('plus'), h('span', { class: 'mx-hide-s' }, t('add'))))),
+    const isUrgent = urgent; setUrgent(false);
+    const dup = findOpen(text);
+    if (dup) { flash(dup[0]); ctx.toast(t('moreY.need.dup', { text })); inp.focus(); return; }
+    const p = { tid: uid(), text, urgent: isUrgent, start: ctx.now().toISOString() };
+    const req = ctx.actions.addNeed(text, isUrgent);   // lo store si aggiorna subito (ottimistico); la riga provvisoria copre i backend lenti
+    pending.push(p); paint(); inp.focus();
+    ctx.haptic(ctx.prefs.haptics, 8);
+    req.catch((e) => {
+      console.error(e);
+      if (!inp.value) { inp.value = text; updCounter(); setUrgent(isUrgent); }
+      ctx.toast(e && e.message === 'permission' ? t('err.permission') : t('moreY.need.addFail', { text }));
+    }).finally(() => { const i = pending.indexOf(p); if (i >= 0) pending.splice(i, 1); paint(); });
+  }
+  const addBtn = h('button', { type: 'submit', class: 'btn', 'aria-label': t('add'), onmousedown: (e) => e.preventDefault() }, icon('plus'), h('span', { class: 'mx-hide-s' }, t('add')));
+  const form = h('form', { class: 'card stack tight mx-needform', autocomplete: 'off', onsubmit: (e) => { e.preventDefault(); add(); } },
+    h('div', { class: 'field' }, h('label', { for: 'mx-need' }, t('needs.add'), counter), h('div', { class: 'mx-addrow' }, inp, addBtn)),
     h('div', { class: 'row-between' }, h('div', { class: 'row' }, icon('alert'), h('span', { class: 'mx-lblb' }, t('needs.urgent'))), urgentSw));
 
-  function paint() {
-    const entries = Object.entries(ctx.state.needs || {}).map(([id, n]) => ({ id, ...n }));
-    const open = entries.filter((n) => !n.done).sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(b.at || '').localeCompare(String(a.at || '')));
-    const done = entries.filter((n) => n.done).sort((a, b) => String(b.doneAt || '').localeCompare(String(a.doneAt || '')));
-    clear(listBox);
-    listBox.append(open.length
-      ? h('div', null, h('div', { class: 'eyebrow' }, t('needs.open'), chip('', String(open.length))), h('div', { class: 'list' }, open.map((n) => needRow(n, false))))
-      : h('div', { class: 'card' }, empty('cart', t('needs.empty'))));
-    if (done.length) {
-      listBox.append(h('div', null,
-        h('div', { class: 'eyebrow' }, t('needs.history'), h('button', { type: 'button', onclick: async () => {
-          if (!(await confirmDialog({ title: t('needs.clearDone'), text: t('moreX.clearConfirm', { n: done.length }), ok: t('needs.clearDone'), danger: true }))) return;
-          await attempt(ctx, () => ctx.actions.clearBought()); paint();
-        } }, t('needs.clearDone'))),
-        h('div', { class: 'list mx-done' }, done.map((n) => needRow(n, true)))));
-    }
+  function toggleDone(n, makeDone) {
+    if (makeDone && !reduceMotion()) {
+      clearTimeout(holding.get(n.id));
+      holding.set(n.id, setTimeout(() => { holding.delete(n.id); paint(); }, 460));
+    } else { clearTimeout(holding.get(n.id)); holding.delete(n.id); }
+    ctx.haptic(ctx.prefs.haptics, makeDone ? 10 : 6);
+    ctx.actions.setNeedDone(n.id, makeDone).catch((e) => { holding.delete(n.id); console.error(e); ctx.toast(t('error')); paint(); });
+    paint();
   }
-  function needRow(n, isDone) {
+  async function removeNeed(n) {
+    const copy = { text: n.text, urgent: !!n.urgent, by: n.by, at: n.at, done: !!n.done, ...(n.done ? { doneBy: n.doneBy, doneAt: n.doneAt } : {}) };
+    const ok = await attempt(ctx, async () => { await ctx.actions.removeNeed(n.id); return true; });
+    if (!ok) return;
+    ctx.toast(t('moreY.need.removed'), 5200, { action: { label: t('moreY.undo'), onClick: () => attempt(ctx, () => ctx.store.setDoc('needs', n.id, copy, true)) } });
+  }
+
+  function needRow(n, st, isNew) {
+    const done = st === 'done' || st === 'hold';
     const by = ctx.name(n.by);
-    return h('div', { class: 'li mx-need' + (isDone ? ' done' : '') + (n.urgent && !isDone ? ' urgent' : '') },
-      h('button', { type: 'button', class: 'checkcircle' + (isDone ? ' on' : ''), 'aria-pressed': String(isDone), 'aria-label': (isDone ? t('moreX.undoBought') : t('needs.bought')) + ': ' + n.text, onclick: async () => {
-        await attempt(ctx, () => ctx.actions.setNeedDone(n.id, !isDone)); if (!isDone) ctx.haptic(ctx.prefs.haptics, 10); paint();
-      } }, icon('check')),
-      h('div', { class: 'grow' }, h('div', { class: 't' }, n.text, n.urgent && !isDone ? chip('bad mx-urg', icon('alert'), t('needs.urgent')) : null),
-        h('div', { class: 'd' }, isDone ? `${t('moreX.boughtBy', { name: ctx.name(n.doneBy) })} · ${whenLabel(ctx, n.doneAt)}` : `${t('needs.addedBy', { name: by })} · ${whenLabel(ctx, n.at)}`)),
-      h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('delete')}: ${n.text}`, onclick: async () => { await attempt(ctx, () => ctx.actions.removeNeed(n.id)); paint(); } }, icon('trash')));
+    const desc = st === 'pending' ? t('moreY.need.saving') : done ? `${t('moreX.boughtBy', { name: ctx.name(n.doneBy) })} · ${whenLabel(ctx, n.doneAt)}` : `${t('needs.addedBy', { name: by })} · ${whenLabel(ctx, n.at)}`;
+    return h('div', { class: 'li mx-need' + (done ? ' done' : '') + (st === 'hold' ? ' buying' : '') + (st === 'pending' ? ' pending' : '') + (n.urgent && !done ? ' urgent' : '') + (isNew ? ' mx-in' : ''), 'data-id': n.id || '' },
+      h('button', { type: 'button', class: 'checkcircle' + (done ? ' on' : ''), 'aria-pressed': String(done), disabled: st === 'pending', 'aria-label': (done ? t('moreX.undoBought') : t('needs.bought')) + ': ' + n.text, onclick: () => toggleDone(n, !done) }, icon('check')),
+      h('div', { class: 'grow' }, h('div', { class: 't' }, n.text, n.urgent && !done ? chip('bad mx-urg', icon('alert'), t('needs.urgent')) : null), h('div', { class: 'd' }, desc)),
+      st === 'pending' ? null : h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('delete')}: ${n.text}`, onclick: () => removeNeed(n) }, icon('trash')));
   }
-  paint();
-  const tri = house.links && house.links.tricount && house.links.tricount.url;
-  return shell(head(t('needs.title')), form, h('div', { class: 'note' }, icon('info'), t('needs.rule')), listBox,
-    tri ? h('a', { class: 'btn tonal block', href: tri, target: '_blank', rel: 'noopener' }, icon('tricount'), t('home.tricount')) : null);
+
+  function paint() {
+    if (stopped) return;
+    const today = ctx.today(); const me = ctx.me || 'admin';
+    const entries = Object.entries(ctx.state.needs || {}).map(([id, n]) => ({ id, ...n }));
+    const unmatched = pending.filter((p) => !entries.some((n) => !n.done && n.by === me && n.text === p.text && String(n.at || '') >= p.start));
+    const open = [
+      ...entries.filter((n) => !n.done || holding.has(n.id)).map((n) => ({ n, st: n.done ? 'hold' : 'open' })),
+      ...unmatched.map((p) => ({ n: { id: 'p:' + p.tid, text: p.text, urgent: p.urgent, by: me, at: p.start }, st: 'pending' })),
+    ].sort((a, b) => (b.n.urgent ? 1 : 0) - (a.n.urgent ? 1 : 0) || String(b.n.at || '').localeCompare(String(a.n.at || '')));
+    const done = entries.filter((n) => n.done && !holding.has(n.id)).sort((a, b) => String(b.doneAt || '').localeCompare(String(a.doneAt || '')));
+    const sig = (n, st) => JSON.stringify([st, n.text, !!n.urgent, n.by, n.doneBy, n.at, n.doneAt, today, ctx.name(n.by), ctx.name(n.doneBy)]);
+    reconcile(openList, openCache, open.map(({ n, st }) => ({ key: n.id, sig: sig(n, st), make: (isNew) => needRow(n, st, isNew) })), painted);
+    reconcile(doneList, doneCache, done.map((n) => ({ key: n.id, sig: sig(n, 'done'), make: () => needRow(n, 'done', false) })), false);
+    openCount.textContent = String(open.filter((x) => x.st !== 'hold').length);
+    doneCount.textContent = String(done.length);
+    // le sezioni vuote escono dal DOM (non solo nascoste)
+    const want = [open.length ? openSec : emptyCard, done.length ? doneSec : null].filter(Boolean);
+    if (want.length !== listBox.children.length || want.some((el, i) => listBox.children[i] !== el)) listBox.replaceChildren(...want);
+    const tri = ctx.house.links && ctx.house.links.tricount && ctx.house.links.tricount.url;
+    const cur = triBox.firstChild;
+    if (!tri) { if (cur) clear(triBox); } else if (!cur || cur.getAttribute('href') !== tri) { clear(triBox); triBox.append(h('a', { class: 'btn tonal block', href: tri, target: '_blank', rel: 'noopener' }, icon('tricount'), t('home.tricount'))); }
+    painted = true;
+  }
+
+  const root = h('div', { class: 'mx mx-sub fade-up', 'data-testid': 'needs-page' }, head(t('needs.title')), form, h('div', { class: 'note' }, icon('info'), t('needs.rule')), listBox, triBox);
+  setTimeout(() => root.classList.remove('fade-up'), 900);
+  const off = ctx.store.on(() => { if (root.isConnected) paint(); });
+  return {
+    key, root, input: inp, paint,
+    draft: () => ({ text: inp.value, urgent }),
+    destroy() { stopped = true; off(); for (const tm of holding.values()) clearTimeout(tm); },
+  };
+}
+
+/**
+ * Se l'app rimonta la pagina (clear + append) mentre il campo ha il focus, il browser lo toglie. Un MutationObserver
+ * (callback in microtask, prima di qualsiasi altro evento di tastiera) rimette subito focus e caret: nessun carattere perso.
+ */
+function restoreFocus(inp, snap) {
+  if (!snap || typeof MutationObserver === 'undefined') return;
+  let mo = null; let timer = 0;
+  const stop = () => { if (mo) mo.disconnect(); mo = null; clearTimeout(timer); document.removeEventListener('pointerdown', stop, true); };
+  const fix = () => {
+    if (inp.isConnected && document.activeElement === document.body) {
+      try { inp.focus({ preventScroll: true }); inp.setSelectionRange(snap.s, snap.e, snap.d || 'none'); } catch { /* ignore */ }
+      stop();
+    }
+  };
+  mo = new MutationObserver(fix); mo.observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('pointerdown', stop, true);   // un tocco altrove = l'utente ha scelto di togliere il focus
+  timer = setTimeout(stop, 2500);
+}
+
+function needsPage(ctx) {
+  if (!ctx.feature('needs')) return offPage(t('needs.title'));
+  loadCss('css/more.css');
+  const key = `${ctx.houseId}|${ctx.lang}`;
+  if (!NU || NU.key !== key) { const d = NU ? NU.draft() : null; if (NU) NU.destroy(); NU = buildNeeds(ctx, key, d); }
+  const inp = NU.input;
+  const snap = document.activeElement === inp ? { s: inp.selectionStart, e: inp.selectionEnd, d: inp.selectionDirection } : null;
+  NU.paint();
+  restoreFocus(inp, snap);
+  return NU.root;
 }
 
 // ================================================================ regole
@@ -307,21 +433,32 @@ export function openLastOutSheet(ctx) {
 }
 function openLastoutEditor(ctx) {
   const house = ctx.house;
-  let rows = lastoutItems(house).map((i) => ({ ...i }));
+  const rows = lastoutItems(house).map((i) => ({ ...i }));
   const list = h('div', { class: 'stack tight' });
+  // ogni riga ha il proprio nodo, creato una volta sola: spostare o eliminare altre righe non ricrea i campi (niente focus/testo persi)
+  const rowEl = (r) => {
+    if (r.el) return r.el;
+    const input = h('input', { class: 'input', type: 'text', maxlength: '140', value: r.text, oninput: (e) => { r.text = e.target.value; } });
+    r.input = input;
+    r.el = h('div', { class: 'mx-edrow' }, input,
+      h('button', { type: 'button', class: 'icon-btn', 'data-act': 'up', 'aria-label': t('moreX.moveUp'), onclick: () => { const i = rows.indexOf(r); if (i > 0) { [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]]; paint(); } } }, icon('up')),
+      h('button', { type: 'button', class: 'icon-btn', 'data-act': 'down', 'aria-label': t('moreX.moveDown'), onclick: () => { const i = rows.indexOf(r); if (i < rows.length - 1) { [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]]; paint(); } } }, icon('down')),
+      h('button', { type: 'button', class: 'icon-btn', 'data-act': 'del', onclick: () => { const i = rows.indexOf(r); if (i >= 0) { rows.splice(i, 1); r.el.remove(); paint(); } } }, icon('trash')));
+    return r.el;
+  };
   const paint = () => {
-    clear(list);
     rows.forEach((r, i) => {
-      list.append(h('div', { class: 'mx-edrow' },
-        h('input', { class: 'input', type: 'text', maxlength: '140', value: r.text, 'aria-label': `${t('lastout.addItem')} ${i + 1}`, oninput: (e) => { r.text = e.target.value; } }),
-        h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('moreX.moveUp'), disabled: i === 0, onclick: () => { [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]]; paint(); } }, icon('up')),
-        h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('moreX.moveDown'), disabled: i === rows.length - 1, onclick: () => { [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]]; paint(); } }, icon('down')),
-        h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('delete')} ${i + 1}`, onclick: () => { rows.splice(i, 1); paint(); } }, icon('trash'))));
+      const el = rowEl(r);
+      if (list.children[i] !== el) list.insertBefore(el, list.children[i] || null);
+      r.input.setAttribute('aria-label', `${t('lastout.addItem')} ${i + 1}`);
+      el.querySelector('[data-act=up]').disabled = i === 0;
+      el.querySelector('[data-act=down]').disabled = i === rows.length - 1;
+      el.querySelector('[data-act=del]').setAttribute('aria-label', `${t('delete')} ${i + 1}`);
     });
   };
   paint();
   const s = ctx.sheet({ title: t('lastout.edit'), full: true, body: h('div', { class: 'stack mx-form' }, list,
-    h('button', { type: 'button', class: 'btn tonal block', onclick: () => { rows.push({ id: uid(), text: '' }); paint(); const ins = list.querySelectorAll('input'); ins[ins.length - 1].focus(); } }, icon('plus'), t('lastout.addItem')),
+    h('button', { type: 'button', class: 'btn tonal block', onclick: () => { const r = { id: uid(), text: '' }; rows.push(r); paint(); r.input.focus(); } }, icon('plus'), t('lastout.addItem')),
     house.lastoutItems ? h('button', { type: 'button', class: 'btn soft block', onclick: async () => {
       await attempt(ctx, () => ctx.actions.setHouse({ lastoutItems: null })); s.close();
     } }, icon('refresh'), t('moreX.lastoutDefault')) : null,
@@ -335,7 +472,12 @@ function openLastoutEditor(ctx) {
 }
 
 // ================================================================ checklist ricorrenti
+const everyOf = (x) => Math.max(1, parseInt(x.every, 10) || 1);
 const everyLabel = (n) => (n === 1 ? t('tasks.week1') : `${t('tasks.every')} ${t('tasks.weeksN', { n })}`);
+const groupLabel = (n) => (n === 1 ? t('moreY.t.g.weekly') : t('moreY.t.g.every', { n }));
+const countLabel = (n) => (n === 1 ? t('moreY.t.count1') : t('moreY.t.count', { n }));
+/** Il suggerimento è già presente tra le voci (confronto sul testo in entrambe le lingue). */
+const tplHas = (tasks, x) => { const names = [t(x.key), tr('it', x.key), tr('en', x.key)]; return tasks.some((y) => y.chore === x.chore && names.includes(y.text)); };
 
 function openTaskSheet(ctx, task, preset = {}) {
   const house = ctx.house;
@@ -347,13 +489,15 @@ function openTaskSheet(ctx, task, preset = {}) {
   const first = house.startSunday > cur ? house.startSunday : cur;
   const opts = new Set([S.anchor]); for (let k = 0; k < 13; k++) opts.add(addDays(first, 7 * k));
   const anchors = [...opts].sort();
-  const textI = h('input', { class: 'input', id: 'mx-task-text', type: 'text', maxlength: '120', value: S.text, placeholder: t('tasks.name'), oninput: (e) => { S.text = e.target.value; } });
+  let saving = false;
+  const textI = h('input', { class: 'input', id: 'mx-task-text', type: 'text', maxlength: '120', value: S.text, placeholder: t('tasks.name'), autocomplete: 'off', enterkeyhint: 'done', oninput: (e) => { S.text = e.target.value; } });
   const anchorSel = h('select', { class: 'input', id: 'mx-task-anchor', onchange: (e) => { S.anchor = e.target.value; } },
     anchors.map((a) => h('option', { value: a, selected: a === S.anchor }, `${fmtWeekRange(a)}${a === cur ? ' · ' + t('moreX.thisWeek') : ''}`)));
   const s = ctx.sheet({ title: task ? t('edit') : t('tasks.add'), full: true, body: h('form', { class: 'stack mx-form', onsubmit: (e) => { e.preventDefault(); save(); } },
     h('div', { class: 'field' }, h('label', { for: 'mx-task-text' }, t('tasks.name')), textI),
     h('div', { class: 'field' }, h('div', { class: 'lbl' }, t('tasks.forChore')), seg(CHORES.map((c) => [c, t('chore.' + c)]), S.chore, (v) => { S.chore = v; })),
     h('div', { class: 'row-between' }, h('div', { class: 'lbl mx-lblb' }, t('tasks.every')), h('div', { class: 'row' }, stepper(S.every, { min: 1, max: 26, onchange: (v) => { S.every = v; } }), h('span', { class: 'muted' }, t('tasks.weeks')))),
+    h('p', { class: 'small muted' }, t('moreY.t.everyHint')),
     h('div', { class: 'field' }, h('label', { for: 'mx-task-anchor' }, t('tasks.firstDue')), anchorSel),
     task ? h('div', { class: 'row-between' }, h('div', { class: 'lbl mx-lblb' }, t('tasks.enabled')), toggle(S.enabled, (v) => { S.enabled = v; }, t('tasks.enabled'))) : null,
     h('div', { class: 'btn-row' },
@@ -365,65 +509,125 @@ function openTaskSheet(ctx, task, preset = {}) {
       h('button', { type: 'button', class: 'btn soft', onclick: () => s.close() }, t('cancel')),
       h('button', { type: 'submit', class: 'btn' }, icon('check'), t('save')))) });
   async function save() {
+    if (saving) return;
     const text = S.text.trim(); if (!text) { textI.focus(); return; }
+    saving = true;
     const rec = { id: S.id, chore: S.chore, text, every: S.every, anchor: S.anchor, enabled: S.enabled };
     const list = [...(ctx.house.tasks || [])]; const i = list.findIndex((x) => x.id === S.id);
     if (i >= 0) list[i] = { ...list[i], ...rec }; else list.push(rec);
     const ok = await attempt(ctx, async () => { await ctx.actions.setHouse({ tasks: list }); return true; });
+    saving = false;
     if (ok) { ctx.toast(t('saved')); s.close(); }
   }
   setTimeout(() => textI.focus(), 380);
 }
 
+/** Aggiunge tutti i suggerimenti (non ancora presenti) di una mansione. Le voci "ogni X" sono sfalsate di qualche settimana per non farle cadere tutte insieme. */
+async function addAllTemplates(ctx, chore) {
+  const house = ctx.house; const cur = weekOfDate(house, ctx.today());
+  const list = [...(house.tasks || [])]; let n = 0; let k = 0;
+  for (const x of TASK_TEMPLATES.filter((y) => y.chore === chore)) {
+    if (tplHas(list, x)) continue;
+    const off = x.every > 1 ? (k++) % x.every : 0;
+    list.push({ id: uid(), chore, text: t(x.key), every: x.every, anchor: addDays(cur, 7 * off), enabled: true }); n++;
+  }
+  if (!n) return;
+  const ok = await attempt(ctx, async () => { await ctx.actions.setHouse({ tasks: list }); return true; });
+  if (ok) ctx.toast(t('moreY.t.addedN', { n }));
+}
+
+/** "Questa settimana per Pavimenti: 4 voci (2 settimanali + 2 ogni 2 sett.)" */
+function previewText(ctx, chore, cur, weeks) {
+  const items = checklistFor(ctx.house, weeks, cur, chore);
+  const name = t('chore.' + chore);
+  if (!items.length) return t('moreY.t.prev0', { chore: name });
+  const weekly = items.filter((x) => x.every === 1).length; const byX = {};
+  items.filter((x) => x.every > 1).forEach((x) => { byX[x.every] = (byX[x.every] || 0) + 1; });
+  const parts = [weekly ? (weekly === 1 ? t('moreY.t.pw1') : t('moreY.t.pw', { n: weekly })) : null,
+    ...Object.keys(byX).map(Number).sort((a, b) => a - b).map((x) => t('moreY.t.px', { n: byX[x], x }))].filter(Boolean).join(' + ');
+  let s = t(items.length === 1 ? 'moreY.t.prev1' : 'moreY.t.prev', { chore: name, n: items.length, parts });
+  const done = items.filter((x) => x.status === 'done').length;
+  if (done) s += ' · ' + t('moreY.t.prevDone', { a: done, b: items.length });
+  return s;
+}
+
 function tasksPage(ctx) {
   if (!ctx.feature('tasks')) return offPage(t('tasks.title'));
   const house = ctx.house; const admin = ctx.isAdmin;
-  const tasks = house.tasks || [];
+  const tasks = house.tasks || []; const weeks = ctx.state.weeks || {};
+  const off = house.checklistOff || {};
   const cur = weekOfDate(house, ctx.today()); const idx = weekIndex(house, cur);
-  const due = tasksForWeek(house, ctx.state.weeks || {}, cur); const byId = Object.fromEntries(due.map((x) => [x.task.id, x]));
-  const rowFor = (task) => {
-    const off = task.enabled === false; const s = byId[task.id];
-    const every = Math.max(1, parseInt(task.every, 10) || 1);
+  const due = tasksForWeek(house, weeks, cur); const byId = Object.fromEntries(due.map((x) => [x.task.id, x]));
+  const setTasks = (fn) => attempt(ctx, () => ctx.actions.setHouse({ tasks: fn(ctx.house.tasks || []) }));
+
+  const rowFor = (task, choreOn) => {
+    const dis = task.enabled === false; const s = byId[task.id]; const every = everyOf(task);
     let status = null; let desc = everyLabel(every);
-    if (off) status = chip('', t('off'));
-    else if (s && s.status === 'done') status = chip('ok', icon('check'), s.done && s.done.by ? t('tasks.doneBy', { name: personName(ctx, s.done.by) }) : t('done'));
-    else if (s && s.status === 'due') status = chip('warn', icon('clock'), t('tasks.due'));
-    else if (s && s.status === 'overdue') status = chip('bad', icon('alert'), t('tasks.overdue', { date: fmtDate(s.since, ctx.lang) }));
-    else {
-      const k = nextDueWeek(house, task, idx); const sunday = addDays(house.startSunday, 7 * k);
-      desc += ` · ${t('tasks.nextDue', { date: fmtWeekRange(sunday) })}`;
-      status = chip('', t('tasks.dueIn', { n: Math.max(1, k - idx) }));
+    if (dis) status = chip('', t('off'));
+    else if (choreOn) {
+      if (s && s.status === 'done') status = chip('ok', icon('check'), s.done && s.done.by ? t('tasks.doneBy', { name: personName(ctx, s.done.by) }) : t('done'));
+      else if (s && s.status === 'due') status = chip('warn', icon('clock'), t('tasks.due'));
+      else if (s && s.status === 'overdue') status = chip('bad', icon('alert'), t('tasks.overdue', { date: fmtDate(s.since, ctx.lang) }));
+      else {
+        const k = nextDueWeek(house, task, idx); const sunday = addDays(house.startSunday, 7 * k);
+        desc += ` · ${t('tasks.nextDue', { date: fmtWeekRange(sunday) })}`;
+        status = chip('', t('tasks.dueIn', { n: Math.max(1, k - idx) }));
+      }
     }
-    const main = h('div', { class: 'grow' }, h('div', { class: 't' }, task.text), h('div', { class: 'd' }, desc), h('div', { class: 'mx-st' }, status));
-    if (!admin) return h('div', { class: 'li mx-task' + (off ? ' off' : '') }, main);
-    return h('div', { class: 'li mx-task' + (off ? ' off' : '') },
+    const cls = 'li mx-task' + (dis || !choreOn ? ' off' : '');
+    const main = h('div', { class: 'grow' }, h('div', { class: 't' }, task.text), h('div', { class: 'd' }, desc), status ? h('div', { class: 'mx-st' }, status) : null);
+    if (!admin) return h('div', { class: cls, 'data-task': task.id }, main);
+    return h('div', { class: cls, 'data-task': task.id },
       h('button', { type: 'button', class: 'mx-taskmain', 'aria-label': `${t('edit')}: ${task.text}`, onclick: () => openTaskSheet(ctx, task) }, main),
-      toggle(!off, (v) => attempt(ctx, () => ctx.actions.setHouse({ tasks: (ctx.house.tasks || []).map((x) => (x.id === task.id ? { ...x, enabled: v } : x)) })), `${t('tasks.enabled')}: ${task.text}`));
+      toggle(!dis, (v) => setTasks((list) => list.map((x) => (x.id === task.id ? { ...x, enabled: v } : x))), `${t('tasks.enabled')}: ${task.text}`));
   };
+
+  const choreBlock = (c) => {
+    const list = tasks.filter((x) => x.chore === c);
+    const choreOn = !off[c];
+    const head2 = h('div', { class: 'card mx-chcard' + (choreOn ? '' : ' off'), 'data-testid': 'chore-' + c },
+      h('div', { class: 'row' },
+        h('i', { class: 'mx-ct lg ' + c }, icon(CHORE_ICON[c])),
+        h('div', { class: 'grow' }, h('div', { class: 'mx-ch-name' }, t('chore.' + c)), h('div', { class: 'small muted' }, list.length ? countLabel(list.length) : t('tasks.empty'))),
+        admin
+          ? h('label', { class: 'mx-chsw' }, h('span', { class: 'mx-lblb' }, t('moreY.t.active')), toggle(choreOn, (v) => attempt(ctx, () => ctx.actions.setHouse({ checklistOff: { [c]: v ? null : true } })), `${t('moreY.t.active')}: ${t('chore.' + c)}`))
+          : chip(choreOn ? 'ok' : '', choreOn ? t('moreY.t.active') : t('moreY.t.choreOff'))),
+      choreOn
+        ? (list.length ? h('p', { class: 'mx-prev', 'data-testid': 'prev-' + c }, icon('list'), previewText(ctx, c, cur, weeks)) : null)
+        : h('p', { class: 'mx-prev off', 'data-testid': 'prev-' + c }, icon('lock'), t('moreY.t.offNote')));
+    const groups = new Map();
+    for (const x of list) { const e = everyOf(x); if (!groups.has(e)) groups.set(e, []); groups.get(e).push(x); }
+    const gEls = [...groups.keys()].sort((a, b) => a - b).map((e) => h('section', null,
+      h('div', { class: 'eyebrow' }, h('span', null, groupLabel(e)), h('span', { class: 'chip' }, String(groups.get(e).length))),
+      h('div', { class: 'list' }, groups.get(e).sort((a, b) => String(a.text).localeCompare(String(b.text))).map((x) => rowFor(x, choreOn)))));
+    return h('div', { class: 'stack mx-chsec' }, head2, gEls);
+  };
+
   const kids = [head(t('tasks.title'), { right: admin ? h('button', { type: 'button', class: 'btn sm', onclick: () => openTaskSheet(ctx, null) }, icon('plus'), t('tasks.add')) : null }),
     h('p', { class: 'muted' }, t('tasks.hint'))];
+  for (const c of CHORES) kids.push(choreBlock(c));
   const known = new Set(CHORES);
-  const groups = [...CHORES, null];
-  let any = false;
-  for (const c of groups) {
-    const list = tasks.filter((x) => (c ? x.chore === c : !known.has(x.chore)));
-    if (!list.length) continue; any = true;
-    kids.push(h('section', null,
-      h('div', { class: 'eyebrow' }, h('span', { class: 'mx-chore' }, c ? h('i', { class: 'mx-ct ' + c }, icon(CHORE_ICON[c])) : null, c ? t('chore.' + c) : t('chore.any'))),
-      h('div', { class: 'list' }, list.map(rowFor))));
-  }
-  if (!any) kids.push(h('div', { class: 'card' }, empty('list', t('tasks.empty'))));
+  const other = tasks.filter((x) => !known.has(x.chore));
+  if (other.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreY.t.otherChore')), h('div', { class: 'list' }, other.map((x) => rowFor(x, true)))));
+  if (!tasks.length) kids.push(h('div', { class: 'card' }, empty('list', t('tasks.empty'))));
   if (!admin) kids.push(h('div', { class: 'note' }, icon('lock'), t('moreX.readOnly')));
   if (admin) {
-    const tpl = TASK_TEMPLATES.filter((x) => !tasks.some((y) => y.chore === x.chore && y.text === t(x.key)));
-    if (tpl.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('tasks.templates')),
-      h('div', { class: 'mx-tpl' }, tpl.map((x) => h('button', { type: 'button', class: 'mx-tplbtn', onclick: () => openTaskSheet(ctx, null, { chore: x.chore, text: t(x.key), every: x.every }) },
-        h('i', { class: 'mx-ct ' + x.chore }, icon(CHORE_ICON[x.chore])), h('span', { class: 'grow' }, t(x.key)), h('span', { class: 'chip' }, everyLabel(x.every)))))));
+    const missing = TASK_TEMPLATES.filter((x) => !tplHas(tasks, x));
+    if (missing.length) {
+      kids.push(h('section', { class: 'stack tight mx-sugg' }, h('div', { class: 'eyebrow' }, t('tasks.templates')), h('p', { class: 'small muted' }, t('moreY.t.suggestHint')),
+        CHORES.map((c) => {
+          const m = missing.filter((x) => x.chore === c); if (!m.length) return null;
+          return h('div', { class: 'stack tight' },
+            h('button', { type: 'button', class: 'btn tonal block', 'data-testid': 'addall-' + c, onclick: () => addAllTemplates(ctx, c) }, icon('plus'), t('moreY.t.addAll', { chore: t('chore.' + c), n: m.length })),
+            h('div', { class: 'mx-tpl' }, m.map((x) => h('button', { type: 'button', class: 'mx-tplbtn', onclick: () => openTaskSheet(ctx, null, { chore: x.chore, text: t(x.key), every: x.every }) },
+              h('i', { class: 'mx-ct ' + x.chore }, icon(CHORE_ICON[x.chore])), h('span', { class: 'grow' }, t(x.key)), h('span', { class: 'chip' }, everyLabel(x.every))))));
+        })));
+    }
   }
   return shell(...kids);
 }
 
-// ================================================================ scambi turno
+// ================================================================ scambi, sostituzioni, offerte e avvisi
 async function askSwap(ctx) {
   const out = ctx.calc.out; const row = out.cur >= 0 ? out.rows[out.cur] : null;
   const mine = row && ctx.me ? CHORES.filter((c, i) => row.assigned[i] === ctx.me) : [];
@@ -434,46 +638,123 @@ async function askSwap(ctx) {
   if (mine.length === 1) return open(mine[0]);
   const s = ctx.sheet({ title: t('req.mine'), body: h('div', { class: 'list' }, mine.map((c) => liRow({ ic: CHORE_ICON[c], title: t('chore.' + c), desc: fmtWeekRange(row.sunday), onclick: () => { s.close(); open(c); } }))) });
 }
+/** Tipo di richiesta: 'swap' (scambio, senza kind), 'cover' (cerco sostituto), 'offer' (mi offro), 'notice' (avviso), 'nudge' (sollecito). */
+const reqKind = (r) => (['cover', 'offer', 'notice', 'nudge'].includes(r.kind) ? r.kind : 'swap');
+const allRequests = (ctx) => Object.entries(ctx.state.requests || {}).map(([id, r]) => ({ id, ...r })).filter((r) => ['swap', 'cover', 'offer'].includes(reqKind(r)));
+/** Chi può rispondere (admin incluso se `adminToo`). Le sostituzioni a "chiunque" le può accettare chiunque non sia il richiedente. */
+function canAnswer(ctx, r, adminToo) {
+  const me = ctx.me; const k = reqKind(r);
+  if (k === 'cover') return !!me && r.from !== me && (!r.to || r.to === me);
+  return (!!me && r.to === me) || (!!adminToo && ctx.isAdmin);
+}
+/** Richieste in attesa di una mia risposta (il badge dell'hub è calcolato da qui: ctx.badges() non conta le sostituzioni aperte a tutti). */
+const awaitingMe = (ctx) => (ctx.me ? allRequests(ctx).filter((r) => r.status === 'pending' && canAnswer(ctx, r, false)) : []);
+const wkLabel = (r) => (r.week ? fmtWeekRange(r.week) : '');
+const choreLow = (c) => (c ? t('chore.' + c).toLowerCase() : '');
+
+function reqLine(ctx, r) {
+  const me = ctx.me; const k = reqKind(r); const week = wkLabel(r); const chore = choreLow(r.chore);
+  if (k === 'cover') {
+    if (r.from === me) return r.to ? t('moreY.req.coverMineTo', { to: ctx.name(r.to), chore, week }) : t('moreY.req.coverMine', { chore, week });
+    if (r.to === me) return t('moreY.req.coverForMe', { name: ctx.name(r.from), chore, week });
+    return r.to ? t('moreY.req.coverTo', { name: ctx.name(r.from), to: ctx.name(r.to), chore, week }) : t('moreY.req.cover', { name: ctx.name(r.from), chore, week });
+  }
+  if (k === 'offer') {
+    if (r.from === me) return t('moreY.req.offerMine', { to: ctx.name(r.to), chore, week });
+    if (r.to === me) return t('moreY.req.offerForMe', { name: ctx.name(r.from), chore, week });
+    return t('moreY.req.offer', { name: ctx.name(r.from), to: ctx.name(r.to), chore, week });
+  }
+  const a = choreLow(r.fromChore), b = choreLow(r.toChore);
+  if (r.to === me) return t('req.incoming', { name: ctx.name(r.from), theirs: b, mine: a, week });
+  if (r.from === me) return t('moreX.outgoing', { to: ctx.name(r.to), mine: a, theirs: b, week });
+  return t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: t('chore.' + r.fromChore), b: t('chore.' + r.toChore), week });
+}
+/** Testo neutro (stessa frase per tutti): usato nelle etichette di accessibilità. */
+const reqPlain = (ctx, r) => (reqKind(r) === 'swap'
+  ? t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: t('chore.' + r.fromChore), b: t('chore.' + r.toChore), week: wkLabel(r) })
+  : reqLine(ctx, r));
+const statusChip = (r) => (r.status === 'accepted' ? chip('ok', icon('check'), t('moreY.st.agreed')) : r.status === 'declined' ? chip('bad', icon('x'), t('moreY.st.declined')) : chip('warn', icon('clock'), t('req.pending')));
+const kindChip = (r) => chip('mx-kind ' + reqKind(r), t('moreY.req.kind.' + reqKind(r)));
+function noticeText(ctx, r) {
+  const o = { name: personName(ctx, r.from), chore: choreLow(r.chore), week: wkLabel(r) };
+  if (r.code === 'volunteer') return t('moreY.req.noticeVolunteer', o);
+  if (r.code === 'assigned') return t('moreY.req.noticeAssigned', o);
+  return t('moreY.req.noticeGeneric', o);
+}
+
 function requestsPage(ctx) {
   if (!ctx.feature('requests')) return offPage(t('req.title'));
   const me = ctx.me; const admin = ctx.isAdmin;
-  const all = Object.entries(ctx.state.requests || {}).filter(([, r]) => r.kind !== 'nudge').map(([id, r]) => ({ id, ...r }));
+  const all = allRequests(ctx);
   const pending = all.filter((r) => r.status === 'pending');
-  const incoming = pending.filter((r) => r.to === me);
+  const incoming = pending.filter((r) => canAnswer(ctx, r, false));
   const sent = pending.filter((r) => r.from === me);
-  const others = admin ? pending.filter((r) => r.from !== me && r.to !== me) : [];
-  const history = all.filter((r) => r.status !== 'pending' && (admin || r.from === me || r.to === me))
+  const others = admin ? pending.filter((r) => r.from !== me && !incoming.includes(r)) : [];
+  const history = all.filter((r) => r.status !== 'pending' && (admin || r.from === me || r.to === me || r.by === me))
     .sort((a, b) => String(b.answeredAt || b.at || '').localeCompare(String(a.answeredAt || a.at || ''))).slice(0, 20);
-  const line = (r) => t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: t('chore.' + r.fromChore), b: t('chore.' + r.toChore), week: fmtWeekRange(r.week) });
-  const answer = (r, ok) => attempt(ctx, async () => { await ctx.actions.answerSwap(r.id, ok); ctx.toast(ok ? t('req.accepted') : t('req.declined')); });
-  const incomingCard = (r) => h('div', { class: 'card stack tight mx-req' },
-    h('div', { class: 'row' }, avatar(ctx.name(r.from), ctx.color(r.from)), h('p', { class: 'grow' }, t('req.incoming', { name: ctx.name(r.from), theirs: t('chore.' + r.toChore).toLowerCase(), mine: t('chore.' + r.fromChore).toLowerCase(), week: fmtWeekRange(r.week) }))),
-    h('div', { class: 'btn-row' }, h('button', { type: 'button', class: 'btn soft', onclick: () => answer(r, false) }, icon('x'), t('req.decline')), h('button', { type: 'button', class: 'btn', onclick: () => answer(r, true) }, icon('check'), t('req.accept'))));
-  const sentRow = (r, adminView) => h('div', { class: 'li mx-req' + (adminView ? ' adm' : '') }, adminView ? null : icon('swap'),
-    h('div', { class: 'grow' }, h('div', { class: 't' }, adminView ? line(r) : t('moreX.outgoing', { to: ctx.name(r.to), mine: t('chore.' + r.fromChore).toLowerCase(), theirs: t('chore.' + r.toChore).toLowerCase(), week: fmtWeekRange(r.week) })), h('div', { class: 'd' }, whenLabel(ctx, r.at))),
-    adminView ? null : chip('warn', t('req.pending')),
-    h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('req.cancel')}: ${line(r)}`, title: t('req.cancel'), onclick: () => attempt(ctx, () => ctx.actions.cancelSwap(r.id)) }, icon('x')),
-    adminView ? h('div', { class: 'btn-row mx-req-actions' }, h('button', { type: 'button', class: 'btn sm soft', onclick: () => answer(r, false) }, t('req.decline')), h('button', { type: 'button', class: 'btn sm', onclick: () => answer(r, true) }, t('req.accept'))) : null);
+  const notices = Object.entries(ctx.state.requests || {}).map(([id, r]) => ({ id, ...r })).filter((r) => r.kind === 'notice' && me && r.to === me)
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 10);
+
+  const lock = (btn, fn) => { btn.disabled = true; Promise.resolve(fn()).then((ok) => { if (ok === false) btn.disabled = false; }, () => { btn.disabled = false; }); };
+  const answer = async (r, ok) => {
+    const k = reqKind(r);
+    return attempt(ctx, async () => {
+      if (k === 'swap') { await ctx.actions.answerSwap(r.id, ok); ctx.toast(ok ? t('req.accepted') : t('req.declined')); }
+      else { await ctx.actions.answerCover(r.id, ok); ctx.toast(ok ? t('moreY.req.agreedToast', { name: ctx.name(k === 'cover' ? me : r.from), chore: choreLow(r.chore) }) : t('req.declined')); }
+      return true;
+    }).then((v) => v === true);
+  };
+  const cancel = async (r) => attempt(ctx, async () => {
+    if (reqKind(r) === 'swap') await ctx.actions.cancelSwap(r.id);
+    else { if (!(admin || r.from === me)) throw new Error('permission'); await ctx.store.delDoc('requests', r.id); }
+    ctx.toast(t('moreY.req.cancelled')); return true;
+  }).then((v) => v === true);
+  const btnAccept = (r, label) => { const b = h('button', { type: 'button', class: 'btn', 'data-testid': 'req-accept-' + r.id, onclick: () => lock(b, () => answer(r, true)) }, icon('check'), label || t('req.accept')); return b; };
+  const btnDecline = (r) => { const b = h('button', { type: 'button', class: 'btn soft', 'data-testid': 'req-decline-' + r.id, onclick: () => lock(b, () => answer(r, false)) }, icon('x'), t('req.decline')); return b; };
+  const btnCancel = (r) => { const b = h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('req.cancel')}: ${reqPlain(ctx, r)}`, title: t('req.cancel'), 'data-testid': 'req-cancel-' + r.id, onclick: () => lock(b, () => cancel(r)) }, icon('x')); return b; };
+
+  const incomingCard = (r) => {
+    const k = reqKind(r); const open = k === 'cover' && !r.to;
+    return h('div', { class: 'card stack tight mx-req mx-reqcard', 'data-testid': 'req-' + r.id },
+      h('div', { class: 'row' }, avatar(ctx.name(r.from), ctx.color(r.from)), h('div', { class: 'grow' },
+        h('div', { class: 'mx-kindrow' }, kindChip(r), open ? chip('', icon('users'), t('moreY.req.openForAll')) : null),
+        h('p', { class: 'mx-rt' }, reqLine(ctx, r)), h('div', { class: 'small muted' }, whenLabel(ctx, r.at)))),
+      h('div', { class: 'btn-row' }, open ? null : btnDecline(r), btnAccept(r, k === 'cover' ? t('moreY.req.takeIt') : null)));
+  };
+  const listRow = (r, { cancelable, answerable, hist }) => h('div', { class: 'li mx-req' + (answerable ? ' adm' : ''), 'data-testid': 'req-' + r.id },
+    avatar(ctx.name(r.from), ctx.color(r.from), 'sm'),
+    h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), statusChip(r)), h('div', { class: 't' }, hist || answerable ? reqPlain(ctx, r) : reqLine(ctx, r)),
+      h('div', { class: 'd' }, hist ? [whenLabel(ctx, r.answeredAt || r.at), r.status === 'accepted' && r.by ? ` · ${t('moreY.req.will', { name: ctx.name(r.by) })}` : ''] : whenLabel(ctx, r.at))),
+    cancelable ? btnCancel(r) : null,
+    answerable ? h('div', { class: 'btn-row mx-req-actions' }, btnDecline(r), btnAccept(r)) : null);
+
   const kids = [head(t('req.title'), { right: me ? h('button', { type: 'button', class: 'btn sm', onclick: () => askSwap(ctx) }, icon('plus'), t('req.new')) : null })];
   if (incoming.length) kids.push(h('section', { class: 'stack tight' }, h('div', { class: 'eyebrow' }, t('moreX.reqForMe'), chip('bad', String(incoming.length))), incoming.map(incomingCard)));
-  if (sent.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqSent')), h('div', { class: 'list' }, sent.map((r) => sentRow(r, false)))));
-  if (others.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqAll')), h('div', { class: 'list' }, others.map((r) => sentRow(r, true)))));
-  if (!incoming.length && !sent.length && !others.length) kids.push(h('div', { class: 'card' }, empty('swap', t('req.empty'), me ? t('moreX.reqEmptyHint') : null)));
+  if (sent.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqSent')), h('div', { class: 'list' }, sent.map((r) => listRow(r, { cancelable: true })))));
+  if (others.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqAll')),
+    h('div', { class: 'list' }, others.map((r) => listRow(r, { cancelable: true, answerable: reqKind(r) !== 'cover' && canAnswer(ctx, r, true) })))));
+  if (notices.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreY.req.notices')),
+    h('div', { class: 'list', 'data-testid': 'notices' }, notices.map((r) => h('div', { class: 'li mx-req mx-notice' }, h('div', { class: 'ico o' }, icon('bell')),
+      h('div', { class: 'grow' }, h('div', { class: 't' }, noticeText(ctx, r)), h('div', { class: 'd' }, `${whenLabel(ctx, r.at)} · ${t('moreY.req.noticeInfo')}`)))))));
+  if (!incoming.length && !sent.length && !others.length && !notices.length) kids.push(h('div', { class: 'card' }, empty('swap', t('req.empty'), t('moreY.req.emptyHint'))));
   if (history.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqHistory')),
-    h('div', { class: 'list' }, history.map((r) => h('div', { class: 'li mx-req' }, h('div', { class: 'grow' }, h('div', { class: 't' }, line(r)), h('div', { class: 'd' }, whenLabel(ctx, r.answeredAt || r.at))),
-      r.status === 'accepted' ? chip('ok', icon('check'), t('req.accepted')) : chip('bad', t('req.declined')))))));
+    h('div', { class: 'list', 'data-testid': 'req-history' }, history.map((r) => listRow(r, { hist: true })))));
   return shell(...kids);
 }
 
 // ================================================================ registro attività
 let actLimit = 60;
-const ACT_ICON = { done: ['check', 'g'], cover: ['swap', 'p'], skipped: ['x', 'r'], reset: ['refresh', ''], away: ['plane', 'o'], back: ['home', 'g'], trip: ['plane', 'o'], plan: ['calendar', ''], swap: ['swap', 'p'], need: ['cart', 'o'], task: ['list', 'g'], settings: ['settings', ''], roommates: ['users', ''], import: ['upload', ''] };
+// tipo di log -> [icona, tono]. Le frasi sono `act.<tipo>` (nucleo) oppure `moreY.act.<tipo>` per i tipi aggiunti dopo.
+const ACT_ICON = { done: ['check', 'g'], cover: ['swap', 'p'], skipped: ['x', 'r'], reset: ['refresh', ''], away: ['plane', 'o'], back: ['home', 'g'], trip: ['plane', 'o'], plan: ['calendar', ''], swap: ['swap', 'p'], need: ['cart', 'o'], task: ['list', 'g'], settings: ['settings', ''], roommates: ['users', ''], import: ['upload', ''],
+  incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'] };
+const ACT_NEW = new Set(['incomplete', 'volunteer', 'delay', 'agreed']);
 function actText(ctx, e) {
   const p = e.p || {};
   if (!ACT_ICON[e.type]) return t('act.generic', { name: personName(ctx, e.by), text: p.text || e.type || '' });
-  return t('act.' + e.type, {
+  const key = ACT_NEW.has(e.type) ? 'moreY.act.' + e.type + (e.type === 'incomplete' && Number(p.n) === 1 ? '1' : '') : 'act.' + e.type;
+  return t(key, {
     name: personName(ctx, e.by), chore: p.chore ? t('chore.' + p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '',
-    day: p.day ? `${dowLong(p.day, ctx.lang)} ${fmtDate(p.day, ctx.lang)}` : '', text: p.text || '',
+    day: p.day ? `${dowLong(p.day, ctx.lang)} ${fmtDate(p.day, ctx.lang)}` : '', text: p.text || '', n: p.n ?? '',
   });
 }
 function activityPage(ctx) {
@@ -490,6 +771,37 @@ function activityPage(ctx) {
   }
   if (log.length > actLimit) kids.push(h('button', { type: 'button', class: 'btn soft block', onclick: () => { actLimit += 60; ctx.rerender(); } }, t('moreX.showMore')));
   return shell(...kids);
+}
+
+// ================================================================ registro ingressi (usato da Impostazioni > Accessi)
+const DEV_IC = { device: 'device', tablet: 'tablet', desktop: 'desktop' };
+/** Ultimi 100 ingressi: persona, dispositivo, orario e schermata, raggruppati per giorno. */
+export function renderViewsLog(ctx) {
+  loadCss('css/more.css');
+  const members = ctx.state.members || {};
+  const views = Object.entries(ctx.state.views || {}).map(([id, v]) => ({ id, ...v })).filter((v) => parseAt(v.at))
+    .sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 100);
+  const box = h('div', { class: 'mxa-log stack tight', 'data-testid': 'views' });
+  if (!views.length) { box.append(h('div', { class: 'list' }, h('div', { class: 'li muted', 'data-testid': 'views-empty' }, t('acc.noViews')))); return box; }
+  const groups = [];
+  for (const v of views) { const day = localDay(parseAt(v.at)); const g = groups[groups.length - 1]; if (g && g.day === day) g.items.push(v); else groups.push({ day, items: [v] }); }
+  const screenLabel = (s) => { const k = 'acc.screen.' + s; const x = t(k); return x === k ? String(s || '') : x; };
+  const row = (v) => {
+    const m = members[v.device]; const d = (m && m.device) || {};
+    const label = m ? (m.name || d.label || '') : '';
+    const dev = label ? (d.label && d.label !== label ? `${label} · ${d.label}` : label) : t('moreY.acc.devUnknown');
+    const name = v.personId ? ctx.name(v.personId) : t('misc.person');
+    return h('div', { class: 'li mxa-row', 'data-testid': 'view-' + v.id },
+      avatar(name, v.personId ? ctx.color(v.personId) : '#888', 'sm'),
+      h('div', { class: 'grow' },
+        h('div', { class: 't' }, name),
+        h('div', { class: 'mxa-meta' }, chip('mxa-scr', screenLabel(v.screen)), h('span', { class: 'mxa-dev' }, icon(DEV_IC[d.kind] || 'device'), h('span', null, dev)))),
+      h('span', { class: 'mx-time mxa-time' }, hhmm(parseAt(v.at))));
+  };
+  for (const g of groups) box.append(h('section', { class: 'mxa-day' },
+    h('div', { class: 'eyebrow' }, h('span', null, dayLabel(ctx, g.day)), chip('', g.items.length === 1 ? t('moreY.acc.entries1') : t('moreY.acc.entries', { n: g.items.length }))),
+    h('div', { class: 'list' }, g.items.map(row))));
+  return box;
 }
 
 // ================================================================ guida installazione

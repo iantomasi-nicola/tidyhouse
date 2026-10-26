@@ -36,6 +36,8 @@ const noOverflow = async (page) => assert.ok(await page.evaluate(() => document.
 const noErrors = (page) => { assert.deepEqual((page.__errors || []).filter((e) => !/Failed to load resource/.test(e)), [], 'errori in console'); assert.deepEqual(page.__404 || [], [], 'file della Home mancanti'); };
 const widgets = (page) => page.$$eval('[data-widget]', (els) => els.map((e) => e.dataset.widget));
 const text = (page, sel) => page.locator(sel).first().innerText();
+// "fatto" con checklist: se compare il dialogo delle voci mancanti, "Spunta tutto e segna fatto"
+const gate = async (page) => { try { await page.waitForSelector('[data-choice="all"]', { timeout: 1500 }); await page.click('[data-choice="all"]'); } catch { /* nessuna voce mancante */ } };
 async function test(name, fn) {
   try { await fn(); results.push([name, true]); console.log('ok   ' + name); } catch (e) { results.push([name, false]); console.log('FAIL ' + name + '\n     ' + (e && e.stack || e).toString().split('\n').slice(0, 4).join('\n     ')); }
 }
@@ -57,7 +59,7 @@ const run = async () => {
     assert.ok(await page.locator('.hm-chore.mine').count() >= 1);
     // checklist con compiti extra del mio turno
     await noOverflow(page);
-    await page.click('[data-testid="hero-todo"] [data-act="done"]');
+    await page.click('[data-testid="hero-todo"] [data-act="done"]'); await gate(page);
     await page.waitForSelector('[data-testid="hero-done"]');
     assert.match(await text(page, '[data-testid="hero-done"] .big'), /Tutto fatto/);
     assert.ok(await page.locator('.hm-chore .checkcircle.on').count() >= 1);
@@ -157,7 +159,7 @@ const run = async () => {
     page.__errors = []; await page.click('[data-testid="alert-lastweek"]'); await page.waitForTimeout(500);
     assert.ok(await page.locator('[data-screen="home"]').count());
     await page.keyboard.press('Escape'); await page.waitForTimeout(450);
-    await page.click('[data-testid="hero-late"] [data-act="done"]');
+    await page.click('[data-testid="hero-late"] [data-act="done"]'); await gate(page);
     await page.waitForSelector('[data-testid="hero-late"]', { state: 'detached' });
   });
 

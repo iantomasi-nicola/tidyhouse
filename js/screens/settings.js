@@ -11,6 +11,7 @@ import * as push from '../push.js';
 import { openAiImportSheet, readAiConfig, writeAiConfig } from '../ai-ui.js';
 import { PROVIDERS, callAi } from '../ai.js';
 import { it, en } from '../strings/set.js';
+import { renderViewsLog } from './more.js';   // registro ingressi (raggruppato per giorno)
 registerStrings(it, en);
 loadCss('css/settings.css');
 
@@ -759,8 +760,6 @@ function accessSection(ctx) {
         devs.map(devRow)));
   };
   const views = Object.entries(ctx.state.views || {}).sort((a, b) => String(b[1].at || '').localeCompare(String(a[1].at || ''))).slice(0, 100);
-  const devName = (id) => { const m = members[id]; return m ? (m.name || (m.device || {}).label || '') : ''; };
-  const viewRows = views.length ? views.map(([id, v]) => liRow({ title: `${ctx.name(v.personId) || t('misc.person')} · ${t('acc.screen.' + v.screen) === 'acc.screen.' + v.screen ? v.screen : t('acc.screen.' + v.screen)}`, desc: devName(v.device), end: h('span', { class: 'st-when' }, rel(ctx, v.at)) })) : [h('div', { class: 'li muted', 'data-testid': 'views-empty' }, t('acc.noViews'))];
   const clear = async () => {
     if (!(await confirmDialog({ title: t('acc.clearViews'), text: t('setX.access.clearWarn'), ok: t('acc.clearViews'), danger: true }))) return;
     const ids = Object.keys(ctx.state.views || {});
@@ -774,7 +773,7 @@ function accessSection(ctx) {
       h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-push' }, withPush), h('div', { class: 'k' }, t('acc.push')))),
     people.length ? people.map(personBlock) : [h('div', { class: 'empty' }, icon('users'), t('acc.noPeople'))],
     orphans.length ? h('div', { class: 'stack tight' }, sectionTitle(t('setX.access.unassigned')), h('div', { class: 'list' }, orphans.map(devRow))) : null,
-    h('div', { class: 'stack tight' }, h('div', { class: 'eyebrow' }, h('span', null, t('acc.viewsLog')), views.length ? h('button', { type: 'button', 'data-testid': 'views-clear', onclick: clear }, t('acc.clearViews')) : null), h('div', { class: 'list', 'data-testid': 'views' }, viewRows), foot(t('setX.access.viewsNote', { n: 100 }))));
+    h('div', { class: 'stack tight' }, h('div', { class: 'eyebrow' }, h('span', null, t('acc.viewsLog')), views.length ? h('button', { type: 'button', 'data-testid': 'views-clear', onclick: clear }, t('acc.clearViews')) : null), renderViewsLog(ctx), foot(t('setX.access.viewsNote', { n: 100 }))));
 }
 
 // ============================================================================

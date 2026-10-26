@@ -37,6 +37,8 @@ const noErrors = (page, label) => {
   assert.deepEqual(errs, [], `errori in console (${label})`);
   assert.deepEqual((page.__bad || []).filter((u) => MINE.test(u)), [], `risorse mancanti (${label})`);
 };
+// "fatto" con checklist: se compare il dialogo delle voci mancanti, "Spunta tutto e segna fatto"
+const gate = async (page) => { try { await page.waitForSelector('[data-choice="all"]', { timeout: 1500 }); await page.click('[data-choice="all"]'); } catch { /* nessuna voce mancante */ } };
 const shot = (page, name) => page.screenshot({ path: path.join(SHOTS, name + '.png') });
 
 const results = [];
@@ -87,6 +89,7 @@ await scenario('segna fatto dal dettaglio turno (stato nel motore)', async () =>
   assert.match(await topSheet(page).innerText(), /Recupero/);
   await shot(page, 'chore-sheet-390');
   await topSheet(page).locator('[data-act=done]').click();
+  await gate(page);
   await page.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[0].kind === 'done');
   const r = await curRow(page);
   assert.equal(r.cleaner[0], 'anna');
@@ -94,7 +97,7 @@ await scenario('segna fatto dal dettaglio turno (stato nel motore)', async () =>
   assert.equal(w.result.floor, 'done'); assert.equal(w.resultBy.floor, 'anna'); assert.ok(w.resultAt.floor);
   await page.waitForTimeout(500);
   assert.equal(await sheetCount(page), 1, 'il foglio turno si chiude, resta quello della settimana');
-  assert.ok(await page.locator('#layer .sheet [data-chore=floor] .ind.ok').count(), 'indicatore di esito nel foglio settimana');
+  assert.equal(await page.locator('#layer .sheet [data-toggle=floor]').getAttribute('aria-pressed'), 'true', 'interruttore "fatto" nel foglio settimana');
   // riaperto mostra "Segnato da Anna, oggi HH:MM" e il pulsante per annullare
   await openChore(page, 'floor');
   assert.match(await topSheet(page).innerText(), /Segnato da Anna, oggi \d\d:\d\d/);
@@ -129,6 +132,7 @@ await scenario('ha pulito un altro: lista, sostituto suggerito, stato nel motore
   await shot(page, 'cover-390');
   const other = sug === 'anna' ? 'carla' : 'anna';
   await topSheet(page).locator(`.cs-pick[data-who=${other}]`).click();
+  await gate(page);
   await page.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[1].kind === 'by');
   const r = await curRow(page);
   assert.equal(r.res[1].id, other); assert.equal(r.cleaner[1], other);
@@ -360,6 +364,7 @@ await scenario('calendario .ics: scaricato con i turni della persona', async () 
   assert.ok(n >= 6 && n <= 8, 'eventi: ' + n);
   assert.doesNotMatch(ics, /UID:2026-10-25/);
   // altra persona
+  await page.waitForSelector('.toast', { state: 'detached' });   // il toast "scaricato" copre il pulsante per qualche secondo
   await topSheet(page).locator('select').selectOption('bruno');
   const [dl2] = await Promise.all([page.waitForEvent('download'), topSheet(page).locator('[data-act=ics-download]').click()]);
   assert.equal(dl2.suggestedFilename(), 'tidyhouse-bruno.ics');
@@ -389,7 +394,9 @@ await scenario('permessi non-admin: azioni riservate nascoste', async () => {
   assert.equal(await s.locator('[data-act=nudge]').count(), 0, 'sollecito solo admin');
   assert.equal(await s.locator('.daychips').count(), 0, 'giorno scelto solo per sé');
   assert.equal(await s.locator('[data-act=request]').count(), 0);
-  assert.match(await s.locator('[data-act=cover]').innerText(), /Ho pulito io al posto di Anna/);
+  assert.equal(await s.locator('[data-act=cover]').count(), 0, 'senza accordo non c\'è il "ho pulito io" diretto');
+  assert.match(await s.locator('[data-act=volunteer]').innerText(), /Lo faccio io subito, anche se non spetta a me/);
+  assert.equal(await s.locator('[data-act=offer]').count(), 1, 'offerta all\'assegnato');
   await page.keyboard.press('Escape');
   await closed(page);
   // il proprio turno (Bruno, bagno)

@@ -107,46 +107,106 @@ export const hasIcon = (n) => n in P;
 
 // ---- layer: sheet / toast ----
 const layer = () => document.getElementById('layer');
+const calm = () => document.documentElement.classList.contains('no-motion') || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 let sheetStack = [];
+export const hasOpenSheets = () => sheetStack.length > 0;
+
+// Il tasto "indietro" del browser chiude lo sheet aperto (invece di cambiare pagina): ogni sheet aggiunge una voce alla cronologia.
+let swallow = 0, swallowTimer = 0, popQueue = 0, popTimer = 0, popHash = '', popBound = false;
+function bindPop() {
+  if (popBound) return; popBound = true;
+  window.addEventListener('popstate', () => {
+    if (swallow > 0) { swallow--; return; }               // è il "indietro" che abbiamo chiesto noi
+    const top = sheetStack[sheetStack.length - 1]; if (top) top.close({ keepHistory: true });
+  });
+}
+function queuePop(hash) {
+  popQueue++; popHash = hash;
+  if (popTimer) return;
+  popTimer = setTimeout(() => {   // rimandato: se nel frattempo è cambiata pagina (link dentro lo sheet) non si torna indietro
+    popTimer = 0; const n = popQueue; popQueue = 0;
+    if (!n || location.hash !== popHash || !(history.state && history.state.thSheet)) return;
+    swallow++; clearTimeout(swallowTimer); swallowTimer = setTimeout(() => { swallow = 0; }, 900);
+    try { history.go(-n); } catch { swallow = 0; }
+  }, 0);
+}
+function syncInert() {
+  const app = document.getElementById('app'); const n = sheetStack.length;
+  if (app) { if (n) app.setAttribute('inert', ''); else app.removeAttribute('inert'); }
+  sheetStack.forEach((s, i) => { if (i < n - 1) s.el.setAttribute('inert', ''); else s.el.removeAttribute('inert'); });
+}
+
 export function sheet({ title, body, full = false, onClose, actions } = {}) {
   const scrim = h('div', { class: 'scrim' });
   const bodyEl = h('div', { class: 'body' });
-  const head = h('header', null, h('h2', null, title || ''), h('button', { class: 'icon-btn', 'aria-label': t('close'), onclick: () => api.close() }, icon('x')));
-  const el = h('div', { class: 'sheet' + (full ? ' full' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title || '' }, h('div', { class: 'grab' }), head, bodyEl);
+  const head = h('header', null, h('h2', null, title || ''), h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('close'), onclick: () => api.close() }, icon('x')));
+  const el = h('div', { class: 'sheet' + (full ? ' full' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title || '', tabindex: '-1' }, h('div', { class: 'grab' }), head, bodyEl);
   const wrap = h('div', { style: { position: 'absolute', inset: 0, pointerEvents: 'none' } }, scrim, el);
+  const opener = document.activeElement;
   layer().append(wrap); layer().style.pointerEvents = 'auto';
-  requestAnimationFrame(() => requestAnimationFrame(() => { scrim.classList.add('on'); el.classList.add('on'); }));
-  let closed = false;
-  const onKey = (e) => { if (e.key === 'Escape' && sheetStack[sheetStack.length - 1] === api) api.close(); };
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (closed) return; scrim.classList.add('on'); el.classList.add('on'); }));
+  let closed = false, hist = false; const hashAtOpen = location.hash;
+  const onKey = (e) => {
+    if (sheetStack[sheetStack.length - 1] !== api) return;
+    if (e.key === 'Escape' && !e.isComposing && !e.defaultPrevented) { e.preventDefault(); api.close(); return; }
+    if (e.key === 'Tab') {   // il focus resta dentro lo sheet
+      const f = [...el.querySelectorAll(FOCUSABLE)].filter((x) => x.getClientRects().length);
+      if (!f.length) { e.preventDefault(); el.focus(); return; }
+      const first = f[0], last = f[f.length - 1], a = document.activeElement;
+      if (e.shiftKey && (a === first || a === el || !el.contains(a))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (a === last || !el.contains(a))) { e.preventDefault(); first.focus(); }
+    }
+  };
   document.addEventListener('keydown', onKey);
   scrim.addEventListener('click', () => api.close());
   const api = {
-    el, body: bodyEl, setTitle: (s) => { head.firstChild.textContent = s; },
+    el, body: bodyEl, setTitle: (s) => { head.firstChild.textContent = s; el.setAttribute('aria-label', s); },
     set(content2) { clear(bodyEl); add(bodyEl, [content2]); },
-    close() {
+    close(opts = {}) {
       if (closed) return; closed = true;
       scrim.classList.remove('on'); el.classList.remove('on');
+      scrim.style.pointerEvents = 'none'; el.style.pointerEvents = 'none';   // durante l'uscita non blocca più i click
       document.removeEventListener('keydown', onKey);
+      const hadFocus = el.contains(document.activeElement);
       sheetStack = sheetStack.filter((x) => x !== api);
-      setTimeout(() => { wrap.remove(); if (!layer().children.length || !sheetStack.length) layer().style.pointerEvents = 'none'; onClose && onClose(); }, 380);
-      const last = sheetStack[sheetStack.length - 1]; if (last) last.el.focus && 0;
+      syncInert();
+      if (hist) { hist = false; if (!opts.keepHistory) queuePop(hashAtOpen); }
+      if (!sheetStack.length) layer().style.pointerEvents = 'none';
+      // il focus torna a chi ha aperto lo sheet (se esiste ancora e nessun altro l'ha preso)
+      const top = sheetStack[sheetStack.length - 1];
+      if (hadFocus || document.activeElement === document.body) {
+        const back = opener && opener.isConnected && opener !== document.body && (!top || top.el.contains(opener)) ? opener : null;
+        if (back) { try { back.focus({ preventScroll: true }); } catch { /* ignore */ } }
+        else if (top && !top.el.contains(document.activeElement)) top.el.focus({ preventScroll: true });
+      }
+      setTimeout(() => { wrap.remove(); onClose && onClose(); }, calm() ? 30 : 380);
     },
   };
   sheetStack.push(api);
+  try { history.pushState({ thSheet: 1 }, '', location.href); hist = true; bindPop(); } catch { /* ignore */ }
+  syncInert();
   add(bodyEl, [typeof body === 'function' ? body(api) : body]);
+  if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
   return api;
 }
-export const closeAllSheets = () => [...sheetStack].forEach((s) => s.close());
+/** Chiude tutti gli sheet. { keepHistory:true } quando la chiusura nasce già da un cambio di pagina. */
+export function closeAllSheets(opts = {}) { [...sheetStack].reverse().forEach((s) => s.close(opts)); }
 
 let toastBox;
 /** Notifica temporanea. opts.action = { label, onClick } mostra un pulsante (es. "Annulla"). Restituisce una funzione per chiuderla. */
 export function toast(msg, ms = 2600, opts = {}) {
-  if (!toastBox || !toastBox.isConnected) { toastBox = h('div', { class: 'toasts', 'aria-live': 'polite' }); layer().append(toastBox); }
+  if (!toastBox || !toastBox.isConnected) { toastBox = h('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' }); layer().append(toastBox); }
+  // lo stesso messaggio già visibile (doppio tocco) non si accumula: si rinnova
+  const dup = !opts.action && [...toastBox.children].find((x) => !x.classList.contains('out') && x.__msg === msg && !x.__action);
+  if (dup) { clearTimeout(dup.__timer); dup.__timer = setTimeout(dup.__dismiss, ms); return dup.__dismiss; }
+  while (toastBox.children.length >= 3) toastBox.firstChild.remove();
   const el = h('div', { class: 'toast' }, msg);
-  const dismiss = () => { if (!el.isConnected || el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), 260); };
+  const dismiss = () => { if (!el.isConnected || el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), calm() ? 30 : 260); };
   if (opts.action) el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { try { opts.action.onClick(); } finally { dismiss(); } } }, opts.action.label));
+  el.__msg = msg; el.__action = !!opts.action; el.__dismiss = dismiss;
   toastBox.append(el);
-  setTimeout(dismiss, opts.action ? Math.max(ms, 6000) : ms);
+  el.__timer = setTimeout(dismiss, opts.action ? Math.max(ms, 6000) : ms);
   return dismiss;
 }
 
@@ -162,12 +222,12 @@ export function confirmDialog({ title, text, ok = t('ok'), danger = false, cance
 export function promptDialog({ title, label, value = '', type = 'text', ok = t('save'), placeholder = '' }) {
   return new Promise((res) => {
     let done = false;
-    const inp = h('input', { class: 'input', type, value, placeholder, autocomplete: 'off', autocapitalize: 'off' });
+    const inp = h('input', { class: 'input', type, value, placeholder, autocomplete: 'off', autocapitalize: 'off', enterkeyhint: 'done', 'aria-label': label || title || '' });
     const finish = (v) => { if (done) return; done = true; res(v); s.close(); };
     const s = sheet({ title, onClose: () => finish(null), body: h('form', { class: 'stack', onsubmit: (e) => { e.preventDefault(); finish(inp.value); } },
       h('div', { class: 'field' }, label ? h('label', null, label) : null, inp),
       h('div', { class: 'btn-row' }, h('button', { type: 'button', class: 'btn soft', onclick: () => finish(null) }, t('cancel')), h('button', { type: 'submit', class: 'btn' }, ok))) });
-    setTimeout(() => inp.focus(), 420);
+    setTimeout(() => { if (!done) inp.focus(); }, calm() ? 40 : 420);
   });
 }
 

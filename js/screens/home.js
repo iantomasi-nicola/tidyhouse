@@ -3,6 +3,7 @@
 import { h, icon, avatar, loadCss, confetti, haptic, promptDialog, confirmDialog } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, validateRoommates } from '../engine.js';
+import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf } from '../choresheet.js';
 import { planOf, tasksForWeek, buildStats, weekDays } from '../extras.js';
 import { it, en } from '../strings/home.js';
 registerStrings(it, en);
@@ -48,17 +49,18 @@ function turnChips(ctx, M, row, c, isLate) {
   if (row.isMakeup[c]) out.push(['warn', t('st.makeup'), 'history']);
   if (!r.kind) { const d = planOf(M.eh, row.sunday, CHORES[c]); if (d) out.push(['acc', t('st.planned', { day: dowLong(d) }), 'calendar']); }
   if (row.swapped[c]) out.push(['', t('st.swapped'), 'swap']);
+  for (const f of flowChips(ctx, row.sunday, CHORES[c])) out.push([f.tone, f.text, f.ic]);
   return out;
 }
 
+/** "Fatto" con checklist obbligatoria (dialogo se mancano voci) e toast con "Annulla". */
 async function markDone(ctx, sunday, c, ev) {
-  const b = ev.currentTarget; const r = b.getBoundingClientRect(); b.disabled = true;
+  const b = ev.currentTarget; b.disabled = true;
   popKeys.add(sunday + '|' + c);
-  try {
-    await ctx.actions.setResult(sunday, CHORES[c], 'done');
-    haptic(ctx.prefs.haptics, 14); confetti(r.left + r.width / 2, r.top + r.height / 2); ctx.toast(ctx.t('home.doneToast'));
-  } catch (e) { popKeys.delete(sunday + '|' + c); b.disabled = false; ctx.toast(ctx.t('error')); }
+  const ok = await markDoneFlow(ctx, sunday, CHORES[c], { el: b, msg: ctx.t('home.doneToast') });
+  if (!ok) { popKeys.delete(sunday + '|' + c); b.disabled = false; }
 }
+const isOk = (r) => r.kind === 'done' || r.kind === 'by';
 
 async function setSelfAway(ctx, sunday, on, revert) {
   const t = ctx.t;
@@ -106,7 +108,7 @@ function widgetHero(ctx, M) {
     const canDone = ctx.actions.canResult(f.sunday, CHORES[f.c], 'done');
     wrap.append(heroCard({
       variant: 'late', testid: 'hero-late', kicker: `${t('st.late')} · ${t('home.weekOf', { range: fmtWeekRange(f.sunday) })}`, ic: IC[CHORES[f.c]], big: t('chore.' + CHORES[f.c]), sub: t('home.lateHint'),
-      chips: [['', t('st.late'), 'clock'], ...(M.prev.isMakeup[f.c] ? [['', t('st.makeup'), 'history']] : [])],
+      chips: [['', t('st.late'), 'clock'], ...(M.prev.isMakeup[f.c] ? [['', t('st.makeup'), 'history']] : []), ...flowChips(ctx, f.sunday, CHORES[f.c]).map((x) => [x.tone, x.text, x.ic])],
       actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, f.sunday, f.c, e) }, icon('check'), t('home.markDone')) : null,
         h('button', { class: 'btn glass lg', type: 'button', onclick: () => openChore(ctx, f.sunday, CHORES[f.c]) }, t('home.didSomeoneElse'))],
       list: mini(rest),
@@ -122,6 +124,7 @@ function widgetHero(ctx, M) {
       const d = planOf(M.eh, row.sunday, ch); if (d) chips.push(['', t('st.planned', { day: dowLong(d) }), 'calendar']);
       if (row.swapped[c]) chips.push(['', t('st.swapped'), 'swap']);
       const ex = extrasLeft(ctx, M, row.sunday, c); if (ex) chips.push(['', `${ex} ${t('tasks.extra')}`, 'list']);
+      for (const x of flowChips(ctx, row.sunday, ch)) chips.push([x.tone, x.text, x.ic]);
       const canDone = ctx.actions.canResult(row.sunday, ch, 'done');
       const canPlan = ctx.feature('planDay') && ctx.actions.canPlan(row.sunday, ch);
       wrap.append(heroCard({
@@ -134,9 +137,14 @@ function widgetHero(ctx, M) {
       return wrap;
     }
     const skipped = curItems.some((x) => row.res[x.c].kind === 'skipped' || row.res[x.c].kind === 'skippedBy');
+    const undos = curItems.filter((x) => isOk(row.res[x.c]) && ctx.actions.canResult(row.sunday, CHORES[x.c], ''));
+    const flows = curItems.flatMap((x) => flowChips(ctx, row.sunday, CHORES[x.c]).map((f) => [f.tone, curItems.length > 1 ? `${t('chore.' + CHORES[x.c])}: ${f.text}` : f.text, f.ic]));
     wrap.append(heroCard({
       variant: skipped ? '' : 'calm', testid: 'hero-done', kicker: t('home.thisWeek'), ic: 'check', big: skipped ? t('home.allWeeksDone') : t('home.allDone'),
-      chips: [['', t('home.doneOf', { done: curItems.length, total: curItems.length }), 'check']], list: curItems.length > 1 ? mini(curItems) : null, foot: awayBtn,
+      chips: [['', t('home.doneOf', { done: curItems.length, total: curItems.length }), 'check'], ...flows],
+      actions: undos.map((x) => h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'undo', 'data-chore': CHORES[x.c], onclick: async (e) => { const b = e.currentTarget; b.disabled = true; const ok = await undoFlow(ctx, row.sunday, CHORES[x.c]); if (!ok) b.disabled = false; } },
+        icon('refresh'), undos.length > 1 ? t('flow.heroUndoChore', { chore: t('chore.' + CHORES[x.c]) }) : t('chore.reset'))),
+      list: curItems.length > 1 ? mini(curItems) : null, foot: awayBtn,
     }));
     return wrap;
   }
@@ -186,16 +194,17 @@ function widgetWeek(ctx, M) {
   const { row, me } = M, t = ctx.t;
   if (!row) return null;
   const items = [0, 1, 2].map((c) => {
-    const a = row.assigned[c], r = row.res[c], ch = CHORES[c];
-    const on = r.kind === 'done' || r.kind === 'by', sk = r.kind === 'skipped' || r.kind === 'skippedBy';
-    const key = row.sunday + '|' + c, pop = popKeys.has(key);
+    const a = row.assigned[c], ch = CHORES[c];
+    const on = isOk(row.res[c]);
+    const pop = popKeys.has(row.sunday + '|' + c);
     const who = a ? ctx.name(a) : t('chore.noOne');
-    return h('button', { class: 'chore hm-chore' + (a && a === me ? ' mine' : '') + (on ? ' done' : ''), type: 'button', 'data-chore': ch, 'aria-label': t('home.rowAria', { chore: t('chore.' + ch), who }), onclick: () => openChore(ctx, row.sunday, ch) },
-      h('div', { class: 'tile ' + ch }, icon(IC[ch])),
-      h('div', { class: 'grow' },
-        h('div', { class: 't hm-ell' }, t('chore.' + ch)),
-        h('div', { class: 's' }, a ? avatar(who, ctx.color(a), 'sm') : null, h('span', { class: 'hm-who hm-ell' }, who), turnChips(ctx, M, row, c, false).map(([cls, text, ic]) => chip(cls, text, ic)))),
-      h('span', { class: 'checkcircle' + (on ? ' on' : '') + (sk ? ' skip' : '') + (pop ? ' pop' : '') }, icon(sk ? 'x' : 'check')));
+    return h('div', { class: 'chore hm-chore' + (a && a === me ? ' mine' : '') + (on ? ' done' : ''), 'data-chore': ch },
+      h('button', { class: 'hm-chorebtn', type: 'button', 'aria-label': t('home.rowAria', { chore: t('chore.' + ch), who }), onclick: () => openChore(ctx, row.sunday, ch) },
+        h('div', { class: 'tile ' + ch }, icon(IC[ch])),
+        h('div', { class: 'grow' },
+          h('div', { class: 't hm-ell' }, t('chore.' + ch)),
+          h('div', { class: 's' }, a ? avatar(who, ctx.color(a), 'sm') : null, h('span', { class: 'hm-who hm-ell' }, who), turnChips(ctx, M, row, c, false).map(([cls, text, ic]) => chip(cls, text, ic))))),
+      a ? resultToggle(ctx, row.sunday, ch, { pop }) : null);
   });
   const restRow = row.rest.length ? h('div', { class: 'chore hm-chore hm-restrow', 'data-chore': 'rest' }, h('div', { class: 'tile rest' }, icon('moon')),
     h('div', { class: 'grow' }, h('div', { class: 't' }, t('chore.rest')), h('div', { class: 's' }, row.rest.map((id) => h('span', { class: 'hm-person' }, avatar(ctx.name(id), ctx.color(id), 'sm'), h('span', { class: 'hm-ell' }, ctx.name(id))))))) : null;
@@ -215,9 +224,75 @@ function alertRow({ tone, ic, title, desc, onclick, href, actions, testid }) {
   if (href) return h('a', { class: 'li hm-alert', href, 'data-testid': testid || null }, body, h('div', { class: 'end' }, icon('chevron')));
   return h('div', { class: 'li hm-alert', 'data-testid': testid || null }, body);
 }
+/** Richieste che aspettano la MIA risposta (sostituti, offerte, scambi), con Accetta/Rifiuta inline. */
+function requestRows(ctx, M) {
+  const t = ctx.t, me = ctx.me, rows = [];
+  if (!me) return rows;
+  const reqs = Object.entries(ctx.state.requests || {}).filter(([, q]) => q && q.status === 'pending' && q.kind !== 'nudge' && q.kind !== 'notice')
+    .sort((a, b) => String(a[1].at || '').localeCompare(String(b[1].at || '')));
+  const answer = (fn, okMsg) => async (e) => {
+    const box = e.currentTarget.closest('.hm-alertactions'); const bs = box ? [...box.querySelectorAll('button')] : [];
+    bs.forEach((b) => { b.disabled = true; });
+    try { await fn(); haptic(ctx.prefs.haptics, 10); ctx.toast(okMsg); } catch { bs.forEach((b) => { b.disabled = false; }); ctx.toast(t('error')); }
+  };
+  for (const [id, q] of reqs) {
+    const wr = M.out.rows.find((r) => r.sunday === q.week);
+    if (!wr) continue;
+    const range = fmtWeekRange(q.week);
+    if (q.kind === 'cover' || q.kind === 'offer') {
+      const c = CHORES.indexOf(q.chore);
+      if (c < 0 || wr.res[c].kind) continue;
+      const mine = q.kind === 'cover' ? q.from !== me && (!q.to || q.to === me) : q.to === me;
+      if (!mine) continue;
+      const chore = t('chore.' + q.chore);
+      const cover = q.kind === 'cover';
+      rows.push(alertRow({ tone: 'p', ic: cover ? 'users' : 'user', testid: 'req-' + id,
+        title: cover ? t(q.to ? 'flow.alert.coverTo' : 'flow.alert.cover', { name: ctx.name(q.from), chore }) : t('flow.alert.offer', { name: ctx.name(q.from), chore }),
+        desc: cover ? t('flow.alert.coverDesc', { range }) : t('flow.alert.offerDesc', { range }),
+        actions: [h('button', { class: 'btn sm', type: 'button', 'data-act': 'req-yes', onclick: answer(() => ctx.actions.answerCover(id, true), cover ? t('flow.req.agreedMe') : t('flow.req.agreedHim', { name: ctx.name(q.from) })) }, icon('check'), cover ? t('flow.req.canDo') : t('req.accept')),
+          h('button', { class: 'btn sm soft', type: 'button', 'data-act': 'req-no', onclick: answer(() => ctx.actions.answerCover(id, false), t('flow.req.declined')) }, cover ? t('flow.req.cant') : t('req.decline'))] }));
+    } else if (q.to === me) {
+      rows.push(alertRow({ tone: 'p', ic: 'swap', testid: 'req-' + id,
+        title: t('flow.alert.swap', { name: ctx.name(q.from) }),
+        desc: t('flow.alert.swapDesc', { mine: t('chore.' + q.fromChore), theirs: t('chore.' + q.toChore), range }),
+        actions: [h('button', { class: 'btn sm', type: 'button', 'data-act': 'req-yes', onclick: answer(() => ctx.actions.answerSwap(id, true), t('req.accepted')) }, icon('check'), t('req.accept')),
+          h('button', { class: 'btn sm soft', type: 'button', 'data-act': 'req-no', onclick: answer(() => ctx.actions.answerSwap(id, false), t('req.declined')) }, t('req.decline'))] }));
+    }
+  }
+  return rows;
+}
+/** Turni concordati con me, volontari al posto mio, turni incompleti (admin). */
+function flowRows(ctx, M) {
+  const t = ctx.t, me = ctx.me, rows = [];
+  const idx = M.cur;
+  const list = idx >= 0 ? [M.out.rows[idx - 1], M.out.rows[idx], M.out.rows[idx + 1]].filter(Boolean) : [];
+  for (const r of list) {
+    const wk = (ctx.state.weeks || {})[r.sunday] || {};
+    CHORES.forEach((ch, c) => {
+      const a = r.assigned[c]; if (!a) return;
+      const res = r.res[c], chore = t('chore.' + ch), range = fmtWeekRange(r.sunday), future = !!M.row && r.sunday > M.row.sunday;
+      const ag = (wk.agreed || {})[ch];
+      if (me && ag === me && a !== me && !res.kind) {
+        rows.push(alertRow({ tone: 'g', ic: 'users', testid: 'alert-agreed', title: t('flow.alert.agreed', { chore }), desc: t('flow.alert.agreedDesc', { name: ctx.name(a), range }),
+          actions: [h('button', { class: 'btn sm', type: 'button', 'data-act': 'done', 'data-chore': ch, onclick: (e) => markDoneFlow(ctx, r.sunday, ch, { value: 'by:' + me, el: e.currentTarget }) }, icon('check'), t('home.markDone')),
+            h('button', { class: 'btn sm soft', type: 'button', onclick: () => openChore(ctx, r.sunday, ch) }, t('flow.alert.details'))] }));
+      }
+      if (me && a === me && (wk.volunteer || {})[ch] && isOk(res) && (wk.volunteer || {})[ch] !== me && !future) {
+        rows.push(alertRow({ tone: 'o', ic: 'user', testid: 'alert-volunteer', title: t('flow.alert.volunteer', { name: ctx.name(wk.volunteer[ch]), chore }), desc: t('flow.alert.volunteerDesc'), onclick: () => openChore(ctx, r.sunday, ch) }));
+      }
+      if (ctx.isAdmin && isOk(res) && !future) {
+        const miss = incompleteOf(ctx, r.sunday, ch);
+        if (miss.length) rows.push(alertRow({ tone: 'r', ic: 'alert', testid: 'alert-incomplete', title: t('flow.alert.incomplete', { chore, name: ctx.name(a) }), desc: t('flow.alert.incompleteDesc', { n: miss.length }), onclick: () => openChore(ctx, r.sunday, ch) }));
+      }
+    });
+  }
+  return rows;
+}
 function widgetAlerts(ctx, M) {
   const t = ctx.t, rows = [];
   const { row, prev, me } = M;
+  const reqRows = requestRows(ctx, M);
+  rows.push(...reqRows, ...flowRows(ctx, M));
   if (prev) {
     const pend = [0, 1, 2].filter((c) => prev.assigned[c] && !prev.res[c].kind);
     if (pend.length && (ctx.isAdmin || pend.some((c) => prev.assigned[c] !== me))) {
@@ -250,7 +325,8 @@ function widgetAlerts(ctx, M) {
     }
   }
   if (!rows.length) return null;
-  return h('section', { class: 'hm-w', 'data-widget': 'alerts' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.alerts'))), h('div', { class: 'list' }, rows));
+  const badge = reqRows.length ? h('span', { class: 'hm-badge', 'data-testid': 'alerts-badge', role: 'status', 'aria-label': t('flow.alert.badge', { n: reqRows.length }) }, String(reqRows.length)) : null;
+  return h('section', { class: 'hm-w', 'data-widget': 'alerts' }, h('div', { class: 'eyebrow' }, h('span', { class: 'hm-alerthead' }, t('home.alerts'), badge)), h('div', { class: 'list' }, rows));
 }
 
 // ---------------- CHECKLIST ----------------
@@ -283,13 +359,14 @@ function widgetChecklist(ctx, M) {
 // ---------------- QUICK ----------------
 function widgetQuick(ctx, M) {
   const t = ctx.t, btns = [];
-  const q = (ic, label, fn, id) => h('button', { class: 'hm-q', type: 'button', 'data-q': id, onclick: fn }, h('span', { class: 'hm-qi' }, icon(ic)), h('span', { class: 'hm-ql' }, label));
+  const q = (ic, label, fn, id, badge = 0) => h('button', { class: 'hm-q', type: 'button', 'data-q': id, onclick: fn }, h('span', { class: 'hm-qi' }, icon(ic), badge ? h('span', { class: 'hm-qbadge', 'aria-label': t('flow.shoppingBadge', { n: badge }) }, badge > 99 ? '99+' : String(badge)) : null), h('span', { class: 'hm-ql' }, label));
   if (ctx.feature('trips') && ctx.me && ctx.actions.canTrip(ctx.me)) btns.push(q('plane', t('trips.add'), () => lazy(ctx, () => import('../screens/trips.js'), (m) => m.openTripSheet(ctx, ctx.me)), 'trip'));
-  if (ctx.feature('needs')) btns.push(q('cart', t('home.addNeed'), async () => {
+  if (ctx.feature('needs')) btns.push(q('plus', t('home.addNeed'), async () => {
     const text = await promptDialog({ title: t('home.addNeed'), label: t('needs.add'), placeholder: t('needs.placeholder'), ok: t('add') });
     if (text === null || !String(text).trim()) return;
     try { await ctx.actions.addNeed(text); ctx.toast(t('home.needAdded')); } catch { ctx.toast(t('error')); }
   }, 'need'));
+  if (ctx.feature('needs')) btns.push(q('cart', t('flow.shopping'), () => ctx.nav('needs'), 'shop', Object.values(ctx.state.needs || {}).filter((n) => n && !n.done).length));
   if (ctx.feature('whatsapp') && M.row) btns.push(q('whatsapp', t('cal.whatsapp'), () => lazy(ctx, () => import('../choresheet.js'), (m) => m.openWhatsAppSheet(ctx, M.row.sunday)), 'wa'));
   if (ctx.feature('requests') && M.row && ctx.me) btns.push(q('swap', t('home.swapTurn'), () => {
     const c = M.mine.find((x) => !M.row.res[x].kind) ?? M.mine[0];

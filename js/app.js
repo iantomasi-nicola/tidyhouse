@@ -1,12 +1,14 @@
 // Nucleo dell'app: avvio, registro case, identità, tema, router, shell, aggiornamento pagina, accessi.
 // Le schermate vivono in js/screens/*.js e ricevono un `ctx` (vedi ARCHITECTURE.md).
-import { h, clear, icon, toast, sheet, closeAllSheets, deviceInfo, haptic } from './ui.js';
-import { t, tr, setLang, getLang, detectLang } from './i18n.js';
+import { h, clear, icon, toast, sheet, closeAllSheets, hasOpenSheets, deviceInfo, haptic } from './ui.js';
+import { t, tr, setLang, getLang, detectLang, registerStrings } from './i18n.js';
+import { it as coreIt, en as coreEn } from './strings/core.js';
 import { compute } from './engine.js';
 import { Store, LocalBackend, CloudBackend, engineHouse } from './store.js';
 import { Actions, buildHouse, verifyPin, localDate, importBackupOps, exportBackup, normalizeStartSunday } from './actions.js';
 import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
 
+registerStrings(coreIt, coreEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
 const VERSION = '1.0.0';
@@ -89,6 +91,7 @@ const ctx = {
   baseUrl, joinLink: () => `${baseUrl()}#/join/${S.houseId}`, code: () => fmtCode(S.houseId),
   nav(path) { location.hash = '#/' + String(path || '').replace(/^#?\/?/, ''); },
   rerender: () => scheduleRender(true),
+  get renderCount() { return renders; },
   savePrefs(patch) { prefs = { ...prefs, ...patch }; ls.set('cp:prefs', prefs); applyPrefs(); scheduleRender(true); },
   /** Layout Home effettivo (personale oppure della casa). */
   homeLayout() {
@@ -103,7 +106,12 @@ const ctx = {
       const me = this.me; const { out: o } = this.calc;
       if (me && o.cur >= 0) {
         for (let i = Math.max(0, o.cur - 1); i <= o.cur; i++) { const r = o.rows[i]; for (let c = 0; c < 3; c++) if (r.assigned[c] === me && !r.res[c].kind && (i < o.cur || r.isCur)) out.home += i < o.cur ? 1 : 0; }
-        out.more = Object.values(this.state.requests || {}).filter((q) => q.to === me && q.status === 'pending' && q.kind !== 'nudge').length;
+        // stessa regola di awaitingMe() in more.js: scambi/offerte indirizzati a me; sostituzioni (cover) a me o aperte a tutti tranne il richiedente
+        out.more = Object.values(this.state.requests || {}).filter((q) => {
+          if (q.status !== 'pending' || ['notice', 'nudge'].includes(q.kind)) return false;
+          if (q.kind === 'cover') return q.from !== me && (!q.to || q.to === me);
+          return q.to === me;
+        }).length;
       }
     } catch { /* ignore */ }
     return out;
@@ -203,15 +211,23 @@ const boot = {
 window.__boot = boot;
 
 async function loadOnboarding() { return import('./screens/onboarding.js'); }
+let stageToken = 0;
+const hideBoot = () => { const b = document.getElementById('boot'); if (b && !b.classList.contains('gone')) { b.classList.add('gone'); setTimeout(() => { b.hidden = true; }, 400); } };
+/** Mostra una schermata di accesso (landing/crea/entra/...). Le chiamate ravvicinate si annullano a vicenda: vince l'ultima. */
 async function renderStage() {
-  const root = appEl(); clear(root);
-  document.getElementById('boot').classList.add('gone');
+  const root = appEl(); const tk = ++stageToken;
+  let node;
   try {
     const m = await loadOnboarding();
-    const node = S.stage === 'push' ? renderPushGate() : await m.renderGate(S.stage, boot, S.stageParams || {});
-    clear(root); root.append(node);
+    node = S.stage === 'push' ? renderPushGate() : await m.renderGate(S.stage, boot, S.stageParams || {});
+    if (tk !== stageToken) return;
     if (['landing', 'join', 'who', 'rules'].includes(S.stage)) { const panel = node.querySelector ? (node.querySelector('.panel') || node) : node; const b = installBanner(); if (b) panel.append(b); }
-  } catch (e) { root.append(h('div', { class: 'gate' }, h('div', { class: 'panel' }, h('h1', null, t('error')), h('p', { class: 'muted' }, String(e && e.message || e))))); console.error(e); }
+  } catch (e) {
+    if (tk !== stageToken) return;
+    node = h('div', { class: 'gate' }, h('div', { class: 'panel' }, h('h1', null, t('error')), h('p', { class: 'muted' }, String(e && e.message || e)), h('button', { class: 'btn soft', type: 'button', onclick: () => location.reload() }, icon('refresh'), t('refresh.now')))); console.error(e);
+  }
+  root.replaceChildren(node);
+  shell = null; window.scrollTo(0, 0); hideBoot();
 }
 
 /** Decide cosa mostrare: landing / chi sei / regole / app. */
@@ -285,22 +301,90 @@ function recordView(screen) {
 }
 
 // ---------------- router ----------------
+const safeDecode = (x) => { try { return decodeURIComponent(x); } catch { return x; } };
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '').split('?')[0];
-  const parts = raw.split('/').filter(Boolean).map(decodeURIComponent);
+  const parts = raw.split('/').filter(Boolean).map(safeDecode);
   return { path: parts.join('/'), parts, root: parts[0] || '' };
 }
 const SCREENS = { '': 'home', calendar: 'calendar', trips: 'trips', stats: 'stats', more: 'more', settings: 'settings', needs: 'more', rules: 'more', lastout: 'more', tasks: 'more', requests: 'more', activity: 'more', guide: 'more' };
 const TABS = [['', 'home', 'nav.home'], ['calendar', 'calendar', 'nav.calendar'], ['trips', 'plane', 'nav.trips'], ['stats', 'trophy', 'nav.stats'], ['more', 'more', 'nav.more']];
-const tabOf = (root) => (['needs', 'rules', 'lastout', 'tasks', 'requests', 'activity', 'guide', 'settings'].includes(root) ? 'more' : root);
+const SUBS = ['needs', 'rules', 'lastout', 'tasks', 'requests', 'activity', 'guide'];
+const tabOf = (root) => (SUBS.includes(root) || root === 'settings' ? 'more' : Object.prototype.hasOwnProperty.call(SCREENS, root) ? root : '');
 
-let rafId = 0, shell = null, mainEl = null, navEl = null, topEl = null, renderToken = 0, lastPath = null;
+// Rendering: un solo render alla volta, richieste ravvicinate fuse in una (rAF), aggiornamenti remoti al massimo ogni MIN_GAP ms.
+const MIN_GAP = 120;
+let rafId = 0, timerId = 0, pendingForce = false, lastRenderAt = 0, renders = 0;
+let shell = null, mainEl = null, navEl = null, topEl = null, renderToken = 0, lastPath = null, navSig = '', topSig = '';
+const scrollMemo = new Map(); let popNav = false;
 function scheduleRender(force) {
   if (!S.ready || S.stage !== 'app') return;
+  if (force) pendingForce = true;
   if (rafId) return;
-  rafId = requestAnimationFrame(() => { rafId = 0; renderApp(!!force); });
+  if (timerId) { if (force) { clearTimeout(timerId); timerId = 0; } else return; }
+  const wait = pendingForce ? 0 : Math.max(0, MIN_GAP - (performance.now() - lastRenderAt));
+  if (wait > 4) { timerId = setTimeout(() => { timerId = 0; queueRender(); }, wait); } else queueRender();
 }
-function typing() { const a = document.activeElement; return a && mainEl && mainEl.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox' && a.type !== 'range'; }
+function queueRender() {
+  if (rafId) return;
+  rafId = requestAnimationFrame(() => { rafId = 0; const f = pendingForce; pendingForce = false; lastRenderAt = performance.now(); renderApp(f); });
+}
+// Si sta scrivendo/scegliendo in un campo della pagina? (i campi dentro gli sheet vivono fuori dal rerender)
+let compFlag = false, compAt = 0;   // composizione IME in corso (si azzera da sola se la tastiera non chiude mai la composizione)
+const NOT_TEXT = /^(checkbox|radio|range|button|submit|reset|image)$/;
+function activeField() { const a = document.activeElement; return a && mainEl && mainEl.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !NOT_TEXT.test(a.type) ? a : null; }
+const composing = () => compFlag && performance.now() - compAt < 4000;
+const typing = () => composing() || !!activeField();
+// tipi il cui valore "grezzo" (spazi finali, data a metà, picker aperto) non si può ricopiare in un nuovo nodo: non si ricreano mai mentre hanno il focus
+const COMPLEX = /^(url|email|number|date|time|datetime-local|month|week)$/;
+/** Rimandare il render? Mai se cambia pagina; sempre durante una composizione IME; per i dati remoti con un campo attivo; per i render forzati solo con campi "complessi". */
+function mustDefer(force, routeChanged) {
+  if (routeChanged) return false;
+  if (composing()) return true;
+  const a = activeField(); if (!a) return false;
+  return !force || COMPLEX.test(a.type) || a.tagName === 'SELECT';
+}
+/** Un campo di testo qualsiasi (anche dentro uno sheet) ha il focus: non interrompere con popup o ricariche. */
+const editingAnywhere = () => { const a = document.activeElement; return composing() || !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !NOT_TEXT.test(a.type)); };
+document.addEventListener('compositionstart', () => { compFlag = true; compAt = performance.now(); }, true);
+document.addEventListener('compositionupdate', () => { compAt = performance.now(); }, true);
+document.addEventListener('compositionend', () => { compFlag = false; setTimeout(flushDeferred, 80); }, true);
+document.addEventListener('focusout', () => { compFlag = false; }, true);
+document.addEventListener('input', (e) => { if (e.isTrusted && e.target) e.target.__typed = true; }, true);
+function flushDeferred() { if (S.deferred && !typing()) scheduleRender(true); }
+
+// ---- doppio tocco: il secondo click ravvicinato sullo stesso punto di un pulsante d'azione viene ignorato (niente azioni/sheet duplicati) ----
+const ONCE = 'button.btn, a.btn, button.checkcircle, button.chore, button.li, a.li, button.week, button.who, button.hm-act';
+let lastClick = { t: -1e9, x: -999, y: -999 };
+document.addEventListener('click', (e) => {
+  const el = e.isTrusted && e.target && e.target.closest ? e.target.closest(ONCE) : null;
+  if (!el || el.closest('.num, .seg')) return;
+  const now = performance.now();
+  if (now - lastClick.t < 350 && Math.abs(e.clientX - lastClick.x) < 24 && Math.abs(e.clientY - lastClick.y) < 24) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+  lastClick = { t: now, x: e.clientX, y: e.clientY };
+}, true);
+
+// ---- il focus sopravvive al rerender forzato (stesso campo, valore digitato, posizione del cursore) ----
+const FIELD = 'input,textarea,select,button,a[href],[tabindex]';
+const sigOf = (el) => [el.tagName, el.type || '', el.id, el.getAttribute('data-testid') || '', el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || '', el.getAttribute('name') || '', el.getAttribute('href') || '', /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ? '' : (el.textContent || '').trim().slice(0, 40)].join('|');
+function captureFocus() {
+  const a = document.activeElement;
+  if (!a || a === document.body || !mainEl || !mainEl.contains(a)) return null;
+  const sig = sigOf(a); const same = [...mainEl.querySelectorAll(FIELD)].filter((x) => sigOf(x) === sig);
+  const txt = /^(INPUT|TEXTAREA)$/.test(a.tagName) && !NOT_TEXT.test(a.type);
+  let ss = null, se = null, sd = null; try { if (txt) { ss = a.selectionStart; se = a.selectionEnd; sd = a.selectionDirection; } } catch { /* tipi senza selezione */ }
+  return { sig, idx: Math.max(0, same.indexOf(a)), value: a.value, dirty: !!a.__typed, ss, se, sd, st: a.scrollTop };
+}
+function restoreFocus(snap) {
+  if (!snap) return;
+  const same = [...mainEl.querySelectorAll(FIELD)].filter((x) => sigOf(x) === snap.sig);
+  const el = same[Math.min(snap.idx, same.length - 1)];
+  if (!el) return;
+  if (snap.dirty && 'value' in el && el.type !== 'file' && el.value !== snap.value) el.value = snap.value;
+  if (snap.dirty) el.__typed = true;
+  try { el.focus({ preventScroll: true }); } catch { return; }
+  try { if (snap.ss !== null && el.setSelectionRange) { el.setSelectionRange(snap.ss, snap.se, snap.sd || 'none'); el.scrollTop = snap.st; } } catch { /* ignore */ }
+}
 
 async function renderApp(force) {
   if (S.stage !== 'app') return;
@@ -308,20 +392,20 @@ async function renderApp(force) {
   if (route.root === 'join') { // link d'invito aperto con casa già caricata
     const code = normCode(route.parts[1] || '');
     if (code && code !== S.houseId) { S.stageHint = 'landing'; detach(); history.replaceState(null, '', '#/join/' + code); return startFromHash(); }
-    location.hash = '#/'; return;
+    history.replaceState(null, '', '#/'); return renderApp(true);
   }
   if (!shell || !shell.isConnected) { buildShell(); force = true; }
-  if (!force && typing()) { S.deferred = true; return; }
+  if (mustDefer(force, lastPath !== route.path)) { S.deferred = true; return; }
   S.deferred = false;
   const token = ++renderToken;
   const root = route.root; const name = SCREENS[root] ?? 'home';
   const tab = tabOf(root);
-  updateNav(tab); updateTop();
-  const samePage = lastPath === route.path; const y = samePage ? window.scrollY : 0; lastPath = route.path;
+  const samePage = lastPath === route.path;
+  if (lastPath !== null && !samePage) scrollMemo.set(lastPath, window.scrollY);
   let node;
   try {
     const mod = await import(`./screens/${name}.js`);
-    const params = { sub: ['needs', 'rules', 'lastout', 'tasks', 'requests', 'activity', 'guide'].includes(root) ? root : route.parts[1] || '', parts: route.parts };
+    const params = { sub: SUBS.includes(root) ? root : route.parts[1] || '', parts: route.parts };
     node = await mod.render(ctx, params);
   } catch (e) {
     console.error(e);
@@ -329,11 +413,24 @@ async function renderApp(force) {
   }
   if (token !== renderToken) return;
   let reminder = null; try { reminder = await notifReminder(); } catch { /* ignore */ }
-  if (token !== renderToken) return;
-  clear(mainEl); if (reminder) mainEl.append(reminder); mainEl.append(node);
-  if (samePage) window.scrollTo(0, y); else window.scrollTo(0, 0);
+  if (token !== renderToken || S.stage !== 'app') return;
+  // mentre la schermata si preparava l'utente può aver iniziato a scrivere: non togliergli il campo di sotto
+  if (mustDefer(force, lastPath !== route.path)) { S.deferred = true; return; }
+  if (!shell || !shell.isConnected) return;
+  const snap = samePage ? captureFocus() : null;
+  const y = samePage ? window.scrollY : (popNav && scrollMemo.has(route.path) ? scrollMemo.get(route.path) : 0);
+  updateNav(tab); updateTop();
+  shell.classList.toggle('no-enter', samePage);   // le animazioni d'ingresso solo cambiando pagina, non a ogni aggiornamento dati
+  // una pagina persistente (nodo già montato in mainEl) non si rimonta: niente perdita di focus/selezione/scroll interno
+  if (node.parentNode === mainEl && !reminder && mainEl.children.length === 1) { /* già al suo posto */ }
+  else if (node.parentNode === mainEl) { for (const c of [...mainEl.children]) if (c !== node) c.remove(); if (reminder) mainEl.prepend(reminder); }
+  else mainEl.replaceChildren(...(reminder ? [reminder, node] : [node]));
+  lastPath = route.path; popNav = false; renders++;
+  window.scrollTo(0, y);
+  restoreFocus(snap);
+  hideBoot();
   recordView(tab === '' ? 'home' : tab);
-  document.title = `${ctx.house.name || 'Tidy House'} · Tidy House`;
+  const title = `${ctx.house.name || 'Tidy House'} · Tidy House`; if (document.title !== title) document.title = title;
 }
 
 /** Promemoria (chiudibile per la sessione) se le notifiche non sono ancora attive su questo dispositivo. */
@@ -355,33 +452,43 @@ async function notifReminder() {
 }
 
 function buildShell() {
-  const root = appEl(); clear(root);
-  topEl = h('div', { class: 'top' });
-  mainEl = h('main', { class: 'main', id: 'main' }, topEl);
-  navEl = h('nav', { class: 'nav', 'aria-label': 'Navigazione' });
-  shell = h('div', { class: 'shell' }, navEl, h('div', { class: 'content' }, mainEl));
-  root.append(shell);
-  // top va ricostruito in updateTop, mainEl viene svuotato a ogni render: sposto top fuori da mainEl
-  mainEl.removeChild(topEl); shell.querySelector('.content').insertBefore(topEl, mainEl);
-  topEl.className = 'top main'; topEl.style.paddingBottom = '0'; topEl.style.minHeight = '0';
-  topEl.style.marginBottom = '-8px';
+  const root = appEl();
+  topEl = h('div', { class: 'top main' });
+  mainEl = h('main', { class: 'main', id: 'main', tabindex: '-1' });
+  navEl = h('nav', { class: 'nav', 'aria-label': t('core.nav') });
+  shell = h('div', { class: 'shell' }, h('button', { type: 'button', class: 'skip', onclick: () => { mainEl.focus({ preventScroll: false }); } }, t('core.skip')), navEl, h('div', { class: 'content' }, topEl, mainEl));
+  navSig = ''; topSig = '';
+  root.replaceChildren(shell);
+  topEl.style.paddingBottom = '0'; topEl.style.minHeight = '0'; topEl.style.marginBottom = '-8px';
 }
+/** La barra di navigazione si aggiorna sul posto: i link non vengono ricreati (focus da tastiera e hover restano). */
 function updateNav(tab) {
   const b = ctx.badges();
   const items = TABS.filter(([k]) => (k !== 'trips' || ctx.feature('trips')) && (k !== 'stats' || ctx.feature('stats') || ctx.feature('ranking')));
-  navEl.style.gridTemplateColumns = window.innerWidth < 900 ? `repeat(${items.length}, 1fr)` : '';
-  clear(navEl);
-  for (const [k, ic, label] of items) {
-    const badge = k === '' ? b.home : k === 'more' ? b.more : 0;
-    navEl.append(h('a', { href: '#/' + k, 'aria-current': tab === k ? 'page' : null, onclick: () => haptic(prefs.haptics, 6) }, icon(ic), h('span', null, t(label)), badge ? h('span', { class: 'badge' }, badge) : null));
+  const cols = window.innerWidth < 900 ? `repeat(${items.length}, 1fr)` : '';
+  if (navEl.style.gridTemplateColumns !== cols) navEl.style.gridTemplateColumns = cols;
+  const sig = items.map(([k]) => k).join(',') + '|' + getLang();
+  if (sig !== navSig) {
+    navSig = sig; navEl.setAttribute('aria-label', t('core.nav'));
+    navEl.replaceChildren(...items.map(([k, ic, label]) => h('a', { href: '#/' + k, 'data-tab': k, onclick: () => haptic(prefs.haptics, 6) }, icon(ic), h('span', null, t(label)))));
+  }
+  for (const a of navEl.children) {
+    const k = a.getAttribute('data-tab');
+    if (k === tab) { if (a.getAttribute('aria-current') !== 'page') a.setAttribute('aria-current', 'page'); } else a.removeAttribute('aria-current');
+    const n = k === '' ? b.home : k === 'more' ? b.more : 0; let bd = a.querySelector('.badge');
+    if (n) { if (!bd) { bd = h('span', { class: 'badge', 'aria-hidden': 'true' }); a.append(bd); } if (bd.textContent !== String(n)) bd.textContent = n; a.setAttribute('aria-label', `${t(TABS.find((x) => x[0] === k)[2])}: ${n}`); } else { if (bd) bd.remove(); a.removeAttribute('aria-label'); }
   }
 }
 const adminLabel = () => (ctx.house.adminIds || []).map((id) => nameOf(ctx.house, id)).filter(Boolean).join(', ');
 function updateTop() {
-  clear(topEl);
   const st = ctx.status;
-  topEl.append(
-    h('div', { class: 'who' }, h('div', { class: 'house', 'data-testid': 'house-line' }, ctx.house.name || 'Tidy House', adminLabel() ? ` · ${t('misc.admin')}: ${adminLabel()}` : ''), h('span', { class: 'sync ' + (ctx.cloud ? st : 'local'), title: ctx.cloudStatusLabel() }, h('i'), ctx.cloud ? (st === 'syncing' ? t('misc.syncing') : st === 'offline' ? t('misc.offline').split(':')[0] : '') : t('misc.localOnly'))),
+  const houseLine = (ctx.house.name || 'Tidy House') + (adminLabel() ? ` · ${t('misc.admin')}: ${adminLabel()}` : '');
+  const syncTxt = ctx.cloud ? (st === 'syncing' ? t('misc.syncing') : st === 'offline' ? t('misc.offline').split(':')[0] : '') : t('misc.localOnly');
+  const sig = [houseLine, ctx.cloud ? st : 'local', syncTxt, ctx.isAdmin, getLang(), ctx.cloudStatusLabel()].join('|');
+  if (sig === topSig) return;
+  topSig = sig;
+  topEl.replaceChildren(
+    h('div', { class: 'who' }, h('div', { class: 'house', 'data-testid': 'house-line' }, houseLine), h('span', { class: 'sync ' + (ctx.cloud ? st : 'local'), title: ctx.cloudStatusLabel() }, h('i'), syncTxt)),
     h('div', { class: 'actions' },
       ctx.isAdmin ? h('span', { class: 'chip acc' }, icon('shield'), t('misc.admin')) : null,
       h('a', { class: 'icon-btn', href: '#/settings', 'aria-label': t('more.settings') }, icon('settings')),
@@ -408,7 +515,7 @@ async function startFromHash() {
 function setupRefreshPrompt() {
   const check = () => {
     if (!S.ready || S.stage !== 'app' || S.refreshOpen || document.visibilityState !== 'visible') return;
-    if (!ctx.feature('refresh')) return;
+    if (!ctx.feature('refresh') || editingAnywhere() || hasOpenSheets()) return;   // mai sopra a chi sta scrivendo o ha uno sheet aperto
     const mins = Math.max(1, Number(ctx.house.refreshMin) || 5);
     if (Date.now() - S.lastRefresh < mins * 60000) return;
     S.refreshOpen = true;
@@ -417,8 +524,8 @@ function setupRefreshPrompt() {
   };
   setInterval(check, 15000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { check(); registerDevice(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
-  window.addEventListener('focus', () => { if (S.deferred && !typing()) scheduleRender(true); });
-  document.addEventListener('focusout', () => { setTimeout(() => { if (S.deferred && !typing()) scheduleRender(true); }, 60); });
+  window.addEventListener('focus', flushDeferred);
+  document.addEventListener('focusout', () => { setTimeout(flushDeferred, 60); });
 }
 
 async function registerSW() {
@@ -428,16 +535,27 @@ async function registerSW() {
     const offer = (w) => { if (!w) return; toast(t('update.available'), 8000); w.postMessage({ type: 'SKIP_WAITING' }); };
     if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
     reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); }); });
-    let reloaded = false; navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded) return; reloaded = true; if (S.ready) setTimeout(() => location.reload(), 600); });
+    // nuova versione attiva: ricarica appena l'utente non sta scrivendo e non ha uno sheet aperto (mai a metà di un inserimento)
+    let reloaded = false; navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded) return; reloaded = true;
+      if (!S.ready) return;
+      const tick = () => { if (editingAnywhere() || hasOpenSheets()) setTimeout(tick, 1500); else location.reload(); };
+      setTimeout(tick, 600);
+    });
   } catch (e) { console.warn('SW', e); }
 }
 
-window.addEventListener('hashchange', () => { if (S.stage === 'app') { closeAllSheets(); renderApp(true); } else if (!S.store || S.stage === 'landing') startFromHash(); });
-window.addEventListener('online', () => scheduleRender(true));
-window.addEventListener('offline', () => scheduleRender(true));
-window.addEventListener('resize', () => { if (S.ready && navEl) updateNav(tabOf(S.route.root)); });
+window.addEventListener('popstate', () => { popNav = true; setTimeout(() => { popNav = false; }, 600); });
+window.addEventListener('hashchange', () => { if (S.stage === 'app') { closeAllSheets({ keepHistory: true }); scheduleRender(true); } else if (!S.store || S.stage === 'landing') startFromHash(); });
+window.addEventListener('online', () => scheduleRender());
+window.addEventListener('offline', () => scheduleRender());
+let resizeT = 0;
+window.addEventListener('resize', () => { if (!S.ready || !navEl) return; clearTimeout(resizeT); resizeT = setTimeout(() => updateNav(tabOf(S.route.root)), 80); });
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bip = e; });
 applyPrefs();
 registerSW();
 setupRefreshPrompt();
-startFromHash();
+startFromHash().catch((e) => {
+  console.error(e); hideBoot();
+  appEl().replaceChildren(h('div', { class: 'gate' }, h('div', { class: 'panel' }, h('h1', null, t('error')), h('p', { class: 'muted' }, String(e && e.message || e)), h('button', { class: 'btn', type: 'button', onclick: () => location.reload() }, icon('refresh'), t('refresh.now')))));
+});

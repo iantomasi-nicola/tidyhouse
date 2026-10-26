@@ -163,3 +163,15 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .hm-num.on { color: #ffb84d; }
 }
+
+/* flusso turni: righe settimana con interruttore, avvisi con richieste, spesa */
+.hm-chores .hm-chore { padding: 6px 6px 6px 12px; gap: 4px; align-items: center; }
+.hm-chorebtn { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; text-align: left; padding: 8px 6px; border-radius: var(--r-md); transition: background .15s; }
+.hm-chorebtn:active { background: var(--surface-2); }
+.hm-chore .s { margin-top: 3px; row-gap: 4px; }
+.hm-alerthead { display: inline-flex; align-items: center; gap: 8px; }
+.hm-badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--bad); color: #fff; font-size: .6875rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.hm-alert[data-testid^="req-"] .hm-alertactions .btn { min-height: 40px; }
+.hm-qi { position: relative; }
+.hm-qbadge { position: absolute; top: -6px; right: -8px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-size: .6875rem; font-weight: 750; display: grid; place-items: center; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--tonal); }
+.hm-chore.done .hm-chorebtn { opacity: .92; }

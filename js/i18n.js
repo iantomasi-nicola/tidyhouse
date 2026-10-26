@@ -211,7 +211,7 @@ const D = {
     'flow.agreed': 'Concordato', 'flow.delay': 'In ritardo',
     'n.test.title': 'Notifica di prova', 'n.test.body': 'Funziona! Riceverai qui i promemoria dei turni.', 'n.need.title': 'Da comprare', 'n.need.body': '{name} ha aggiunto: {text}',
     'n.req.title': 'Richiesta di scambio', 'n.req.body': '{name} vuole scambiare un turno con te.', 'n.reqOk.title': 'Scambio accettato', 'n.reqOk.body': '{name} ha accettato lo scambio.',
-    'n.nudge.title': 'Sollecito', 'n.nudge.body': '{name} ti ricorda: {text}', 'n.nudge.default': 'hai ancora un turno da segnare.', 'n.tasks.body': '{n} compiti extra questa settimana',
+    'n.nudge.title': 'Sollecito', 'n.nudge.body': '{name} ti ricorda: {text}', 'n.nudge.default': 'hai ancora un turno da segnare.', 'n.tasks.title': 'Compiti da recuperare', 'n.tasks.body': 'Hai {n} compiti della checklist non fatti da recuperare questa settimana.',
     // guide
     'guide.title': 'Installa l\'app', 'guide.ios': 'iPhone / iPad', 'guide.ios1': 'Apri questo sito con Safari.', 'guide.ios2': 'Tocca Condividi (il quadrato con la freccia).', 'guide.ios3': 'Scegli "Aggiungi alla schermata Home".',
     'guide.ios4': 'Apri l\'app dalla Home e attiva le notifiche in Impostazioni. Serve iOS 16.4 o successivo.', 'guide.android': 'Android', 'guide.android1': 'Apri il sito con Chrome.', 'guide.android2': 'Menu ⋮ → "Installa app" (o "Aggiungi a schermata Home").',
@@ -413,7 +413,7 @@ D.en = {
   'flow.agreed': 'Agreed', 'flow.delay': 'Late',
   'n.test.title': 'Test notification', 'n.test.body': 'It works! Chore reminders will show up here.', 'n.need.title': 'To buy', 'n.need.body': '{name} added: {text}',
   'n.req.title': 'Swap request', 'n.req.body': '{name} wants to swap a chore with you.', 'n.reqOk.title': 'Swap accepted', 'n.reqOk.body': '{name} accepted the swap.',
-  'n.nudge.title': 'Nudge', 'n.nudge.body': '{name} reminds you: {text}', 'n.nudge.default': 'you still have a chore to log.', 'n.tasks.body': '{n} extra tasks this week',
+  'n.nudge.title': 'Nudge', 'n.nudge.body': '{name} reminds you: {text}', 'n.nudge.default': 'you still have a chore to log.', 'n.tasks.title': 'Tasks to catch up', 'n.tasks.body': 'You have {n} unfinished checklist tasks to catch up on this week.',
   'guide.title': 'Install the app', 'guide.ios': 'iPhone / iPad', 'guide.ios1': 'Open this site in Safari.', 'guide.ios2': 'Tap Share (the square with the arrow).', 'guide.ios3': 'Choose "Add to Home Screen".',
   'guide.ios4': 'Open the app from the Home Screen and enable notifications in Settings. Needs iOS 16.4 or later.', 'guide.android': 'Android', 'guide.android1': 'Open the site in Chrome.', 'guide.android2': 'Menu ⋮ → "Install app" (or "Add to Home screen").',
   'guide.android3': 'Open the app and enable notifications in Settings.', 'guide.desktop': 'Computer', 'guide.desktop1': 'With Chrome or Edge: "Install" icon in the address bar.', 'guide.desktop2': 'With Safari: File → Add to Dock.',

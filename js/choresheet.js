@@ -1,17 +1,22 @@
 // Fogli (bottom sheet) legati ai turni: dettaglio turno, dettaglio settimana, WhatsApp, calendario .ics, richiesta di scambio.
+// Qui vivono anche i flussi condivisi con Home e Calendario: "fatto" con checklist obbligatoria, annulla, sostituzioni, ritardi, volontari.
 // Usato da js/screens/calendar.js, home.js e more.js. Le firme esportate sono parte del contratto (ARCHITECTURE.md).
 import { h, icon, avatar, toggle, seg, copyText, download, confetti, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 import { CHORES, addDays } from './engine.js';
-import { weekDays, planOf, tasksForWeek, swapPatch, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
+import { weekDays, planOf, delayOf, checklistFor, swapPatch, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
+import { it as itFlow, en as enFlow } from './strings/flow.js';
 
 registerStrings(it, en);
+registerStrings(itFlow, enFlow);
 loadCss('css/calendar.css');
 
 export const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 const ci = (chore) => CHORES.indexOf(chore);
 const dowIdx = (date) => new Date(date + 'T00:00:00Z').getUTCDay();
+const isOk = (r) => r.kind === 'done' || r.kind === 'by';
+const isSkip = (r) => r.kind === 'skipped' || r.kind === 'skippedBy';
 
 // ---------------------------------------------------------------- helpers condivisi
 export const rowOf = (ctx, sunday) => ctx.calc.out.rows.find((r) => r.sunday === sunday);
@@ -64,20 +69,34 @@ async function run(ctx, fn, okMsg) {
 
 /**
  * Sheet che si ridisegna da solo quando i dati cambiano (lo sheet vive fuori dal rerender dell'app).
- * `build(sheet, redraw)` ritorna il nodo del corpo; durante la digitazione il ridisegno è rimandato.
+ * `build(sheet, redraw)` ritorna il nodo del corpo. Il ridisegno: salta se i dati rilevanti non sono cambiati (niente sfarfallio),
+ * e' rimandato durante la digitazione, mantiene scroll e focus (per chiave del controllo).
  */
 function liveSheet(ctx, { title, full = false, build }) {
   const api = ctx.sheet({ title: '', full, body: h('div') });
-  let off = () => {}; let pending = false; let dead = false;
+  let off = () => {}; let pending = false; let dead = false; let last = '';
+  const sig = () => { try { return JSON.stringify([ctx.me, ctx.isAdmin, ctx.lang, ctx.today(), ctx.state.weeks, ctx.state.requests, ctx.house]); } catch { return String(Math.random()); } };
   const typing = () => { const a = document.activeElement; return !!(a && api.el.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'checkbox'); };
+  const fkey = (el) => { const d = el.dataset || {}; return [d.act, d.task, d.day, d.who, d.toggle, d.chore, d.req, d.value].filter(Boolean).join('|'); };
   const draw = (force) => {
     if (dead) return;
+    const s = sig();
+    if (!force && s === last) return;
     if (!force && typing()) { pending = true; return; }
-    pending = false;
+    pending = false; last = s;
+    const a = document.activeElement; const key = a && a !== document.body && api.el.contains(a) ? fkey(a) : '';
     const y = api.body.scrollTop;
     try { const node = build(api, draw); api.setTitle(typeof title === 'function' ? title() : title); api.set(node); }
     catch (e) { console.error(e); api.set(h('p', { class: 'muted' }, ctx.t('error'))); }
     api.body.scrollTop = y;
+    if (api.focusFirst) {
+      api.focusFirst = false;
+      const f = api.body.querySelector('[data-autofocus]') || api.body.querySelector('.cs-back') || api.body.querySelector('button:not([disabled]), a[href], input, select, textarea');
+      if (f) f.focus({ preventScroll: true });
+    } else if (key) {
+      const f = [...api.body.querySelectorAll('button, a[href], input, select, textarea')].find((x) => fkey(x) === key);
+      if (f && !f.disabled) f.focus({ preventScroll: true });
+    }
   };
   const close = api.close;
   api.close = () => { dead = true; off(); close(); };
@@ -90,165 +109,439 @@ function liveSheet(ctx, { title, full = false, build }) {
 
 const back = (ctx, onclick) => h('button', { type: 'button', class: 'btn ghost sm cs-back', onclick }, icon('back'), ctx.t('back'));
 const section = (title, ...kids) => h('section', { class: 'cs-sec' }, title ? h('div', { class: 'eyebrow' }, title) : null, ...kids);
+/** Riga-azione (icona, titolo, descrizione) per le azioni secondarie. */
+const actRow = (ic, tone, title, desc, attrs, onclick) => h('button', { type: 'button', class: 'li fl-act', ...attrs, onclick },
+  h('div', { class: 'ico ' + tone }, icon(ic)), h('div', { class: 'grow' }, h('div', { class: 't' }, title), desc ? h('div', { class: 'd' }, desc) : null), icon('chevron'));
+
+// ================================================================ FLUSSI CONDIVISI (checklist, annulla, chip)
+/** Voci della checklist che erano mancanti al momento del "fatto" e che lo sono ancora (se qualcuno le recupera dopo, la segnalazione sparisce). */
+export function incompleteOf(ctx, sunday, chore) {
+  if (!ctx.feature('tasks')) return [];
+  const row = rowOf(ctx, sunday); const c = ci(chore);
+  if (!row || c < 0 || !isOk(row.res[c])) return [];
+  const texts = ((weekDoc(ctx, sunday).incomplete || {})[chore]) || [];
+  if (!texts.length) return [];
+  const pend = new Set(ctx.actions.pendingChecklist(sunday, chore).map((x) => x.text));
+  return texts.filter((x) => pend.has(x));
+}
+
+/** Chip di flusso di un turno: concordato, ritardo, volontario, incompleto → [{key, tone, ic, text}]. */
+export function flowChips(ctx, sunday, chore) {
+  const row = rowOf(ctx, sunday); const c = ci(chore);
+  if (!row || c < 0 || !row.assigned[c]) return [];
+  const wk = weekDoc(ctx, sunday); const res = row.res[c]; const t = ctx.t; const out = [];
+  const open = !res.kind;
+  const ag = (wk.agreed || {})[chore];
+  if (ag && open) out.push({ key: 'agreed', tone: 'acc', ic: 'users', text: t('flow.agreedWith', { name: ctx.name(ag) }) });
+  const dl = delayOf(houseW(ctx), sunday, chore);
+  if (dl && open) out.push({ key: 'delay', tone: 'warn', ic: 'clock', text: t('flow.delayUntil', { date: fmtDate(dl, ctx.lang) }) });
+  const vol = (wk.volunteer || {})[chore];
+  if (vol && isOk(res)) out.push({ key: 'volunteer', tone: 'acc', ic: 'user', text: t('flow.volunteerBy', { name: ctx.name(vol) }) });
+  const miss = incompleteOf(ctx, sunday, chore);
+  if (miss.length) out.push({ key: 'incomplete', tone: 'bad', ic: 'alert', text: t('flow.incomplete', { n: miss.length }) });
+  return out;
+}
+
+const confettiAt = (el) => { try { const r = el.getBoundingClientRect(); confetti(r.left + r.width / 2, r.top + r.height / 2); } catch { /* ignore */ } };
+const trapTab = (box) => box.addEventListener('keydown', (e) => {
+  if (e.key !== 'Tab') return;
+  const f = [...box.querySelectorAll('button:not([disabled]), a[href], input, select, textarea')]; if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (document.activeElement === last || !box.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+});
+
+/** Dialogo a scelta multipla (sheet). Ritorna la chiave scelta o null se chiuso. Il primo bottone prende il focus; Tab resta nel dialogo. */
+function choiceDialog(ctx, { title, content, choices }) {
+  return new Promise((resolve) => {
+    let done = false; const opener = document.activeElement;
+    const finish = (v) => {
+      if (done) return; done = true; resolve(v);
+      if (v !== undefined) sh.closeRaw();
+      setTimeout(() => { try { if (opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true }); } catch { /* ignore */ } }, 60);
+    };
+    const btns = choices.map((c) => h('button', { type: 'button', class: 'btn block ' + (c.cls || ''), 'data-choice': c.key, onclick: () => finish(c.key) }, c.icon ? icon(c.icon) : null, c.label));
+    const sh = ctx.sheet({ title, body: h('div', { class: 'stack fl-dialog' }, content, h('div', { class: 'fl-choices' }, btns)) });
+    sh.closeRaw = sh.close; sh.close = () => { finish(null); sh.closeRaw(); };
+    trapTab(sh.el);
+    requestAnimationFrame(() => { try { btns[0].focus({ preventScroll: true }); } catch { /* ignore */ } });
+  });
+}
+
+function openGate(ctx, missing) {
+  const content = [
+    h('p', { class: 'muted' }, ctx.t('flow.gate.text', { n: missing.length })),
+    h('ul', { class: 'fl-missing', 'data-testid': 'gate-missing' }, missing.map((m) => h('li', null, h('span', { class: 'grow' }, m.text), m.status === 'overdue' ? chip(ctx.t('flow.overdue'), 'warn') : null))),
+    h('p', { class: 'small muted' }, ctx.t('flow.gate.hint')),
+  ];
+  return choiceDialog(ctx, { title: ctx.t('flow.gate.title'), content, choices: [
+    { key: 'all', label: ctx.t('flow.gate.all'), icon: 'check' },
+    { key: 'force', label: ctx.t('flow.gate.force'), cls: 'soft' },
+    { key: 'cancel', label: ctx.t('cancel'), cls: 'ghost' },
+  ] });
+}
+
+/** Annulla un "fatto": torna "da fare". Ritorna true se riuscito. */
+export function undoFlow(ctx, sunday, chore, { toast = true } = {}) {
+  return run(ctx, () => ctx.actions.undoResult(sunday, chore), toast ? ctx.t('cal.t.reset') : null);
+}
+
+/**
+ * Segna "fatto" (value 'done' | 'by:ID') con checklist obbligatoria: se mancano voci apre il dialogo (spunta tutto / comunque / annulla).
+ * `volunteer`: lo fa chi non è assegnato di sua iniziativa (viene segnalato all'assegnato). Dopo il successo: toast con "Annulla".
+ * Ritorna true se il turno è stato segnato.
+ */
+export async function markDoneFlow(ctx, sunday, chore, { value = 'done', volunteer = false, el = null, msg = null } = {}) {
+  const A = ctx.actions; const row = rowOf(ctx, sunday); const c = ci(chore);
+  const assigned = row ? row.assigned[c] : null;
+  const exec = (o) => (volunteer ? A.volunteer(sunday, chore, o) : A.completeChore(sunday, chore, { value, ...o }));
+  let r;
+  try {
+    r = await exec({});
+    if (!r.ok) {
+      const choice = await openGate(ctx, r.missing);
+      if (!choice || choice === 'cancel') return false;
+      r = await exec(choice === 'all' ? { checkAll: true } : { force: true });
+    }
+  } catch (e) { ctx.toast(e && e.message === 'permission' ? ctx.t('err.permission') : ctx.t('error')); return false; }
+  ctx.haptic(ctx.prefs.haptics, 14);
+  if (el && value === 'done') confettiAt(el);
+  const n = (r.missing || []).length;
+  const text = volunteer ? ctx.t('flow.volDone', { name: ctx.name(assigned) })
+    : n ? ctx.t('flow.doneIncomplete', { n })
+      : msg || (value.startsWith('by:') ? ctx.t('cal.t.by', { name: ctx.name(value.slice(3)) }) : ctx.t('cal.t.done'));
+  ctx.toast(text, 7000, { action: { label: ctx.t('flow.undo'), onClick: () => { undoFlow(ctx, sunday, chore); } } });
+  return true;
+}
+
+/**
+ * Cerchio di check come interruttore (≥44px): fatto ⇄ da fare. Attivo solo se i permessi lo consentono.
+ * Fatto → da fare con undoResult; da fare → fatto con il controllo della checklist.
+ */
+export function resultToggle(ctx, sunday, chore, { pop = false } = {}) {
+  const row = rowOf(ctx, sunday); const c = ci(chore);
+  const res = row.res[c]; const on = isOk(res); const sk = isSkip(res); const A = ctx.actions;
+  const can = !!row.assigned[c] && !sk && (on ? A.canResult(sunday, chore, '') : A.canResult(sunday, chore, 'done'));
+  const label = ctx.t('flow.toggle', { chore: ctx.t('chore.' + chore) });
+  const btn = h('button', {
+    type: 'button', class: 'ctoggle' + (can ? '' : ' locked'), 'data-toggle': chore, 'aria-pressed': String(on), 'aria-label': label, title: can ? null : ctx.t('flow.toggleLocked'),
+    disabled: can ? null : true,
+    onclick: async () => {
+      btn.disabled = true;
+      try { if (on) await undoFlow(ctx, sunday, chore); else await markDoneFlow(ctx, sunday, chore, { el: btn }); } finally { btn.disabled = false; }
+    },
+  }, h('span', { class: 'checkcircle' + (on ? ' on' : '') + (sk ? ' skip' : '') + (pop ? ' pop' : '') }, icon(sk ? 'x' : 'check')));
+  return btn;
+}
+
+/** Richieste di sostituzione/offerta in sospeso per un turno. */
+function coverRequests(ctx, sunday, chore) {
+  return Object.entries(ctx.state.requests || {}).filter(([, q]) => q && (q.kind === 'cover' || q.kind === 'offer') && q.status === 'pending' && q.week === sunday && q.chore === chore);
+}
+
+/** Scelta (admin) di chi deve fare un turno non svolto: evidenzia il sostituto equo. Usato dalla scheda turno e dal dettaglio settimana. */
+export function openAssignSheet(ctx, sunday, chore) {
+  const c = ci(chore);
+  if (c < 0 || !rowOf(ctx, sunday) || !ctx.isAdmin) return null;
+  return liveSheet(ctx, { title: () => ctx.t('flow.assignTitle'), build: (api) => {
+    const row = rowOf(ctx, sunday);
+    if (!row) { api.close(); return h('div'); }
+    const cur = (weekDoc(ctx, sunday).agreed || {})[chore]; const sug = row.subs[c];
+    const ids = active(row).slice().sort((a, b) => (a === sug ? -1 : b === sug ? 1 : 0));
+    const pick = async (id) => { if (await run(ctx, () => ctx.actions.assignCover(sunday, chore, id), ctx.t('flow.assignDone', { name: ctx.name(id), chore: ctx.t('chore.' + chore).toLowerCase() }))) api.close(); };
+    return h('div', { class: 'stack' },
+      h('div', { class: 'row' }, tile(chore, 'sm'), h('div', { class: 'grow' }, h('b', null, ctx.t('chore.' + chore)), h('span', { class: 'muted' }, ' · ' + fmtWeekRange(sunday, ctx.lang)))),
+      h('p', { class: 'muted small' }, ctx.t('flow.assignHint')),
+      sug && ids.includes(sug) ? h('div', { class: 'note ok' }, icon('sparkles'), ctx.t('chore.suggestedSub', { name: ctx.name(sug) })) : null,
+      h('div', { class: 'list' }, ids.map((id) => h('button', { type: 'button', class: 'li cs-pick' + (id === sug ? ' sug' : ''), 'data-who': id, 'aria-pressed': String(id === cur), onclick: () => pick(id) },
+        person(ctx, id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(id)),
+          row.rest.includes(id) || row.away.includes(id) ? h('div', { class: 'd' }, row.away.includes(id) ? ctx.t('cal.away') : ctx.t('chore.rest')) : null),
+        id === sug ? chip(ctx.t('cal.suggested'), 'acc', 'sparkles') : null, id === cur ? icon('check') : icon('chevron')))),
+      cur ? h('button', { type: 'button', class: 'btn danger block', 'data-act': 'assign-clear', onclick: async () => { if (await run(ctx, () => ctx.actions.assignCover(sunday, chore, null), ctx.t('flow.assignCleared'))) api.close(); } }, icon('x'), ctx.t('flow.assignClear')) : null);
+  } });
+}
 
 // ================================================================ DETTAGLIO TURNO
-export function openChoreSheet(ctx, sunday, chore) {
+export function openChoreSheet(ctx, sunday, chore, opts = {}) {
   const c = ci(chore);
   if (c < 0 || !rowOf(ctx, sunday)) return null;
-  let view = 'main';
+  const st = { view: opts.view || 'main', delay: null, coverTo: '*' };   // stato che non deve perdersi nei ridisegni
 
   const build = (sh) => {
-    const go = (v) => { view = v; sh.draw(true); };
+    const go = (v) => { st.view = v; sh.focusFirst = true; sh.draw(true); };
     const row = rowOf(ctx, sunday);
     if (!row) { sh.close(); return h('div'); }
-    const A = ctx.actions;
+    const A = ctx.actions; const t = ctx.t;
     const assigned = row.assigned[c];
     const res = row.res[c];
-    const aName = assigned ? ctx.name(assigned) : ctx.t('chore.noOne');
+    const me = ctx.me;
+    const aName = assigned ? ctx.name(assigned) : t('chore.noOne');
     const wk = weekDoc(ctx, sunday);
+    const agreed = (wk.agreed || {})[chore];
     const finish = async (value, msg, ev) => {
-      const ok = await run(ctx, () => A.setResult(sunday, chore, value), msg);
-      if (ok) {
-        if (value === 'done' && ev && ev.target && ev.target.getBoundingClientRect) { const r = ev.target.getBoundingClientRect(); confetti(r.left + r.width / 2, r.top + r.height / 2); }
-        sh.close();
-      }
+      const el = ev && ev.currentTarget;
+      let ok;
+      if (value === 'done' || value.startsWith('by:')) ok = await markDoneFlow(ctx, sunday, chore, { value, el });
+      else if (value === '') ok = await undoFlow(ctx, sunday, chore);
+      else ok = await run(ctx, () => A.setResult(sunday, chore, value), msg);
+      if (ok) sh.close();
     };
 
     // ------ sotto-viste ------
-    if (view === 'cover') {
+    if (st.view === 'cover') {
       const ids = present(row).filter((id) => id !== assigned && A.canResult(sunday, chore, 'by:' + id));
       const sug = row.subs[c];
-      ids.sort((a, b) => (a === sug ? -1 : b === sug ? 1 : 0));
+      ids.sort((a, b) => (a === agreed ? -1 : b === agreed ? 1 : a === sug ? -1 : b === sug ? 1 : 0));
       return h('div', { class: 'stack' },
         back(ctx, () => go('main')),
-        h('div', { class: 'cs-title' }, ctx.t('chore.whoCleaned')),
-        sug && ids.includes(sug) ? h('div', { class: 'note ok' }, icon('sparkles'), ctx.t('chore.suggestedSub', { name: ctx.name(sug) })) : null,
-        h('div', { class: 'list' }, ids.map((id) => h('button', { type: 'button', class: 'li cs-pick' + (id === sug ? ' sug' : ''), 'data-who': id, onclick: (ev) => finish('by:' + id, ctx.t('cal.t.by', { name: ctx.name(id) }), ev) },
-          person(ctx, id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(id))), id === sug ? chip(ctx.t('cal.suggested'), 'acc', 'sparkles') : null, icon('chevron')))));
+        h('div', { class: 'cs-title' }, t('chore.whoCleaned')),
+        sug && ids.includes(sug) ? h('div', { class: 'note ok' }, icon('sparkles'), t('chore.suggestedSub', { name: ctx.name(sug) })) : null,
+        h('div', { class: 'list' }, ids.map((id) => h('button', { type: 'button', class: 'li cs-pick' + (id === sug ? ' sug' : ''), 'data-who': id, onclick: (ev) => finish('by:' + id, t('cal.t.by', { name: ctx.name(id) }), ev) },
+          person(ctx, id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(id))), id === agreed ? chip(t('flow.agreed'), 'acc', 'users') : null, id === sug ? chip(t('cal.suggested'), 'acc', 'sparkles') : null, icon('chevron')))));
     }
-    if (view === 'skip') {
+    if (st.view === 'skip') {
       const sub = row.subs[c];
-      const opts = [];
-      if (res.kind !== 'skipped') opts.push(h('button', { type: 'button', class: 'li cs-pick', 'data-value': 'skipped', onclick: (ev) => finish('skipped', ctx.t('cal.t.skipped'), ev) },
-        h('div', { class: 'ico r' }, icon('x')), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.t('chore.nobody')), h('div', { class: 'd' }, ctx.t('cal.skipNobodyHint', { name: aName }))), icon('chevron')));
-      if (sub && sub !== assigned && !(res.kind === 'skippedBy' && res.id === sub)) opts.push(h('button', { type: 'button', class: 'li cs-pick', 'data-value': 'skipped:' + sub, onclick: (ev) => finish('skipped:' + sub, ctx.t('cal.t.skipped'), ev) },
-        person(ctx, sub), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.t('cal.alsoNot', { name: ctx.name(sub) })), h('div', { class: 'd' }, ctx.t('cal.skipAlsoHint', { name: ctx.name(sub) }))), icon('chevron')));
+      const opts2 = [];
+      if (res.kind !== 'skipped') opts2.push(h('button', { type: 'button', class: 'li cs-pick', 'data-value': 'skipped', onclick: (ev) => finish('skipped', t('cal.t.skipped'), ev) },
+        h('div', { class: 'ico r' }, icon('x')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('chore.nobody')), h('div', { class: 'd' }, t('cal.skipNobodyHint', { name: aName }))), icon('chevron')));
+      if (sub && sub !== assigned && !(res.kind === 'skippedBy' && res.id === sub)) opts2.push(h('button', { type: 'button', class: 'li cs-pick', 'data-value': 'skipped:' + sub, onclick: (ev) => finish('skipped:' + sub, t('cal.t.skipped'), ev) },
+        person(ctx, sub), h('div', { class: 'grow' }, h('div', { class: 't' }, t('cal.alsoNot', { name: ctx.name(sub) })), h('div', { class: 'd' }, t('cal.skipAlsoHint', { name: ctx.name(sub) }))), icon('chevron')));
       return h('div', { class: 'stack' },
         back(ctx, () => go('main')),
-        h('div', { class: 'cs-title' }, ctx.t('home.notDone')),
-        h('div', { class: 'note warn' }, icon('alert'), ctx.t('chore.undoSkipped')),
-        h('div', { class: 'list' }, opts));
+        h('div', { class: 'cs-title' }, t('home.notDone')),
+        h('div', { class: 'note warn' }, icon('alert'), t('chore.undoSkipped')),
+        h('div', { class: 'list' }, opts2));
     }
-    if (view === 'swap') {
+    if (st.view === 'swap') {
       const entries = [];
       CHORES.forEach((c2, i) => { const id = row.assigned[i]; if (i !== c && id && id !== assigned) entries.push({ id, chore2: c2 }); });
       for (const id of present(row)) if (id !== assigned && !row.assigned.includes(id)) entries.push({ id, chore2: null });
       const doSwap = async (e) => {
         const patch = swapPatch(row, { chore, personId: assigned }, { chore: e.chore2 || 'rest', personId: e.id });
-        if (await run(ctx, () => A.setSwap(sunday, patch), ctx.t('cal.swapDone'))) go('main');
+        if (await run(ctx, () => A.setSwap(sunday, patch), t('cal.swapDone'))) go('main');
       };
       return h('div', { class: 'stack' },
         back(ctx, () => go('main')),
-        h('div', { class: 'cs-title' }, ctx.t('chore.swapWith')),
-        h('p', { class: 'muted small' }, ctx.t('cal.swapHint')),
+        h('div', { class: 'cs-title' }, t('chore.swapWith')),
+        h('p', { class: 'muted small' }, t('cal.swapHint')),
         entries.length ? h('div', { class: 'list' }, entries.map((e) => h('button', { type: 'button', class: 'li cs-pick', 'data-who': e.id, 'data-chore': e.chore2 || 'rest', onclick: () => doSwap(e) },
           person(ctx, e.id),
-          h('div', { class: 'grow' }, h('div', { class: 't' }, e.chore2 ? `${ctx.name(e.id)} · ${ctx.t('chore.' + e.chore2)}` : ctx.name(e.id)),
-            h('div', { class: 'd' }, e.chore2 ? ctx.t('cal.swapSwap', { a: ctx.name(e.id), c1: ctx.t('chore.' + chore), b: aName, c2: ctx.t('chore.' + e.chore2) })
-              : ctx.t('cal.swapCover', { a: aName, c1: ctx.t('chore.' + chore), b: ctx.name(e.id) }))),
-          icon('chevron')))) : h('div', { class: 'empty' }, ctx.t('req.noChores')));
+          h('div', { class: 'grow' }, h('div', { class: 't' }, e.chore2 ? `${ctx.name(e.id)} · ${t('chore.' + e.chore2)}` : ctx.name(e.id)),
+            h('div', { class: 'd' }, e.chore2 ? t('cal.swapSwap', { a: ctx.name(e.id), c1: t('chore.' + chore), b: aName, c2: t('chore.' + e.chore2) })
+              : t('cal.swapCover', { a: aName, c1: t('chore.' + chore), b: ctx.name(e.id) }))),
+          icon('chevron')))) : h('div', { class: 'empty' }, t('req.noChores')));
+    }
+    if (st.view === 'ask') {
+      const ids = present(row).filter((id) => id !== assigned);
+      const sug = row.subs[c];
+      ids.sort((a, b) => (a === sug ? -1 : b === sug ? 1 : 0));
+      const opt = (key, ic, title, desc, extra) => h('button', { type: 'button', class: 'li cs-pick' + (st.coverTo === key ? ' sug' : ''), 'data-who': key, 'aria-pressed': String(st.coverTo === key), onclick: () => { st.coverTo = key; sh.draw(true); } },
+        ic, h('div', { class: 'grow' }, h('div', { class: 't' }, title), desc ? h('div', { class: 'd' }, desc) : null), extra, st.coverTo === key ? icon('check') : null);
+      return h('div', { class: 'stack' },
+        back(ctx, () => go('main')),
+        h('div', { class: 'cs-title' }, t('flow.askTitle')),
+        h('p', { class: 'muted small' }, t('flow.askHint')),
+        h('div', { class: 'list', role: 'group' },
+          opt('*', h('div', { class: 'ico' }, icon('users')), t('flow.askAnyone'), t('flow.askAnyoneHint')),
+          ids.map((id) => opt(id, person(ctx, id), ctx.name(id), null, id === sug ? chip(t('cal.suggested'), 'acc', 'sparkles') : null))),
+        h('button', { type: 'button', class: 'btn lg block', 'data-act': 'ask-send', onclick: async () => {
+          if (await run(ctx, () => A.requestCover({ week: sunday, chore, to: st.coverTo === '*' ? null : st.coverTo }), t('flow.askSent'))) go('main');
+        } }, icon('swap'), t('flow.askSend')));
+    }
+    if (st.view === 'delay') {
+      const today = ctx.today();
+      const days = Array.from({ length: 14 }, (_, i) => addDays(sunday, i + 1));
+      const cur = delayOf(houseW(ctx), sunday, chore);
+      if (st.delay === null) st.delay = cur || '';
+      const free = days.filter((d) => d >= today);
+      const pickLabel = (d) => `${dowLong(d, ctx.lang)} ${fmtDate(d, ctx.lang)}`;
+      return h('div', { class: 'stack' },
+        back(ctx, () => go('main')),
+        h('div', { class: 'cs-title' }, t('flow.delayTitle')),
+        h('p', { class: 'muted small' }, t('flow.delayHint')),
+        free.length ? h('div', { class: 'fl-days daychips', role: 'group', 'aria-label': t('flow.delayPick') }, days.map((d) => h('button', {
+          type: 'button', class: d < today ? 'past' : '', disabled: d < today ? true : null, 'data-day': d, 'aria-pressed': String(st.delay === d), 'aria-label': pickLabel(d),
+          onclick: () => { st.delay = d; sh.draw(true); },
+        }, h('small', null, t('dow.' + dowIdx(d))), String(+d.slice(8)))))
+          : h('div', { class: 'note warn' }, icon('alert'), t('flow.delayNoDays')),
+        h('button', { type: 'button', class: 'btn lg block', 'data-act': 'delay-save', disabled: st.delay && st.delay >= today ? null : true, onclick: async () => {
+          if (await run(ctx, () => A.setDelay(sunday, chore, st.delay), t('flow.delaySaved', { date: fmtDate(st.delay, ctx.lang) }))) { st.delay = null; go('main'); }
+        } }, icon('clock'), st.delay ? t('flow.delayConfirm', { day: pickLabel(st.delay) }) : t('flow.delayPick')),
+        cur ? h('button', { type: 'button', class: 'btn soft block', 'data-act': 'delay-clear', onclick: async () => { if (await run(ctx, () => A.setDelay(sunday, chore, null), t('flow.delayCleared'))) { st.delay = null; go('main'); } } }, icon('x'), t('flow.delayClear')) : null);
     }
 
     // ------ vista principale ------
+    const done = isOk(res); const skipped = isSkip(res);
     const plan = planOf(houseW(ctx), sunday, chore);
-    const st = (() => {
-      if (res.kind === 'done') return chip(ctx.t('st.done'), 'ok', 'check');
-      if (res.kind === 'by') return chip(ctx.t('st.doneBy', { name: ctx.name(res.id) }), 'ok', 'check');
-      if (res.kind === 'skipped') return chip(ctx.t('st.skipped'), 'bad', 'x');
-      if (res.kind === 'skippedBy') return chip(ctx.t('st.skippedBy', { name: ctx.name(res.id) }), 'bad', 'x');
-      if (!assigned) return chip(ctx.t('chore.noOne'), '');
-      if (row.closed) return chip(ctx.t('st.late'), 'warn', 'clock');
-      if (row.isFut) return chip(ctx.t('st.preview'), '');
-      if (!row.isCur) return chip(ctx.t('st.pending'), 'warn', 'clock');
-      return chip(ctx.t('st.todo'), 'acc');
+    const stChip = (() => {
+      if (res.kind === 'done') return chip(t('st.done'), 'ok', 'check');
+      if (res.kind === 'by') return chip(t('st.doneBy', { name: ctx.name(res.id) }), 'ok', 'check');
+      if (res.kind === 'skipped') return chip(t('st.skipped'), 'bad', 'x');
+      if (res.kind === 'skippedBy') return chip(t('st.skippedBy', { name: ctx.name(res.id) }), 'bad', 'x');
+      if (!assigned) return chip(t('chore.noOne'), '');
+      if (row.closed) return chip(t('st.late'), 'warn', 'clock');
+      if (row.isFut) return chip(t('st.preview'), '');
+      if (!row.isCur) return chip(t('st.pending'), 'warn', 'clock');
+      return chip(t('st.todo'), 'acc');
     })();
     const by = (wk.resultBy || {})[chore], at = (wk.resultAt || {})[chore];
+    const fchips = flowChips(ctx, sunday, chore);
+    const chipsRow = (row.isMakeup[c] || row.swapped[c] || plan || fchips.length) ? h('div', { class: 'cs-chips', 'data-testid': 'chore-chips' },
+      row.isMakeup[c] ? chip(t('chore.makeupBadge'), 'acc', 'refresh') : null,
+      row.swapped[c] ? chip(t('st.swapped'), 'acc', 'swap') : null,
+      plan ? chip(t('st.planned', { day: dowLong(plan, ctx.lang).toLowerCase() }), 'acc', 'calendar') : null,
+      fchips.map((f) => h('span', { 'data-flow': f.key, style: { display: 'contents' } }, chip(f.text, f.tone, f.ic)))) : null;
     const hero = h('div', { class: 'cs-hero' },
-      h('div', { class: 'cs-top' }, tile(chore), h('div', { class: 'grow' }, h('div', { class: 'cs-name' }, ctx.t('chore.' + chore)), h('div', { class: 'muted small' }, `${fmtWeekRange(sunday, ctx.lang)} · ${ctx.t('cal.week', { n: row.P })}`)), st),
+      h('div', { class: 'cs-top' }, tile(chore), h('div', { class: 'grow' }, h('div', { class: 'cs-name' }, t('chore.' + chore)), h('div', { class: 'muted small' }, `${fmtWeekRange(sunday, ctx.lang)} · ${t('cal.week', { n: row.P })}`)), stChip),
       h('div', { class: 'cs-who' }, assigned ? person(ctx, assigned, 'lg') : h('div', { class: 'av lg cs-none' }, '–'),
-        h('div', { class: 'grow' }, h('div', { class: 'lbl' }, ctx.t('chore.assignedTo')), h('div', { class: 'cs-pname', 'data-testid': 'assignee' }, aName))),
-      (row.isMakeup[c] || row.swapped[c] || plan) ? h('div', { class: 'cs-chips' },
-        row.isMakeup[c] ? chip(ctx.t('chore.makeupBadge'), 'acc', 'refresh') : null,
-        row.swapped[c] ? chip(ctx.t('st.swapped'), 'acc', 'swap') : null,
-        plan ? chip(ctx.t('st.planned', { day: dowLong(plan, ctx.lang).toLowerCase() }), 'acc', 'calendar') : null) : null,
-      row.isMakeup[c] ? h('p', { class: 'cs-hint' }, ctx.t('chore.makeupHint')) : null,
-      res.kind && at ? h('div', { class: 'cs-marked' }, icon('clock'), ctx.t('cal.markedWhen', { name: by === 'admin' || !by ? ctx.t('misc.admin') : ctx.name(by), when: whenLabel(ctx, at) })) : null);
+        h('div', { class: 'grow' }, h('div', { class: 'lbl' }, t('chore.assignedTo')), h('div', { class: 'cs-pname', 'data-testid': 'assignee' }, aName))),
+      chipsRow,
+      row.isMakeup[c] ? h('p', { class: 'cs-hint' }, t('chore.makeupHint')) : null,
+      res.kind && at ? h('div', { class: 'cs-marked' }, icon('clock'), t('cal.markedWhen', { name: by === 'admin' || !by ? t('misc.admin') : ctx.name(by), when: whenLabel(ctx, at) })) : null);
 
     const out = [hero];
+
+    // turno segnato fatto ma incompleto: visibile a tutti, in evidenza
+    const miss = incompleteOf(ctx, sunday, chore);
+    if (miss.length) {
+      out.push(h('div', { class: 'note bad fl-inc', 'data-testid': 'incomplete-note', role: 'status' }, icon('alert'),
+        h('div', { class: 'grow stack tight' }, h('b', null, t('flow.incTitle')), h('span', null, t('flow.incText')),
+          h('ul', { class: 'fl-missing' }, miss.map((x) => h('li', null, x))),
+          ctx.isAdmin ? h('span', { class: 'small' }, t('flow.incAdmin')) : null)));
+    }
 
     // azioni sul risultato
     const canDone = !!assigned && res.kind !== 'done' && A.canResult(sunday, chore, 'done');
     const coverIds = assigned ? present(row).filter((id) => id !== assigned && !(res.kind === 'by' && res.id === id) && A.canResult(sunday, chore, 'by:' + id)) : [];
+    const showCover = coverIds.length && (ctx.isAdmin || assigned === me || agreed === me);
     const canSkip = !!assigned && A.canResult(sunday, chore, 'skipped') && !(res.kind === 'skipped' && !(row.subs[c] && row.subs[c] !== assigned));
     const canReset = !!assigned && !!res.kind && A.canResult(sunday, chore, '');
-    const canNudge = ctx.isAdmin && !!assigned && assigned !== ctx.me && !res.kind && !row.isFut;
+    const canNudge = ctx.isAdmin && !!assigned && assigned !== me && !res.kind && !row.isFut;
+    const reqs = coverRequests(ctx, sunday, chore);
+    const myOffer = reqs.find(([, q]) => q.kind === 'offer' && q.from === me);
+    const canVol = !!assigned && !!me && assigned !== me && !res.kind && agreed !== me && A.canResult(sunday, chore, 'by:' + me);
     const acts = [];
-    if (canDone) acts.push(h('button', { type: 'button', class: 'btn lg block', 'data-act': 'done', onclick: (ev) => finish('done', ctx.t('cal.t.done'), ev) }, icon('check'), ctx.t('home.markDone')));
-    if (coverIds.length) {
-      const single = coverIds.length === 1 && coverIds[0] === ctx.me;
-      acts.push(h('button', { type: 'button', class: 'btn soft block', 'data-act': 'cover', onclick: (ev) => (single ? finish('by:' + ctx.me, ctx.t('cal.t.by', { name: ctx.meName }), ev) : go('cover')) },
-        icon('users'), single ? ctx.t('cal.iCleaned', { name: aName }) : ctx.t('home.didSomeoneElse')));
+    if (canDone) acts.push(h('button', { type: 'button', class: 'btn lg block', 'data-act': 'done', onclick: (ev) => finish('done', t('cal.t.done'), ev) }, icon('check'), t('home.markDone')));
+    if (showCover) {
+      const single = coverIds.length === 1 && coverIds[0] === me;
+      acts.push(h('button', { type: 'button', class: 'btn soft block', 'data-act': 'cover', onclick: (ev) => (single ? finish('by:' + me, t('cal.t.by', { name: ctx.meName }), ev) : go('cover')) },
+        icon('users'), single ? t('cal.iCleaned', { name: aName }) : t('home.didSomeoneElse')));
     }
-    if (canSkip) acts.push(h('button', { type: 'button', class: 'btn danger block', 'data-act': 'skip', onclick: () => go('skip') }, icon('x'), ctx.t('home.notDone')));
-    if (canReset) acts.push(h('button', { type: 'button', class: 'btn ghost block', 'data-act': 'reset', onclick: (ev) => finish('', ctx.t('cal.t.reset'), ev) }, icon('refresh'), ctx.t('chore.reset')));
-    if (canNudge) acts.push(h('button', { type: 'button', class: 'btn tonal block', 'data-act': 'nudge', onclick: async () => { await run(ctx, () => A.nudge(assigned), ctx.t('acc.nudgeSent')); } }, icon('bell'), ctx.t('cal.nudgeName', { name: aName })));
+    if (canSkip) acts.push(h('button', { type: 'button', class: 'btn danger block', 'data-act': 'skip', onclick: () => go('skip') }, icon('x'), t('home.notDone')));
+    if (canReset) acts.push(h('button', { type: 'button', class: 'btn ' + (done ? 'tonal' : 'ghost') + ' block', 'data-act': 'reset', onclick: (ev) => finish('', t('cal.t.reset'), ev) }, icon('refresh'), t('chore.reset')));
+    if (canNudge) acts.push(h('button', { type: 'button', class: 'btn tonal block', 'data-act': 'nudge', onclick: async () => { await run(ctx, () => A.nudge(assigned), t('acc.nudgeSent')); } }, icon('bell'), t('cal.nudgeName', { name: aName })));
     if (acts.length) out.push(h('div', { class: 'cs-actions' }, acts));
-    else if (assigned && !ctx.isAdmin && !row.isFut) out.push(h('div', { class: 'note' }, icon('lock'), ctx.t('chore.adminOnly')));
+    else if (assigned && !ctx.isAdmin && !row.isFut && !canVol) out.push(h('div', { class: 'note' }, icon('lock'), t('chore.adminOnly')));
+
+    // checklist del turno (obbligatoria prima di "fatto")
+    if (ctx.feature('tasks') && assigned) {
+      const list = checklistFor(houseW(ctx), ctx.state.weeks || {}, sunday, chore);
+      if (list.length) {
+        const can = A.canTask(sunday, chore);
+        const nDone = list.filter((x) => x.status === 'done').length;
+        out.push(h('section', { class: 'cs-sec' },
+          h('div', { class: 'eyebrow' }, h('span', null, t('flow.checklist')), h('span', { class: 'fl-progn', 'data-testid': 'chore-progress' }, `${nDone}/${list.length}`)),
+          h('div', { class: 'bar fl-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(list.length), 'aria-valuenow': String(nDone), 'aria-label': t('flow.checklist') }, h('i', { style: { width: Math.round(100 * nDone / list.length) + '%' } })),
+          h('div', { class: 'list' }, list.map((x) => {
+            const isDone = x.status === 'done';
+            const ws = isDone && x.done && x.done.week ? x.done.week : sunday;
+            const inner = [h('span', { class: 'checkcircle' + (isDone ? ' on' : '') }, icon('check')),
+              h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text),
+                h('div', { class: 'd' }, isDone ? t('tasks.doneBy', { name: ctx.name((x.done && x.done.by) || '') || t('misc.admin') }) : x.status === 'overdue' ? t('tasks.overdue', { date: fmtDate(x.since, ctx.lang) }) : t('tasks.due')))];
+            return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(isDone), onclick: () => run(ctx, () => A.toggleTask(ws, x.task.id, chore, !isDone)) }, inner)
+              : h('div', { class: 'li cs-task' }, inner);
+          })),
+          h('p', { class: 'muted small cs-cap' }, can ? (nDone === list.length ? t('flow.checklistDone') : t('flow.checklistHint')) : t('flow.checklistOnly'))));
+      }
+    }
+
+    // richieste di sostituzione in sospeso
+    if (reqs.length && !res.kind) {
+      const rows = reqs.map(([id, q]) => {
+        const mineReq = q.from === me;
+        let title, desc = null, buttons = null, ic = 'swap';
+        if (q.kind === 'cover') {
+          if (mineReq) { title = q.to ? t('flow.req.mineTo', { name: ctx.name(q.to) }) : t('flow.req.mineAny'); buttons = [h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'req-cancel', 'data-req': id, onclick: () => run(ctx, () => A.cancelSwap(id), t('flow.req.cancelled')) }, t('req.cancel'))]; }
+          else if (me && (!q.to || q.to === me)) {
+            title = q.to ? t('flow.req.coverTo', { name: ctx.name(q.from) }) : t('flow.req.cover', { name: ctx.name(q.from) });
+            buttons = [h('button', { type: 'button', class: 'btn sm', 'data-act': 'req-yes', 'data-req': id, onclick: () => run(ctx, () => A.answerCover(id, true), t('flow.req.agreedMe')) }, icon('check'), t('flow.req.canDo')),
+              h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'req-no', 'data-req': id, onclick: () => run(ctx, () => A.answerCover(id, false), t('flow.req.declined')) }, t('flow.req.cant'))];
+          } else title = t('flow.req.coverInfo', { name: ctx.name(q.from), to: ctx.name(q.to) });
+        } else {
+          ic = 'user';
+          if (mineReq) { title = t('flow.req.offerMine', { name: ctx.name(q.to) }); buttons = [h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'req-cancel', 'data-req': id, onclick: () => run(ctx, () => A.cancelSwap(id), t('flow.req.cancelled')) }, t('req.cancel'))]; }
+          else if (q.to === me || ctx.isAdmin) {
+            title = t('flow.req.offer', { name: ctx.name(q.from) });
+            buttons = [h('button', { type: 'button', class: 'btn sm', 'data-act': 'req-yes', 'data-req': id, onclick: () => run(ctx, () => A.answerCover(id, true), t('flow.req.agreedHim', { name: ctx.name(q.from) })) }, icon('check'), t('req.accept')),
+              h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'req-no', 'data-req': id, onclick: () => run(ctx, () => A.answerCover(id, false), t('flow.req.declined')) }, t('req.decline'))];
+          } else title = t('flow.req.offerInfo', { name: ctx.name(q.from), to: ctx.name(q.to) });
+        }
+        return h('div', { class: 'li fl-req', 'data-testid': 'cover-req', 'data-kind': q.kind }, h('div', { class: 'ico' }, icon(ic)),
+          h('div', { class: 'grow' }, h('div', { class: 't' }, title), desc ? h('div', { class: 'd' }, desc) : null, buttons ? h('div', { class: 'fl-btns' }, buttons) : null));
+      });
+      out.push(section(t('flow.sec.requests'), h('div', { class: 'list' }, rows)));
+    }
+
+    // assegnato: sostituto o ritardo
+    const delayNow = delayOf(houseW(ctx), sunday, chore);
+    if (assigned && assigned === me && !res.kind) {
+      const rows = [];
+      if (ctx.feature('requests')) rows.push(actRow('users', '', t('flow.askBtn'), t('flow.askHint'), { 'data-act': 'ask' }, () => go('ask')));
+      rows.push(actRow('clock', 'o', delayNow ? t('flow.delayUntil', { date: fmtDate(delayNow, ctx.lang) }) : t('flow.delayBtn'), delayNow ? t('flow.delayBtn') : t('flow.delayHint'), { 'data-act': 'delay' }, () => { st.delay = null; go('delay'); }));
+      if (delayNow) rows.push(actRow('x', 'r', t('flow.delayClear'), null, { 'data-act': 'delay-clear-quick' }, async () => { await run(ctx, () => A.setDelay(sunday, chore, null), t('flow.delayCleared')); }));
+      out.push(section(t('flow.sec.mine'), h('div', { class: 'list' }, rows)));
+    }
+
+    // altri: offerta o volontariato
+    if (assigned && me && assigned !== me && !res.kind && (canVol || (ctx.feature('requests') && agreed !== me))) {
+      const rows = [];
+      if (ctx.feature('requests') && agreed !== me) {
+        if (myOffer) rows.push(h('div', { class: 'li fl-act muted', 'data-act': 'offer-pending' }, h('div', { class: 'ico' }, icon('clock')), h('div', { class: 'grow' }, t('flow.req.offerMine', { name: aName }))));
+        else rows.push(actRow('user', '', t('flow.offerBtn'), t('flow.offerHint', { name: aName }), { 'data-act': 'offer' }, () => run(ctx, () => A.offerCover({ week: sunday, chore }), t('flow.offerSent', { name: aName }))));
+      }
+      if (canVol) rows.push(actRow('sparkles', 'o', t('flow.volBtn'), null, { 'data-act': 'volunteer' }, async (ev) => {
+        const el = ev.currentTarget;
+        const choice = await choiceDialog(ctx, { title: t('flow.volTitle'), content: [h('p', { class: 'muted' }, t('flow.volText', { name: aName }))], choices: [
+          { key: 'ok', label: t('flow.volConfirm'), icon: 'check' }, { key: 'cancel', label: t('cancel'), cls: 'ghost' }] });
+        if (choice === 'ok' && (await markDoneFlow(ctx, sunday, chore, { volunteer: true, el }))) sh.close();
+      }));
+      out.push(section(t('flow.sec.others'), h('div', { class: 'list' }, rows)));
+    }
 
     // giorno scelto
     if (assigned && !row.closed && A.canPlan(sunday, chore)) {
       const today = ctx.today();
-      out.push(section(ctx.t('chore.planDay'),
+      out.push(section(t('chore.planDay'),
         h('div', { class: 'card stack tight' },
-          h('div', { class: 'daychips', role: 'group', 'aria-label': ctx.t('chore.planDay') }, weekDays(sunday).map((d) => h('button', {
+          h('div', { class: 'daychips', role: 'group', 'aria-label': t('chore.planDay') }, weekDays(sunday).map((d) => h('button', {
             type: 'button', class: d < today ? 'past' : '', 'aria-pressed': String(plan === d), 'data-day': d, 'aria-label': `${dowLong(d, ctx.lang)} ${fmtDate(d, ctx.lang)}`,
             onclick: () => run(ctx, () => A.setPlanDay(sunday, chore, plan === d ? null : d)),
-          }, h('small', null, ctx.t('dow.' + dowIdx(d))), String(+d.slice(8))))),
-          h('p', { class: 'muted small' }, ctx.t('chore.planHint')),
-          plan ? h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'plan-clear', onclick: () => run(ctx, () => A.setPlanDay(sunday, chore, null)) }, icon('x'), ctx.t('chore.planClear')) : null)));
-    }
-
-    // extra ricorrenti di questo turno
-    if (ctx.feature('tasks')) {
-      const list = tasksForWeek(ctx.house, ctx.state.weeks || {}, sunday).filter((x) => x.chore === chore);
-      if (list.length) {
-        const can = A.canTask(sunday, chore);
-        out.push(section(ctx.t('home.checklist'), h('div', { class: 'list' }, list.map((x) => {
-          const done = x.status === 'done';
-          const inner = [h('span', { class: 'checkcircle' + (done ? ' on' : '') }, icon('check')),
-            h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text),
-              h('div', { class: 'd' }, done ? ctx.t('tasks.doneBy', { name: ctx.name((x.done && x.done.by) || '') || ctx.t('misc.admin') }) : x.status === 'overdue' ? ctx.t('tasks.overdue', { date: fmtDate(x.since, ctx.lang) }) : ctx.t('tasks.due')))];
-          return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(done), onclick: () => run(ctx, () => A.toggleTask(sunday, x.task.id, chore, !done)) }, inner)
-            : h('div', { class: 'li cs-task' }, inner);
-        }))));
-      }
+          }, h('small', null, t('dow.' + dowIdx(d))), String(+d.slice(8))))),
+          h('p', { class: 'muted small' }, t('chore.planHint')),
+          plan ? h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'plan-clear', onclick: () => run(ctx, () => A.setPlanDay(sunday, chore, null)) }, icon('x'), t('chore.planClear')) : null)));
     }
 
     // scambio turno (richiesta)
-    if (ctx.feature('requests') && ctx.me && assigned === ctx.me && !row.closed) {
-      const mine = Object.entries(ctx.state.requests || {}).filter(([, q]) => q.kind !== 'nudge' && q.week === sunday && q.from === ctx.me && q.fromChore === chore && q.status === 'pending');
-      out.push(section(ctx.t('req.title'), h('div', { class: 'stack tight' },
+    if (ctx.feature('requests') && me && assigned === me && !row.closed) {
+      const mine = Object.entries(ctx.state.requests || {}).filter(([, q]) => q.kind !== 'nudge' && q.kind !== 'cover' && q.kind !== 'offer' && q.kind !== 'notice' && q.week === sunday && q.from === me && q.fromChore === chore && q.status === 'pending');
+      out.push(section(t('req.title'), h('div', { class: 'stack tight' },
         mine.map(([id, q]) => h('div', { class: 'li cs-req' }, h('div', { class: 'ico' }, icon('swap')),
-          h('div', { class: 'grow' }, h('div', { class: 't' }, `${ctx.name(q.to)} · ${ctx.t('chore.' + q.toChore)}`), h('div', { class: 'd' }, ctx.t('req.pending'))),
-          h('button', { type: 'button', class: 'btn soft sm', onclick: () => run(ctx, () => A.cancelSwap(id)) }, ctx.t('req.cancel')))),
-        h('button', { type: 'button', class: 'btn soft block', 'data-act': 'request', onclick: () => openSwapRequestSheet(ctx, sunday, chore) }, icon('swap'), ctx.t('req.new')))));
+          h('div', { class: 'grow' }, h('div', { class: 't' }, `${ctx.name(q.to)} · ${t('chore.' + q.toChore)}`), h('div', { class: 'd' }, t('req.pending'))),
+          h('button', { type: 'button', class: 'btn soft sm', onclick: () => run(ctx, () => A.cancelSwap(id), null) }, t('req.cancel')))),
+        h('button', { type: 'button', class: 'btn soft block', 'data-act': 'request', onclick: () => openSwapRequestSheet(ctx, sunday, chore) }, icon('swap'), t('req.new')))));
     }
 
-    // admin: scambio concordato manuale
+    // admin: scegliere chi lo fa + scambio concordato manuale
     if (ctx.isAdmin && assigned) {
-      out.push(section(ctx.t('chore.swap'), h('div', { class: 'btn-row' },
-        h('button', { type: 'button', class: 'btn soft', 'data-act': 'swap', onclick: () => go('swap') }, icon('swap'), ctx.t('chore.swapWith')),
-        row.swapped.some(Boolean) ? h('button', { type: 'button', class: 'btn danger', 'data-act': 'swap-cancel', onclick: () => run(ctx, () => A.clearSwap(sunday), ctx.t('cal.swapCleared')) }, icon('x'), ctx.t('cal.swapCancel')) : null)));
+      const arows = [];
+      if (!done && !row.isFut) {
+        arows.push(actRow('users', '', t('flow.assignBtn'), agreed ? t('flow.agreedWith', { name: ctx.name(agreed) }) : t('flow.assignHint'), { 'data-act': 'assign' }, () => openAssignSheet(ctx, sunday, chore)));
+        if (agreed) arows.push(actRow('x', 'r', t('flow.assignClear'), null, { 'data-act': 'assign-clear-quick' }, () => run(ctx, () => A.assignCover(sunday, chore, null), t('flow.assignCleared'))));
+      }
+      if (arows.length) out.push(section(t('flow.sec.admin'), h('div', { class: 'list' }, arows)));
+      out.push(section(t('chore.swap'), h('div', { class: 'btn-row' },
+        h('button', { type: 'button', class: 'btn soft', 'data-act': 'swap', onclick: () => go('swap') }, icon('swap'), t('chore.swapWith')),
+        row.swapped.some(Boolean) ? h('button', { type: 'button', class: 'btn danger', 'data-act': 'swap-cancel', onclick: () => run(ctx, () => A.clearSwap(sunday), t('cal.swapCleared')) }, icon('x'), t('cal.swapCancel')) : null)));
     }
     return h('div', { class: 'stack' }, out);
   };
@@ -274,15 +567,23 @@ export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
   // turni
   out.push(h('div', { class: 'list wd-chores' }, CHORES.map((chore, c) => {
     const id = row.assigned[c]; const oc = outcomeOf(ctx, row, c); const plan = planOf(houseW(ctx), sunday, chore);
-    return h('button', { type: 'button', class: 'chore wd-chore', 'data-chore': chore, onclick: () => openChoreSheet(ctx, sunday, chore) },
-      tile(chore),
-      h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.t('chore.' + chore)),
-        h('div', { class: 's' }, id ? [person(ctx, id, 'sm'), h('span', { class: 'wd-pn' }, ctx.name(id))] : h('span', null, ctx.t('chore.noOne')),
-          row.isMakeup[c] ? chip(ctx.t('chore.makeupBadge'), 'acc', 'refresh') : null,
-          row.swapped[c] ? chip(ctx.t('st.swapped'), 'acc', 'swap') : null,
-          plan ? chip(`${ctx.t('dow.' + dowIdx(plan))} ${+plan.slice(8)}`, '', 'calendar') : null)),
-      oc ? h('span', { class: 'ind ' + oc.tone, title: oc.label, 'aria-label': oc.label }, icon(oc.ic)) : null,
-      icon('chevron'));
+    const res = row.res[c];
+    const showOc = oc && (oc.key !== 'done' || res.kind === 'by');
+    const fl = id ? flowChips(ctx, sunday, chore) : [];
+    const rowEl = h('div', { class: 'chore wd-chore', 'data-chore': chore },
+      h('button', { type: 'button', class: 'wd-main', 'data-open': chore, onclick: () => openChoreSheet(ctx, sunday, chore) },
+        tile(chore),
+        h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.t('chore.' + chore)),
+          h('div', { class: 's' }, id ? [person(ctx, id, 'sm'), h('span', { class: 'wd-pn' }, ctx.name(id))] : h('span', null, ctx.t('chore.noOne')),
+            row.isMakeup[c] ? chip(ctx.t('chore.makeupBadge'), 'acc', 'refresh') : null,
+            row.swapped[c] ? chip(ctx.t('st.swapped'), 'acc', 'swap') : null,
+            plan ? chip(`${ctx.t('dow.' + dowIdx(plan))} ${+plan.slice(8)}`, '', 'calendar') : null,
+            showOc ? chip(oc.label, oc.tone, oc.ic) : null,
+            fl.map((f) => chip(f.text, f.tone, f.ic))))),
+      id ? resultToggle(ctx, sunday, chore) : null);
+    const canAssign = ctx.isAdmin && !!id && !isOk(res) && !row.isFut;
+    return h('div', { class: 'wd-item' }, rowEl,
+      canAssign ? h('div', { class: 'wd-assign' }, h('button', { type: 'button', class: 'btn tonal sm', 'data-assign': chore, onclick: () => openAssignSheet(ctx, sunday, chore) }, icon('users'), ctx.t('flow.assignBtn'))) : null);
   })));
 
   // riposo
@@ -317,12 +618,13 @@ export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
 
   // extra ricorrenti
   if (ctx.feature('tasks')) {
-    const list = tasksForWeek(ctx.house, ctx.state.weeks || {}, sunday);
+    const list = CHORES.flatMap((chore) => checklistFor(houseW(ctx), ctx.state.weeks || {}, sunday, chore));
     if (list.length) out.push(section(ctx.t('home.checklist'), h('div', { class: 'list' }, list.map((x) => {
       const done = x.status === 'done'; const c = ci(x.chore); const who = row.assigned[c];
       const can = A.canTask(sunday, x.chore);
+      const ws = done && x.done && x.done.week ? x.done.week : sunday;
       const inner = [h('span', { class: 'checkcircle' + (done ? ' on' : '') }, icon('check')), h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text), h('div', { class: 'd' }, `${ctx.t('chore.' + x.chore)}${who ? ' · ' + ctx.name(who) : ''}`))];
-      return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(done), onclick: () => run(ctx, () => A.toggleTask(sunday, x.task.id, x.chore, !done)) }, inner) : h('div', { class: 'li cs-task' }, inner);
+      return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(done), onclick: () => run(ctx, () => A.toggleTask(ws, x.task.id, x.chore, !done)) }, inner) : h('div', { class: 'li cs-task' }, inner);
     }))));
   }
 

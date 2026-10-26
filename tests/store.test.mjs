@@ -437,3 +437,16 @@ test('pulirò in ritardo: data valida solo dopo la domenica (max 14 giorni), sol
   await assert.rejects(o.a.setDelay(sunday, 'floor', addDays(sunday, 2)), /permission/);
   await u.a.setDelay(sunday, 'floor', null); assert.equal(adm.s.state.weeks[sunday].delay?.floor, undefined);
 });
+
+test('gate checklist: gli arretrati di un altro che è a casa non bloccano chi ha la mansione adesso', async () => {
+  const hub = new MemoryHub(); await mkHouse(hub);
+  const adm = await client(hub, 'H1', { isAdmin: true, now: () => new Date('2026-10-14T10:00:00') });   // settimana 1 (chiude il 18/10)
+  await adm.a.setHouse({ tasks: [{ id: 'k', chore: 'bathroom', text: 'Tappetino', every: 2, anchor: START, enabled: true }] });
+  const out = adm.a.out(); const r0 = out.rows[0], r1 = out.rows[1];
+  const sunday1 = r1.sunday, prevOwner = r0.assigned[1], curOwner = r1.assigned[1];
+  const pend = adm.a.pendingChecklist(sunday1, 'bathroom');
+  if (prevOwner !== curOwner) {
+    assert.equal(pend.length, 0, 'l\'arretrato è del precedente (a casa): non blocca chi ha la mansione ora');
+    const all = adm.a.pendingChecklist(sunday1, 'bathroom', { all: true }); assert.equal(all[0].owner, prevOwner); assert.equal(all[0].reason, 'arrears');
+  } else assert.equal(pend.length, 1);
+});

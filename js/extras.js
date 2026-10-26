@@ -102,6 +102,27 @@ export function tasksForWeek(house, weeks, sunday) {
   }
   return out;
 }
+/**
+ * Voci di checklist di una settimana con il RESPONSABILE di ciascuna.
+ * Una voce non fatta scala alla settimana dopo ("arretrato") e tocca a chi aveva la mansione quando scadeva,
+ * se quella persona è a casa; altrimenti a chi ha la mansione adesso.
+ * @param {object} out risultato di compute() (serve rows[].assigned, nm, pr)
+ */
+export function checklistOwners(house, out, weeks, sunday) {
+  const eh = { ...house, weeks };
+  const idx = weekIndex(house, sunday); const row = out.rows[idx];
+  if (!row) return [];
+  return tasksForWeek(eh, weeks, sunday).map((it) => {
+    const c = CHORES.indexOf(it.chore); const cur = row.assigned[c];
+    let owner = cur, reason = 'assignee';
+    if (it.status === 'overdue') {
+      const prevRow = out.rows[weekIndex(house, it.since)]; const prev = prevRow && prevRow.assigned[c];
+      if (prev && prev !== cur) { const slot = row.nm.indexOf(prev); if (slot >= 0 && row.pr[slot] === 1) { owner = prev; reason = 'arrears'; } }
+    }
+    return { ...it, owner, reason };
+  });
+}
+
 /** Voci della checklist di UNA mansione in una settimana (settimanali = every 1, più quelle "ogni X settimane" che scadono). */
 export function checklistFor(house, weeks, sunday, chore) {
   return tasksForWeek(house, weeks, sunday).filter((x) => x.chore === chore);
@@ -319,13 +340,18 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
   const pend = (r, c) => r.assigned[c] && !r.res[c].kind && !r.closed;      // ancora da segnare
   const pendRow = (r) => [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind && !(delayOf(h2, r.sunday, CHORES[c]) >= today));
   const pairs = (r, list) => { const m = new Map(); for (const c of list) { const id = r.assigned[c]; if (!m.has(id)) m.set(id, []); m.get(id).push(c); } return m; };
-  const tasksOf = (id) => feature(house, 'tasks') ? tasksForWeek(h2, weeks, sunday).filter((x) => x.status !== 'done' && row.assigned[CHORES.indexOf(x.chore)] === id).length : 0;
+  const owned = feature(house, 'tasks') ? checklistOwners(h2, out, weeks, sunday).filter((x) => x.status !== 'done') : [];
+  const tasksOf = (id) => owned.filter((x) => x.owner === id).length;
 
   if (cfg.friAbsence.on && feature(house, 'trips') && due(cfg.friAbsence.dow, cfg.friAbsence.time)) {
     row.nm.forEach((id, s) => { if (id && row.pr[s] === 1) push({ type: 'friAbsence', personId: id, week: sunday }); });
   }
   if (cfg.satDuty.on && due(cfg.satDuty.dow, cfg.satDuty.time)) {
     for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => pend(row, c)))) push({ type: 'satDuty', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]), extra: tasksOf(id) });
+  }
+  if (cfg.satDuty.on && cfg.tasks.on !== false && due(cfg.satDuty.dow, cfg.satDuty.time)) {   // chi ha solo arretrati di checklist (senza turno da fare)
+    const withChore = new Set([0, 1, 2].filter((c) => pend(row, c)).map((c) => row.assigned[c]));
+    for (const id of new Set(owned.filter((x) => x.status === 'overdue').map((x) => x.owner).filter(Boolean))) if (!withChore.has(id)) push({ type: 'tasks', personId: id, week: sunday, n: owned.filter((x) => x.owner === id && x.status === 'overdue').length });
   }
   if (cfg.sunMark.on && due(cfg.sunMark.dow, cfg.sunMark.time)) {
     for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => pend(row, c)))) push({ type: 'sunMark', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
@@ -401,6 +427,7 @@ export function notifMessage(n, house, lang = 'it', weeks = {}) {
     case 'planDay': return { title: T('n.plan.title'), body: T('n.plan.body', { chores }), url: '#/' };
     case 'planDayLate': return { title: T('n.plan.late.title'), body: T('n.plan.late.body', { chores, day: dowLong(n.day, lang) }), url: '#/' };
     case 'adminDigest': return n.n ? { title: T('n.digest.title'), body: T('n.digest.body', { n: n.n, names: (n.names || []).join(', ') }), url: '#/calendar' } : { title: T('n.digest.title'), body: T('n.digest.ok'), url: '#/' };
+    case 'tasks': return { title: T('n.tasks.title'), body: T('n.tasks.body', { n: n.n }), url: '#/' };
     case 'test': return { title: T('n.test.title'), body: T('n.test.body'), url: '#/' };
     default: return { title: n.title || T('app.name'), body: n.body || '', url: n.url || '#/' };
   }
