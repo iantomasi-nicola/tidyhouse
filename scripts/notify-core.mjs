@@ -23,6 +23,11 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
       const [weeks, trips, members, sentDocs, requests, needs] = await Promise.all(['weeks', 'trips', 'members', 'sent', 'requests', 'needs'].map((c) => db.coll(hid, c)));
       const eh = engineHouse({ house, weeks, trips });
       const sent = new Set(Object.keys(sentDocs));
+      { // diagnosi (solo conteggi: i log di un repo pubblico sono leggibili da tutti)
+        const withPush = Object.values(members).filter((m) => m && m.push && m.push.endpoint);
+        const nd = Object.values(needs);
+        log(`diagnosi: dispositivi ${Object.keys(members).length}, con push ${withPush.length} (persone ${new Set(withPush.map((m) => m.personId)).size}), voci spesa ${nd.length} (da avvisare ${nd.filter((x) => !x.notified && !x.done && now - new Date(x.at) <= DAY).length}, comprate da avvisare ${nd.filter((x) => x.done && !x.boughtNotified && x.doneAt && now - new Date(x.doneAt) <= DAY).length}), spesa ${notifCfg(house).needs.on ? 'attiva' : 'spenta'}`);
+      }
       const cfg = notifCfg(house);
       const lang = (m) => (m && m.lang) || house.lang || 'it';
 
