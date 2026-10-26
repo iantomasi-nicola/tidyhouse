@@ -223,7 +223,9 @@ function evaluate() {
   if (!me || !(house.roommates || []).some((r) => r.id === me)) { S.stage = 'who'; return renderStage(); }
   if (S.actions.rulesRequired() && !S.actions.rulesAccepted() && S.store.state.members !== undefined && memberLoaded()) { S.stage = 'rules'; return renderStage(); }
   if (needPushGate()) { S.stage = 'push'; return renderStage(); }
+  const first = !S.ready;
   S.stage = 'app'; S.ready = true;
+  if (first) { try { recordView('open'); } catch { /* ignore */ } }
   registerDevice();
   document.getElementById('boot').classList.add('gone');
   renderApp(true);
@@ -278,8 +280,7 @@ function registerDevice() {
 }
 function recordView(screen) {
   if (!S.actions || !S.ready) return;
-  if (screen !== 'home' && screen !== 'calendar') return;
-  const now = Date.now(); if (now - (lastView[screen] || 0) < 5 * 60000) return; lastView[screen] = now;
+  const now = Date.now(); if (now - (lastView[screen] || 0) < 45000) return; lastView[screen] = now;   // ogni ingresso/schermata (max 1 ogni 45 s)
   S.actions.recordView(screen).catch(() => {});
 }
 
@@ -415,7 +416,7 @@ function setupRefreshPrompt() {
       h('div', { class: 'btn-row' }, h('button', { class: 'btn soft', onclick: () => s.close() }, t('refresh.later')), h('button', { class: 'btn', onclick: () => location.reload() }, icon('refresh'), t('refresh.now')))) });
   };
   setInterval(check, 15000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { check(); registerDevice(); if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { check(); registerDevice(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
   window.addEventListener('focus', () => { if (S.deferred && !typing()) scheduleRender(true); });
   document.addEventListener('focusout', () => { setTimeout(() => { if (S.deferred && !typing()) scheduleRender(true); }, 60); });
 }

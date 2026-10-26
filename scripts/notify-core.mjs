@@ -3,6 +3,7 @@
 import { planNotifications, targetsFor, notifMessage, notifCfg, nameOf } from '../js/extras.js';
 import { engineHouse } from '../js/store.js';
 import { tr } from '../js/i18n.js';
+const CH = (l, c) => tr(l, 'chore.' + c);
 
 const DAY = 86400000;
 
@@ -48,28 +49,57 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
       }
       // 2) eventi: richieste di scambio, solleciti, scorte
       for (const [rid, rq] of Object.entries(requests)) {
-        const name = (id) => nameOf(house, id);
+        const name = (id) => nameOf(house, id) || 'Admin';
+        const reqOn = cfg.requests.on !== false;
+        const done = async (ok, patch) => { if (ok > 0) await db.setDoc(hid, 'requests', rid, patch, true); };
         if (rq.kind === 'nudge') {
           if (rq.notified) continue;
-          const ok = await deliver({ type: 'nudges', personId: rq.to, key: 'nudge:' + rid, custom: (l) => ({ title: tr(l, 'n.nudge.title'), body: tr(l, 'n.nudge.body', { name: name(rq.from) || 'Admin', text: rq.text || tr(l, 'n.nudge.default') }), url: '#/' }) });
+          const ok = await deliver({ type: 'nudges', personId: rq.to, key: 'nudge:' + rid, custom: (l) => ({ title: tr(l, 'n.nudge.title'), body: tr(l, 'n.nudge.body', { name: name(rq.from), text: rq.text || tr(l, 'n.nudge.default') }), url: '#/' }) });
           if (ok > 0 || !targetsFor({ type: 'nudges', personId: rq.to }, members, house).length) await db.setDoc(hid, 'requests', rid, { notified: true }, true);
-        } else if (rq.status === 'pending' && !rq.notified && cfg.requests.on !== false) {
-          const ok = await deliver({ type: 'requests', personId: rq.to, key: 'req:' + rid, custom: (l) => ({ title: tr(l, 'n.req.title'), body: tr(l, 'n.req.body', { name: name(rq.from) }), url: '#/requests' }) });
-          if (ok > 0) await db.setDoc(hid, 'requests', rid, { notified: true }, true);
-        } else if (rq.status === 'accepted' && !rq.notifiedAnswer && cfg.requests.on !== false) {
-          const ok = await deliver({ type: 'requests', personId: rq.from, key: 'reqok:' + rid, custom: (l) => ({ title: tr(l, 'n.reqOk.title'), body: tr(l, 'n.reqOk.body', { name: name(rq.to) }), url: '#/' }) });
-          if (ok > 0) await db.setDoc(hid, 'requests', rid, { notifiedAnswer: true }, true);
+        } else if (rq.kind === 'notice') {
+          if (rq.notified || !reqOn) continue;
+          await done(await deliver({ type: 'requests', personId: rq.to, key: 'notice:' + rid, custom: (l) => ({ title: tr(l, `n.notice.${rq.code}.title`), body: tr(l, `n.notice.${rq.code}.body`, { name: name(rq.from), chore: CH(l, rq.chore) }), url: '#/' }) }), { notified: true });
+        } else if (rq.kind === 'cover' || rq.kind === 'offer') {
+          if (!reqOn) continue;
+          if (rq.status === 'pending' && !rq.notified) {
+            const targets = rq.kind === 'offer' ? [rq.to] : rq.to ? [rq.to] : house.roommates.map((r) => r.id).filter((x) => x !== rq.from);
+            let any = 0;
+            for (const pid of targets) any += await deliver({ type: 'requests', personId: pid, key: `${rq.kind}:${rid}:${pid}`, custom: (l) => ({ title: tr(l, rq.kind === 'offer' ? 'n.offer.title' : 'n.cover.title'), body: tr(l, rq.kind === 'offer' ? 'n.offer.body' : 'n.cover.body', { name: name(rq.from), chore: CH(l, rq.chore) }), url: '#/requests' }) });
+            await done(any, { notified: true });
+          } else if (rq.status !== 'pending' && rq.notifiedAnswer === false) {
+            const target = rq.kind === 'offer' ? rq.from : rq.from;   // risposta a chi ha chiesto/offerto
+            const who = rq.kind === 'offer' ? rq.to : rq.by;
+            const ok = rq.status === 'accepted';
+            await done(await deliver({ type: 'requests', personId: target, key: `${rq.kind}ans:${rid}`, custom: (l) => ({ title: tr(l, ok ? 'n.coverOk.title' : 'n.coverNo.title'), body: tr(l, ok ? 'n.coverOk.body' : 'n.coverNo.body', { name: name(rq.kind === 'offer' ? rq.from : who), chore: CH(l, rq.chore) }), url: '#/' }) }), { notifiedAnswer: true });
+          }
+        } else if (!rq.kind) {   // scambio di turno
+          if (rq.status === 'pending' && !rq.notified && reqOn) {
+            await done(await deliver({ type: 'requests', personId: rq.to, key: 'req:' + rid, custom: (l) => ({ title: tr(l, 'n.req.title'), body: tr(l, 'n.req.body', { name: name(rq.from) }), url: '#/requests' }) }), { notified: true });
+          } else if (rq.status === 'accepted' && !rq.notifiedAnswer && reqOn) {
+            await done(await deliver({ type: 'requests', personId: rq.from, key: 'reqok:' + rid, custom: (l) => ({ title: tr(l, 'n.reqOk.title'), body: tr(l, 'n.reqOk.body', { name: name(rq.to) }), url: '#/' }) }), { notifiedAnswer: true });
+          }
         }
       }
       if (cfg.needs.on) {
         for (const [nid, nd] of Object.entries(needs)) {
-          if (nd.notified || nd.done || now - new Date(nd.at) > DAY) continue;
-          let any = 0;
-          for (const r of house.roommates) {
-            if (r.id === nd.by) continue;
-            any += await deliver({ type: 'needs', personId: r.id, key: 'need:' + nid + ':' + r.id, custom: (l) => ({ title: tr(l, 'n.need.title'), body: tr(l, 'n.need.body', { name: nameOf(house, nd.by), text: nd.text }), url: '#/needs' }) });
+          // 1) nuova voce aggiunta
+          if (!nd.notified && !nd.done && now - new Date(nd.at) <= DAY) {
+            let any = 0;
+            for (const r of house.roommates) {
+              if (r.id === nd.by) continue;
+              any += await deliver({ type: 'needs', personId: r.id, key: 'need:' + nid + ':' + r.id, custom: (l) => ({ title: tr(l, 'n.need.title'), body: tr(l, 'n.need.body', { name: nameOf(house, nd.by), text: nd.text }), url: '#/needs' }) });
+            }
+            if (any > 0) await db.setDoc(hid, 'needs', nid, { notified: true }, true);
           }
-          if (any > 0) await db.setDoc(hid, 'needs', nid, { notified: true }, true);
+          // 2) comprata
+          if (nd.done && !nd.boughtNotified && nd.doneAt && now - new Date(nd.doneAt) <= DAY) {
+            let any = 0;
+            for (const r of house.roommates) {
+              if (r.id === nd.doneBy) continue;
+              any += await deliver({ type: 'needs', personId: r.id, key: 'bought:' + nid + ':' + r.id, custom: (l) => ({ title: tr(l, 'n.need.bought.title'), body: tr(l, 'n.need.bought.body', { name: nameOf(house, nd.doneBy), text: nd.text }), url: '#/needs' }) });
+            }
+            if (any > 0) await db.setDoc(hid, 'needs', nid, { boughtNotified: true }, true);
+          }
         }
       }
       // 3) pulizia: voci "sent" e visualizzazioni vecchie

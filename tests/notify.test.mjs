@@ -105,3 +105,20 @@ test('backup cifrato: round-trip, passphrase errata, dati illeggibili', async ()
   await assert.rejects(decryptBackup({ foo: 1 }, 'x'), /invalid/);
   assert.notEqual((await encryptBackup({ a: 1 }, 'x')).ct, (await encryptBackup({ a: 1 }, 'x')).ct, 'IV/sale casuali');
 });
+
+test('server notifiche: sostituzioni, offerte, avvisi, spesa aggiunta e spesa comprata', async () => {
+  const db = fakeDb({ members: members(),
+    requests: { c1: { kind: 'cover', week: wk(4), chore: 'floor', from: 'A', to: null, status: 'pending' }, o1: { kind: 'offer', week: wk(4), chore: 'bathroom', from: 'B', to: 'C', status: 'pending' },
+      n1: { kind: 'notice', code: 'volunteer', to: 'A', from: 'B', week: wk(4), chore: 'kitchen', status: 'info' }, c2: { kind: 'cover', week: wk(4), chore: 'floor', from: 'A', to: null, status: 'accepted', by: 'B', notified: true, notifiedAnswer: false } },
+    needs: { x1: { text: 'Sapone', by: 'A', at: '2026-10-30T08:00:00Z', done: false }, x2: { text: 'Pasta', by: 'A', at: '2026-10-30T07:00:00Z', done: true, doneBy: 'B', doneAt: '2026-10-30T09:00:00Z' } } });
+  const got = []; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title, p.body]), now: new Date('2026-10-30T10:00:00Z'), vapidPublic: 'PUB' });
+  const to = (e) => got.filter((g) => g[0] === e).map((g) => g[1] + '|' + g[2]).join(' ;; ');
+  assert.match(to('eB'), /Looking for a substitute/); assert.match(to('eC'), /Cerca sostituto/); assert.doesNotMatch(to('eA'), /Cerca sostituto/, 'chi chiede non riceve');
+  assert.match(to('eC'), /Si offrono di aiutarti.*Pavimenti|Si offrono di aiutarti.*Bagno/);    // offerta B -> C (assegnato)
+  assert.match(to('eA'), /Qualcuno ha fatto il tuo turno/); assert.match(to('eA'), /Sostituzione concordata/, 'A sa che B accetta');
+  assert.match(to('eB'), /Sapone/); assert.match(to('eC'), /Sapone/); assert.doesNotMatch(to('eA'), /Sapone/, 'chi aggiunge non riceve');
+  assert.match(to('eA'), /Pasta/); assert.match(to('eC'), /Pasta/); assert.doesNotMatch(to('eB'), /Pasta/, 'chi ha comprato non riceve');
+  assert.equal(db.houses.H1.needs.x2.boughtNotified, true); assert.equal(db.houses.H1.requests.n1.notified, true);
+  const n = got.length; await runNotify({ db, send: async (s, p) => got.push(p), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
+  assert.equal(got.length, n, 'nessun duplicato');
+});

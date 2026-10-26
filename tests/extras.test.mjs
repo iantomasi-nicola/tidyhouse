@@ -266,3 +266,18 @@ test('config: valori di default, merge profondo e feature flag', () => {
   assert.equal(weekOfDate(house(), '2026-11-01'), '2026-11-01');
   assert.equal(weekOfDate(house(), '2026-11-02'), '2026-11-08');
 });
+
+test('ritardo annunciato: niente solleciti fino a quel giorno, promemoria il giorno scelto', async () => {
+  const { delayOf } = await import('../js/extras.js');
+  const h = house();
+  const weeks = { [wk(4)]: { result: { floor: 'done' }, delay: { bathroom: '2026-11-05' } } };   // bagno in ritardo fino al 5/11; cucina senza risultato
+  assert.equal(delayOf({ ...h, weeks }, wk(4), 'bathroom'), '2026-11-05'); assert.equal(delayOf({ ...h, weeks }, wk(4), 'kitchen'), '');
+  const late = planNotifications({ house: h, weeks, now: nowRome('2026-11-02T08:10:00Z') }).filter((x) => x.type === 'late');
+  assert.ok(late.length >= 1 && late.every((x) => !x.chores.includes('bathroom')), 'il bagno non viene sollecitato');
+  const out = compute({ ...h, weeks }, '2026-11-02', 3); const owner = out.rows[4].assigned[1];
+  const day = planNotifications({ house: h, weeks, now: nowRome('2026-11-05T08:20:00Z') }).filter((x) => x.type === 'planDay');
+  assert.ok(day.some((x) => x.personId === owner && x.chores.includes('bathroom')), 'promemoria il giorno annunciato');
+  // dopo quel giorno, se ancora non fatto, ricomincia a sollecitare
+  const after = planNotifications({ house: h, weeks, now: nowRome('2026-11-06T08:10:00Z') }).filter((x) => x.type === 'late');
+  assert.ok(Array.isArray(after));
+});

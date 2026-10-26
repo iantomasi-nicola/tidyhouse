@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById } from './extras.js';
+import { uid, randomCode, normCode, feature, nameOf, swapPatch, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor } from './extras.js';
 import { engineHouse } from './store.js';
 
 // ---------- PIN admin ----------
@@ -50,7 +50,8 @@ export class Actions {
     const age = dayNum(this.today()) - dayNum(sunday);
     if (age > 21) return false;                                     // storico vecchio: solo admin
     const p = parseResult(value);
-    if (p.kind === 'done' || p.kind === '') return a === this.me;
+    if (p.kind === 'done') return a === this.me;
+    if (p.kind === '') return a === this.me || (((this.s.state.weeks[sunday] || {}).resultBy || {})[chore] === this.me);  // annulla: l'assegnato o chi aveva segnato
     if (p.kind === 'by') return (p.id === this.me && a !== this.me) || (a === this.me && f('coverOthers'));
     return false;                                                    // saltato / saltato(nome): solo admin
   }
@@ -74,6 +75,93 @@ export class Actions {
     const type = p.kind === 'done' ? 'done' : p.kind === 'by' ? 'cover' : p.kind === '' ? 'reset' : 'skipped';
     await this.log(type, { week: sunday, chore, who: p.id || null });
   }
+  // ---- completamento con checklist, annulla, volontari, sostituzioni, ritardi ----
+  weekDoc(sunday) { return (this.s.state.weeks || {})[sunday] || {}; }
+  /** Voci di checklist ancora da spuntare per una mansione di una settimana. */
+  pendingChecklist(sunday, chore) {
+    const eh = { ...this.house, weeks: { ...(this.s.state.weeks || {}) } };
+    return checklistFor(eh, eh.weeks, sunday, chore).filter((x) => x.status !== 'done').map((x) => ({ id: x.task.id, text: x.task.text, status: x.status }));
+  }
+  /**
+   * Segna una mansione come fatta (value 'done' oppure 'by:ID') verificando la checklist.
+   * Se mancano voci e !force → { ok:false, missing } e non scrive nulla. Con force scrive e segnala "incompleto".
+   */
+  async completeChore(sunday, chore, { value = 'done', force = false, checkAll = false } = {}) {
+    this.need(this.canResult(sunday, chore, value));
+    const missing = this.pendingChecklist(sunday, chore);
+    if (missing.length && checkAll) {
+      const at = this.ctx.now().toISOString(); const done = {};
+      for (const m of missing) done[m.id] = { by: this.me || 'admin', at };
+      await this.s.setDoc('weeks', sunday, { tasksDone: done });
+      return this.completeChore(sunday, chore, { value, force });
+    }
+    if (missing.length && !force) return { ok: false, missing };
+    await this.s.setDoc('weeks', sunday, { incomplete: { [chore]: missing.length ? missing.map((m) => m.text) : null } });
+    await this.setResult(sunday, chore, value);
+    if (missing.length) await this.log('incomplete', { week: sunday, chore, n: missing.length });
+    return { ok: true, missing };
+  }
+  /** Annulla un "fatto" segnato per errore (torna "da fare"). */
+  async undoResult(sunday, chore) {
+    await this.setResult(sunday, chore, '');
+    await this.s.setDoc('weeks', sunday, { incomplete: { [chore]: null }, volunteer: { [chore]: null } });
+  }
+  /** Qualcuno pulisce una mansione che non gli spetta, di sua iniziativa: segnalato all'assegnato. */
+  async volunteer(sunday, chore, { force = false, checkAll = false } = {}) {
+    const row = this.row(sunday); const a = row && row.assigned[CHORES.indexOf(chore)];
+    this.need(!!this.me && !!a && a !== this.me);
+    const r = await this.completeChore(sunday, chore, { value: 'by:' + this.me, force, checkAll });
+    if (!r.ok) return r;
+    await this.s.setDoc('weeks', sunday, { volunteer: { [chore]: this.me } });
+    await this.log('volunteer', { week: sunday, chore, who: a });
+    await this.notice(a, 'volunteer', { week: sunday, chore });
+    return r;
+  }
+  /** Messaggio informativo (push alla prossima esecuzione del server). */
+  async notice(toId, code, p = {}) {
+    if (!toId || toId === this.me) return;
+    await this.s.setDoc('requests', 'n' + uid(), { kind: 'notice', code, to: toId, from: this.me || 'admin', ...p, status: 'info', at: this.ctx.now().toISOString() });
+  }
+  /** L'assegnato chiede una sostituzione (a una persona precisa o a chiunque). */
+  async requestCover({ week, chore, to = null }) {
+    const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
+    const id = uid(); const from = row.assigned[CHORES.indexOf(chore)];
+    await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, status: 'pending', at: this.ctx.now().toISOString() });
+    return id;
+  }
+  /** Qualcuno si offre di fare il turno di un altro: serve il consenso dell'assegnato. */
+  async offerCover({ week, chore }) {
+    const row = this.row(week); const a = row && row.assigned[CHORES.indexOf(chore)];
+    this.need(feature(this.house, 'requests') && !!this.me && !!a && a !== this.me);
+    const id = uid();
+    await this.s.setDoc('requests', id, { kind: 'offer', week, chore, from: this.me, to: a, status: 'pending', at: this.ctx.now().toISOString() });
+    return id;
+  }
+  /** Risposta a una richiesta di sostituzione/offerta. Accettando, il turno risulta "concordato" con quella persona. */
+  async answerCover(reqId, accept) {
+    const rq = this.s.state.requests[reqId]; this.need(!!rq && (rq.kind === 'cover' || rq.kind === 'offer') && rq.status === 'pending');
+    if (rq.kind === 'cover') this.need(!!this.me && rq.from !== this.me && (!rq.to || rq.to === this.me));
+    else this.need(this.admin || rq.to === this.me);
+    if (!accept) { await this.s.setDoc('requests', reqId, { status: 'declined', answeredAt: this.ctx.now().toISOString(), notifiedAnswer: false }); return; }
+    const who = rq.kind === 'cover' ? this.me : rq.from;
+    await this.s.setDoc('weeks', rq.week, { agreed: { [rq.chore]: who } });
+    await this.s.setDoc('requests', reqId, { status: 'accepted', by: who, answeredAt: this.ctx.now().toISOString(), notifiedAnswer: false });
+    await this.log('agreed', { week: rq.week, chore: rq.chore, who });
+  }
+  /** L'admin sceglie chi deve fare una mansione non svolta/da coprire. */
+  async assignCover(sunday, chore, personId) {
+    this.need(this.admin);
+    await this.s.setDoc('weeks', sunday, { agreed: { [chore]: personId || null } });
+    if (personId) { await this.log('agreed', { week: sunday, chore, who: personId }); await this.notice(personId, 'assigned', { week: sunday, chore }); }
+  }
+  /** "Pulirò in ritardo": annuncia quando (entro 14 giorni dopo la domenica). */
+  async setDelay(sunday, chore, date) {
+    const row = this.row(sunday); this.need(!!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
+    if (date && !(dayNum(date) > dayNum(sunday) && dayNum(date) <= dayNum(sunday) + 14)) throw new Error('invalid');
+    await this.s.setDoc('weeks', sunday, { delay: { [chore]: date || null } });
+    if (date) await this.log('delay', { week: sunday, chore, day: date });
+  }
+
   async setAway(sunday, personId, away) {
     this.need(this.canAway(personId));
     await this.s.setDoc('weeks', sunday, { awayMap: { [personId]: away ? true : null } });

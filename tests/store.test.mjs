@@ -335,3 +335,105 @@ test('regole: l\'accettazione ricordata sul dispositivo vale anche se i dati del
   local = '1'; assert.equal(d.a.rulesAccepted(), true);
   local = '0'; assert.equal(d.a.rulesAccepted(), false);
 });
+
+// ---------------- flusso turni: checklist, annulla, volontari, sostituzioni, ritardi ----------------
+async function flowEnv() {
+  const hub = new MemoryHub(); await mkHouse(hub);
+  const adm = await client(hub, 'H1', { isAdmin: true });
+  const ids = adm.s.state.house.roommates.map((r) => r.id);
+  await adm.a.setHouse({ tasks: [
+    { id: 'w1', chore: 'floor', text: 'Aspira', every: 1, anchor: START, enabled: true },
+    { id: 'w2', chore: 'floor', text: 'Lava', every: 1, anchor: START, enabled: true },
+    { id: 'x1', chore: 'bathroom', text: 'Tappetino', every: 2, anchor: START, enabled: true }] });
+  const row = adm.a.out().rows[adm.a.out().cur]; const sunday = row.sunday;
+  const who = (c) => row.assigned[['floor', 'bathroom', 'kitchen'].indexOf(c)];
+  const as = async (id) => client(hub, 'H1', { meId: id, deviceId: 'd' + id });
+  return { hub, adm, ids, row, sunday, who, as };
+}
+test('done richiede la checklist completa: se manca qualcosa avvisa; "comunque" lo segnala come incompleto', async () => {
+  const { adm, sunday, who, as } = await flowEnv();
+  const u = await as(who('floor'));
+  assert.equal(u.a.pendingChecklist(sunday, 'floor').length, 2);
+  const r = await u.a.completeChore(sunday, 'floor');
+  assert.equal(r.ok, false); assert.deepEqual(r.missing.map((m) => m.text).sort(), ['Aspira', 'Lava']);
+  assert.equal(adm.s.state.weeks[sunday]?.result?.floor, undefined, 'non scritto');
+  await u.a.toggleTask(sunday, 'w1', 'floor', true);
+  const r2 = await u.a.completeChore(sunday, 'floor'); assert.deepEqual(r2.missing.map((m) => m.text), ['Lava']);
+  const r3 = await u.a.completeChore(sunday, 'floor', { force: true });
+  assert.equal(r3.ok, true); assert.deepEqual(adm.s.state.weeks[sunday].incomplete.floor, ['Lava']);
+  assert.equal(adm.s.state.weeks[sunday].result.floor, 'done');
+  assert.ok(Object.values(adm.s.state.log).some((l) => l.type === 'incomplete'));
+  // annulla: torna "da fare" e toglie il segnale di incompleto
+  await u.a.undoResult(sunday, 'floor');
+  assert.equal(adm.s.state.weeks[sunday].result?.floor, undefined); assert.equal(adm.s.state.weeks[sunday].incomplete?.floor, undefined);
+  // spunta tutto e segna fatto in un colpo
+  const r4 = await u.a.completeChore(sunday, 'floor', { checkAll: true });
+  assert.equal(r4.ok, true); assert.equal(adm.s.state.weeks[sunday].incomplete?.floor, undefined);
+  assert.equal(u.a.pendingChecklist(sunday, 'floor').length, 0);
+});
+test('checklist disattivabile per mansione; settimanali + "ogni X settimane" si sommano', async () => {
+  const { adm, sunday, who, as } = await flowEnv();
+  const idx = (adm.a.out().cur);
+  const bathroomWeek = (i) => adm.a.pendingChecklist(addDays(START, 7 * i), 'bathroom').length;
+  assert.equal(bathroomWeek(0), 1); assert.equal(bathroomWeek(1), 1);   // ogni 2 settimane: scade alla 0, resta arretrato alla 1
+  await adm.a.setHouse({ tasks: [...adm.s.state.house.tasks, { id: 'wb', chore: 'bathroom', text: 'Lavandino', every: 1, anchor: START, enabled: true }] });
+  assert.equal(bathroomWeek(0), 2);                                       // settimanale + ricorrente
+  await adm.a.setHouse({ checklistOff: { bathroom: true } });
+  assert.equal(bathroomWeek(0), 0);                                       // checklist spenta per la mansione
+  const u = await as(who('bathroom')); assert.equal((await u.a.completeChore(sunday, 'bathroom')).ok, true, 'senza checklist si segna subito');
+  await adm.a.setHouse({ checklistOff: { bathroom: null } }); assert.ok(bathroomWeek(0) >= 1);
+});
+test('annulla: chi ha segnato (anche un volontario) e l\'assegnato possono ricliccare; gli altri no', async () => {
+  const { adm, ids, sunday, who, as } = await flowEnv();
+  await adm.a.setHouse({ checklistOff: { floor: true, bathroom: true, kitchen: true } });
+  const assignee = await as(who('kitchen')); const other = await as(ids.find((x) => x !== who('kitchen')));
+  const third = await as(ids.find((x) => x !== who('kitchen') && x !== other.a.me));
+  await assignee.a.completeChore(sunday, 'kitchen'); await assignee.a.undoResult(sunday, 'kitchen');
+  assert.equal(adm.s.state.weeks[sunday].result?.kitchen, undefined);
+  // volontario: non spettava a lui, viene segnalato all'assegnato e può annullare
+  const r = await other.a.volunteer(sunday, 'kitchen'); assert.equal(r.ok, true);
+  assert.equal(adm.s.state.weeks[sunday].volunteer.kitchen, other.a.me); assert.equal(adm.s.state.weeks[sunday].result.kitchen, 'by:' + other.a.me);
+  assert.ok(Object.values(adm.s.state.requests).some((q) => q.kind === 'notice' && q.code === 'volunteer' && q.to === who('kitchen')), 'avviso all\'assegnato');
+  assert.ok(Object.values(adm.s.state.log).some((l) => l.type === 'volunteer'));
+  await assert.rejects(third.a.undoResult(sunday, 'kitchen'), /permission/);
+  await other.a.undoResult(sunday, 'kitchen'); assert.equal(adm.s.state.weeks[sunday].result?.kitchen, undefined);
+  await assert.rejects(assignee.a.volunteer(sunday, 'kitchen'), /permission/, 'l\'assegnato non si "offre" per il proprio turno');
+});
+test('sostituzioni: richiesta aperta, offerta con consenso, assegnazione admin, rifiuti e permessi', async () => {
+  const { adm, ids, sunday, who, as } = await flowEnv();
+  const A = await as(who('floor')), B = await as(ids.find((x) => x !== who('floor')));
+  // A chiede un sostituto a chiunque; B accetta
+  const id1 = await A.a.requestCover({ week: sunday, chore: 'floor' });
+  await assert.rejects(A.a.answerCover(id1, true), /permission/, 'non può accettare da solo');
+  await B.a.answerCover(id1, true);
+  assert.equal(adm.s.state.weeks[sunday].agreed.floor, B.a.me); assert.equal(adm.s.state.requests[id1].status, 'accepted'); assert.equal(adm.s.state.requests[id1].by, B.a.me);
+  // B si offre per il bagno di un altro: serve l'ok dell'assegnato
+  const target = who('bathroom'); const T = await as(target);
+  if (target !== B.a.me) {
+    const id2 = await B.a.offerCover({ week: sunday, chore: 'bathroom' });
+    await assert.rejects(B.a.answerCover(id2, true), /permission/);
+    await T.a.answerCover(id2, false); assert.equal(adm.s.state.requests[id2].status, 'declined'); assert.equal(adm.s.state.weeks[sunday].agreed.bathroom, undefined);
+    const id3 = await B.a.offerCover({ week: sunday, chore: 'bathroom' }); await T.a.answerCover(id3, true);
+    assert.equal(adm.s.state.weeks[sunday].agreed.bathroom, B.a.me);
+  }
+  // richiesta a una persona precisa: solo lei può accettare
+  const C = await as(ids.find((x) => x !== who('kitchen'))); const K = await as(who('kitchen'));
+  const id4 = await K.a.requestCover({ week: sunday, chore: 'kitchen', to: C.a.me });
+  const stranger = ids.find((x) => x !== who('kitchen') && x !== C.a.me);
+  if (stranger) await assert.rejects((await as(stranger)).a.answerCover(id4, true), /permission/);
+  await C.a.answerCover(id4, true); assert.equal(adm.s.state.weeks[sunday].agreed.kitchen, C.a.me);
+  // chi non è assegnato non può chiedere sostituzioni per altri; l'admin sì e può scegliere lui chi fa cosa
+  await assert.rejects(C.a.requestCover({ week: sunday, chore: 'kitchen' }), /permission/);
+  await adm.a.assignCover(sunday, 'floor', ids[2]); assert.equal(adm.s.state.weeks[sunday].agreed.floor, ids[2]);
+  assert.ok(Object.values(adm.s.state.requests).some((q) => q.kind === 'notice' && q.code === 'assigned'));
+  await assert.rejects(C.a.assignCover(sunday, 'floor', ids[0]), /permission/);
+  await adm.a.assignCover(sunday, 'floor', null); assert.equal(adm.s.state.weeks[sunday].agreed?.floor, undefined);
+});
+test('pulirò in ritardo: data valida solo dopo la domenica (max 14 giorni), solo l\'assegnato o l\'admin', async () => {
+  const { adm, sunday, who, as, ids } = await flowEnv();
+  const u = await as(who('floor')); const o = await as(ids.find((x) => x !== who('floor')));
+  await u.a.setDelay(sunday, 'floor', addDays(sunday, 3)); assert.equal(adm.s.state.weeks[sunday].delay.floor, addDays(sunday, 3));
+  await assert.rejects(u.a.setDelay(sunday, 'floor', sunday), /invalid/); await assert.rejects(u.a.setDelay(sunday, 'floor', addDays(sunday, 15)), /invalid/);
+  await assert.rejects(o.a.setDelay(sunday, 'floor', addDays(sunday, 2)), /permission/);
+  await u.a.setDelay(sunday, 'floor', null); assert.equal(adm.s.state.weeks[sunday].delay?.floor, undefined);
+});

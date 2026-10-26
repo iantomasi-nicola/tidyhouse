@@ -17,7 +17,7 @@ export const DEFAULT_NOTIF = {
   monNew: { on: false, dow: 1, time: '08:30' },
   planDay: { on: true, time: '09:00' },
   adminDigest: { on: false, dow: 1, time: '09:30' },
-  requests: { on: true }, needs: { on: false }, nudges: { on: true }, tasks: { on: true },
+  requests: { on: true }, needs: { on: true }, nudges: { on: true }, tasks: { on: true },
 };
 export const NOTIF_TYPES = ['friAbsence', 'satDuty', 'sunMark', 'late', 'monNew', 'planDay', 'adminDigest', 'requests', 'needs', 'nudges'];
 export const HOME_WIDGETS = ['hero', 'alerts', 'week', 'checklist', 'quick', 'links', 'away', 'upcoming', 'makeups', 'ranking', 'needs'];
@@ -79,7 +79,7 @@ export function tasksForWeek(house, weeks, sunday) {
   const idx = weekIndex(house, sunday);
   const out = [];
   for (const t of house.tasks || []) {
-    if (t.enabled === false) continue;
+    if (t.enabled === false || (house.checklistOff || {})[t.chore]) continue;
     const every = Math.max(1, parseInt(t.every, 10) || 1);
     const anchor = t.anchor ? weekIndex(house, weekEnd(t.anchor)) : 0;
     if (idx < anchor) continue;
@@ -102,6 +102,17 @@ export function tasksForWeek(house, weeks, sunday) {
   }
   return out;
 }
+/** Voci della checklist di UNA mansione in una settimana (settimanali = every 1, più quelle "ogni X settimane" che scadono). */
+export function checklistFor(house, weeks, sunday, chore) {
+  return tasksForWeek(house, weeks, sunday).filter((x) => x.chore === chore);
+}
+/** Ritardo annunciato: giorno (dopo la domenica, max +14) in cui chi è in ritardo farà il turno. */
+export function delayOf(house, sunday, chore) {
+  const d = (((house.weeks || {})[sunday] || {}).delay || {})[chore];
+  if (!d) return '';
+  const e = dayNum(sunday), n = dayNum(d);
+  return n > e && n <= e + 14 ? d : '';
+}
 /** Prossima settimana (indice) in cui un compito scade, a partire da `idx`. */
 export function nextDueWeek(house, task, idx) {
   const every = Math.max(1, parseInt(task.every, 10) || 1);
@@ -110,6 +121,11 @@ export function nextDueWeek(house, task, idx) {
   return anchor + Math.ceil((idx - anchor) / every) * every;
 }
 export const TASK_TEMPLATES = [
+  // ogni settimana (every 1)
+  { chore: 'floor', key: 'tasks.t.w.floor1', every: 1 }, { chore: 'floor', key: 'tasks.t.w.floor2', every: 1 },
+  { chore: 'bathroom', key: 'tasks.t.w.bath1', every: 1 }, { chore: 'bathroom', key: 'tasks.t.w.bath2', every: 1 }, { chore: 'bathroom', key: 'tasks.t.w.bath3', every: 1 },
+  { chore: 'kitchen', key: 'tasks.t.w.kit1', every: 1 }, { chore: 'kitchen', key: 'tasks.t.w.kit2', every: 1 }, { chore: 'kitchen', key: 'tasks.t.w.kit3', every: 1 },
+  // ogni X settimane
   { chore: 'floor', key: 'tasks.t.floor1', every: 2 }, { chore: 'floor', key: 'tasks.t.floor2', every: 8 }, { chore: 'floor', key: 'tasks.t.floor3', every: 8 },
   { chore: 'bathroom', key: 'tasks.t.bath1', every: 2 }, { chore: 'bathroom', key: 'tasks.t.bath2', every: 4 }, { chore: 'bathroom', key: 'tasks.t.bath3', every: 8 },
   { chore: 'kitchen', key: 'tasks.t.kit1', every: 4 }, { chore: 'kitchen', key: 'tasks.t.kit2', every: 8 }, { chore: 'kitchen', key: 'tasks.t.kit3', every: 8 },
@@ -301,7 +317,7 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
   const row = out.rows[cur];
   const sunday = row.sunday;
   const pend = (r, c) => r.assigned[c] && !r.res[c].kind && !r.closed;      // ancora da segnare
-  const pendRow = (r) => [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind);
+  const pendRow = (r) => [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind && !(delayOf(h2, r.sunday, CHORES[c]) >= today));
   const pairs = (r, list) => { const m = new Map(); for (const c of list) { const id = r.assigned[c]; if (!m.has(id)) m.set(id, []); m.get(id).push(c); } return m; };
   const tasksOf = (id) => feature(house, 'tasks') ? tasksForWeek(h2, weeks, sunday).filter((x) => x.status !== 'done' && row.assigned[CHORES.indexOf(x.chore)] === id).length : 0;
 
@@ -329,6 +345,13 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
     }
     for (const [id, cs] of pairs(row, todays)) push({ type: 'planDay', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
     for (const l of lates.values()) push({ type: 'planDayLate', personId: l.id, week: sunday, chores: l.cs.map((c) => CHORES[c]), day: l.d, slot: l.d });
+  }
+  // ritardo annunciato che scade oggi: promemoria "oggi è il giorno"
+  if (cfg.planDay.on && lp.minutes >= hm(cfg.planDay.time) && lp.minutes - hm(cfg.planDay.time) <= catchUp) {
+    for (let i = Math.max(0, cur - 2); i < cur; i++) {
+      const r = out.rows[i];
+      for (const [id, cs] of pairs(r, [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind && delayOf(h2, r.sunday, CHORES[c]) === today))) push({ type: 'planDay', personId: id, week: r.sunday, chores: cs.map((c) => CHORES[c]) });
+    }
   }
   // ritardi: settimane concluse con turni ancora senza risultato (da lunedi', fino a N giorni)
   if (cfg.late.on) {
