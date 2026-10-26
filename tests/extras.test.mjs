@@ -120,29 +120,28 @@ test('notifiche: dedup, disattivazione e destinatari per dispositivo', () => {
   assert.deepEqual(targetsFor({ type: 'satDuty', personId: 'A' }, members, house({ notif: { satDuty: { on: false } } })), []);
 });
 
-test('notifiche: ritardo da lunedi\', max 3 al giorno agli orari scelti, fino a N giorni', () => {
+test('notifiche: ritardo da lunedi\', max 2 al giorno agli orari scelti (10:00, 20:00), fino a N giorni', () => {
   const h = house();
   const weeks = { [wk(4)]: { result: { floor: 'done' } } };              // bagno e cucina non segnati
   const at = (iso) => planNotifications({ house: h, weeks, now: nowRome(iso) }).filter((x) => x.type === 'late');
-  // lunedi' 2/11 09:10 Roma = 08:10 UTC -> primo slot
-  let n = at('2026-11-02T08:10:00Z');
+  // lunedi' 2/11 10:10 Roma = 09:10 UTC -> primo slot
+  let n = at('2026-11-02T09:10:00Z');
   assert.ok(n.length >= 1 && n.every((x) => x.slot === 0 && x.week === wk(4)));
   assert.ok(n.every((x) => !x.lateClosed), 'lunedi\' e\' ancora entro la tolleranza');
-  assert.deepEqual(at('2026-11-02T13:10:00Z').map((x) => x.slot), n.map(() => 1));
-  assert.deepEqual(at('2026-11-02T19:10:00Z').map((x) => x.slot), n.map(() => 2));
+  assert.deepEqual(at('2026-11-02T19:10:00Z').map((x) => x.slot), n.map(() => 1));   // 20:10 Roma: secondo (e ultimo) slot
   assert.equal(at('2026-11-02T04:00:00Z').length, 0, 'prima del primo orario');
   assert.ok(at('2026-11-02T11:00:00Z').every((x) => x.slot === 0), 'recupero entro la finestra: ancora il primo slot');
   assert.equal(planNotifications({ house: house({ notif: { late: { times: ['09:00', '10:00', '11:00'], max: 3 } } }), weeks, now: nowRome('2026-11-02T10:30:00Z') }).filter((x) => x.type === 'late').map((x) => x.slot).filter((v, i, a) => a.indexOf(v) === i).join(), '2', 'un solo invio per esecuzione');
   // martedi' = chiusa => conta gia' come saltata
-  assert.ok(at('2026-11-03T08:10:00Z').every((x) => x.lateClosed));
-  // oltre 4 giorni dopo la domenica: stop
-  assert.equal(at('2026-11-06T08:10:00Z').length, 0);
+  assert.ok(at('2026-11-03T09:10:00Z').length >= 1 && at('2026-11-03T09:10:00Z').every((x) => x.lateClosed));
+  // oltre 3 giorni dopo la domenica: stop
+  assert.equal(at('2026-11-05T09:10:00Z').length, 0);
   // settimana corrente non e' "in ritardo"
   const prevDone = { [wk(3)]: { result: { floor: 'done', bathroom: 'done', kitchen: 'done' } } };
-  assert.equal(planNotifications({ house: h, weeks: prevDone, now: nowRome('2026-10-27T08:10:00Z') }).filter((x) => x.type === 'late').length, 0);
+  assert.equal(planNotifications({ house: h, weeks: prevDone, now: nowRome('2026-10-27T09:10:00Z') }).filter((x) => x.type === 'late').length, 0);
   // max 1 al giorno
   const h1 = house({ notif: { late: { max: 1 } } });
-  assert.equal(planNotifications({ house: h1, weeks, now: nowRome('2026-11-02T13:10:00Z') }).filter((x) => x.type === 'late').length, 0);
+  assert.equal(planNotifications({ house: h1, weeks, now: nowRome('2026-11-02T19:10:00Z') }).filter((x) => x.type === 'late').length, 0);
   // testo
   assert.match(notifMessage(n[0], h, 'it').body, /Manca ancora/);
 });
@@ -256,8 +255,8 @@ test('scambio turno: patch di swap', () => {
 });
 
 test('config: valori di default, merge profondo e feature flag', () => {
-  assert.equal(notifCfg({}).late.max, 3);
-  assert.equal(notifCfg({ notif: { late: { max: 1 } } }).late.times.length, 3);
+  assert.equal(notifCfg({}).late.max, 2);
+  assert.equal(notifCfg({ notif: { late: { max: 1 } } }).late.times.length, 2);
   assert.equal(notifCfg({ notif: { late: { max: 1 } } }).late.max, 1);
   assert.equal(feature({}, 'needs'), true);
   assert.equal(feature({ features: { needs: false } }, 'needs'), false);
@@ -272,13 +271,13 @@ test('ritardo annunciato: niente solleciti fino a quel giorno, promemoria il gio
   const h = house();
   const weeks = { [wk(4)]: { result: { floor: 'done' }, delay: { bathroom: '2026-11-05' } } };   // bagno in ritardo fino al 5/11; cucina senza risultato
   assert.equal(delayOf({ ...h, weeks }, wk(4), 'bathroom'), '2026-11-05'); assert.equal(delayOf({ ...h, weeks }, wk(4), 'kitchen'), '');
-  const late = planNotifications({ house: h, weeks, now: nowRome('2026-11-02T08:10:00Z') }).filter((x) => x.type === 'late');
+  const late = planNotifications({ house: h, weeks, now: nowRome('2026-11-02T09:10:00Z') }).filter((x) => x.type === 'late');
   assert.ok(late.length >= 1 && late.every((x) => !x.chores.includes('bathroom')), 'il bagno non viene sollecitato');
   const out = compute({ ...h, weeks }, '2026-11-02', 3); const owner = out.rows[4].assigned[1];
   const day = planNotifications({ house: h, weeks, now: nowRome('2026-11-05T08:20:00Z') }).filter((x) => x.type === 'planDay');
   assert.ok(day.some((x) => x.personId === owner && x.chores.includes('bathroom')), 'promemoria il giorno annunciato');
   // dopo quel giorno, se ancora non fatto, ricomincia a sollecitare
-  const after = planNotifications({ house: h, weeks, now: nowRome('2026-11-06T08:10:00Z') }).filter((x) => x.type === 'late');
+  const after = planNotifications({ house: h, weeks, now: nowRome('2026-11-04T09:10:00Z') }).filter((x) => x.type === 'late');
   assert.ok(Array.isArray(after));
 });
 

@@ -458,31 +458,36 @@ async function rulesStage(boot) {
   let renderRulesContent;
   try { ({ renderRulesContent } = await import('./more.js')); } catch (e) { console.error(e); }
   const content = renderRulesContent ? renderRulesContent(house) : h('p', null, t('error'));
-  const box = h('div', { class: 'rules-scroll onb-rules', tabindex: '0', role: 'region', 'aria-label': t('onb.rules.region') }, content);
-  const hint = h('div', { class: 'onb-scrollhint', role: 'status' }, icon('down'), t('onb.rules.scrollHint'));
-  const chk = h('input', { type: 'checkbox', id: 'onb-accept', disabled: true, onchange: upd });
-  const lab = h('label', { class: 'check onb-accept', for: 'onb-accept' }, chk, h('span', null, t('onb.rules.accept')));
-  const btn = h('button', { type: 'button', class: 'btn lg block', disabled: true, onclick: async () => {
-    if (btn.disabled) return; btn.disabled = true; btn.replaceChildren(h('i', { class: 'onb-spin sm on-accent' }), t('loading'));
-    try { await boot.acceptRules(); } catch (e) { console.error(e); boot.toast(t('error')); btn.replaceChildren(icon('check'), t('onb.rules.read')); upd(); }
-  } }, icon('check'), t('onb.rules.read'));
-  let atEnd = false;
-  function check() {
-    if (box.clientHeight === 0) return;
-    if (box.scrollHeight - box.scrollTop - box.clientHeight <= 12) atEnd = true;
-    chk.disabled = !atEnd; lab.classList.toggle('off', !atEnd); hint.hidden = atEnd; box.classList.toggle('more-below', !atEnd);
-    upd();
+  // niente riquadro con scorrimento interno (su telefono bloccava la pagina): le regole scorrono con la pagina
+  // e il pulsante resta sempre visibile in fondo; finché non si è arrivati in fondo il tocco scorre fino alla fine
+  const box = h('div', { class: 'rules-scroll onb-rules', role: 'region', 'aria-label': t('onb.rules.region') }, content);
+  const end = h('div', { class: 'onb-end', 'aria-hidden': 'true' });
+  let atEnd = false, busy = false;
+  const btn = h('button', { type: 'button', class: 'btn lg block', 'data-testid': 'rules-accept', onclick: async () => {
+    if (busy) return;
+    if (!atEnd) { try { end.scrollIntoView({ behavior: 'smooth', block: 'end' }); } catch { end.scrollIntoView(); } return; }
+    busy = true; btn.disabled = true; btn.replaceChildren(h('i', { class: 'onb-spin sm on-accent' }), t('loading'));
+    try { await boot.acceptRules(); } catch (e) { console.error(e); boot.toast(t('error')); busy = false; btn.disabled = false; paint(); }
+  } });
+  function paint() {
+    btn.classList.toggle('soft', !atEnd);
+    btn.replaceChildren(icon(atEnd ? 'check' : 'down'), atEnd ? t('onb.rules.accept') : t('onb.rules.scrollHint'));
+    btn.setAttribute('data-ready', atEnd ? '1' : '0');
   }
-  function upd() { btn.disabled = !(atEnd && chk.checked); }
-  box.addEventListener('scroll', check, { passive: true });
-  try { new ResizeObserver(check).observe(box); } catch { /* ignore */ }
-  window.addEventListener('resize', check);
-  setTimeout(check, 50); setTimeout(check, 400);
+  function check() {
+    if (atEnd || !end.isConnected) return;
+    const r = end.getBoundingClientRect();
+    const bar = (document.querySelector('.onb-sticky') || {}).offsetHeight || 0;   // l'ultima riga non deve restare sotto la barra del pulsante
+    if (r.top <= window.innerHeight - bar - 8 || document.documentElement.scrollHeight - window.scrollY - window.innerHeight <= 12) { atEnd = true; paint(); window.removeEventListener('scroll', check); window.removeEventListener('resize', check); }
+  }
+  paint();
+  window.addEventListener('scroll', check, { passive: true }); window.addEventListener('resize', check);
+  setTimeout(check, 50); setTimeout(check, 400); setTimeout(check, 1200);
   return page('onb-rulespage wide',
     h('div', { class: 'steps', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': '3', 'aria-valuenow': '3' }, h('i', { class: 'on' }), h('i', { class: 'on' }), h('i', { class: 'on' })),
     h('div', { class: 'onb-kicker' }, t('onb.step', { n: 3, total: 3 }) + ' · ' + (house.name || '')),
     h('h1', { class: 'onb-h' }, t('rules.title')), h('p', { class: 'muted' }, t('onb.rules.lead')),
-    h('div', { class: 'onb-rulesbox' }, box, hint), lab, btn);
+    box, end, h('div', { class: 'onb-sticky' }, btn));
 }
 
 // ---------------------------------------------------------------- LINK NON VALIDO / OFFLINE

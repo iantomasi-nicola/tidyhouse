@@ -14,7 +14,7 @@ export const DEFAULT_NOTIF = {
   friAbsence: { on: true, dow: 5, time: '17:00' },
   satDuty: { on: true, dow: 6, time: '10:00' },
   sunMark: { on: true, dow: 0, time: '18:00' },
-  late: { on: true, times: ['09:00', '14:00', '20:00'], max: 3, days: 4 },
+  late: { on: true, times: ['10:00', '20:00'], max: 2, days: 3 },
   monNew: { on: false, dow: 1, time: '08:30' },
   planDay: { on: true, time: '09:00' },
   adminDigest: { on: false, dow: 1, time: '09:30' },
@@ -60,6 +60,13 @@ export const uid = () => randomCode(10);
 // ============ Settimane: helpers ============
 export function weekIndex(house, sunday) { return Math.round((dayNum(sunday) - dayNum(house.startSunday)) / 7); }
 export function weekDays(sunday) { return Array.from({ length: 7 }, (_, i) => addDays(sunday, i - 6)); }
+/** La persona è assente oggi? (viaggio in corso, o segnata assente nella settimana corrente). `house` = vista del motore (con weeks e trips). */
+export function awayToday(house, personId, today) {
+  if (!personId) return false;
+  if ((house.trips || []).some((t) => t.personId === personId && t.from <= today && (!t.to || today < t.to))) return true;
+  const w = (house.weeks || {})[weekOfDate(house, today)];
+  return !!(w && !w.everyone && (w.away || []).includes(personId));
+}
 export function weekOfDate(house, date) { return dayStr(dayNum(house.startSunday) + 7 * Math.floor((dayNum(date) - dayNum(house.startSunday) + 6) / 7)); }
 
 /** Unisce le settimane salvate con le assenze inserite come viaggi per vedere chi risulta assente. */

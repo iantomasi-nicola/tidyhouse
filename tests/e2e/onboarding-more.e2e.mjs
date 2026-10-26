@@ -49,10 +49,9 @@ async function noRawKeys(page, label) {
 }
 async function passRules(page) {
   if (!(await page.locator('.onb-rules').count())) return;
-  await page.evaluate(() => { const b = document.querySelector('.onb-rules'); b.scrollTo({ top: b.scrollHeight, behavior: 'instant' }); });
-  await page.waitForTimeout(200);
-  await page.locator('#onb-accept').check();
-  await page.getByRole('button', { name: /Ho letto|I've read/ }).click();
+  await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+  await page.waitForSelector('[data-testid=rules-accept][data-ready="1"]');
+  await page.click('[data-testid=rules-accept]');
   await page.waitForSelector('.nav', { timeout: 6000 });
 }
 
@@ -320,20 +319,15 @@ await scenario('rules gate: scroll obbligatorio', async () => {
   await goto(page);
   await page.waitForSelector('.onb-rules');
   assert.match(await body(page), /passo 3 di 3/i);
-  const btn = page.getByRole('button', { name: /Ho letto$/ });
-  assert.ok(await btn.isDisabled());
-  assert.ok(await page.locator('#onb-accept').isDisabled());
-  assert.ok(await page.locator('.onb-scrollhint').isVisible());
+  const btn = page.locator('[data-testid=rules-accept]');
+  // il pulsante è sempre visibile (sticky) anche senza scorrere, ma finché non si è in fondo il tocco scorre
+  assert.equal(await btn.getAttribute('data-ready'), '0');
+  const box0 = await btn.boundingBox(); assert.ok(box0 && box0.y + box0.height <= 844 && box0.height >= 44, 'pulsante visibile e toccabile senza scorrere');
   await shot(page, 'rules-gate');
-  // la checkbox da sola non basta
-  await page.evaluate(() => { const b = document.querySelector('.onb-rules'); b.scrollTo({ top: b.scrollHeight, behavior: 'instant' }); });
-  await page.waitForTimeout(200);
-  assert.ok(await page.locator('#onb-accept').isEnabled());
-  assert.ok(await btn.isDisabled());
-  assert.ok(await page.locator('.onb-scrollhint').isHidden());
-  await page.focus('.onb-rules'); // accessibilita': la regione e' focalizzabile
-  await page.locator('#onb-accept').check();
-  assert.ok(await btn.isEnabled());
+  await btn.click();   // da non-in-fondo: il tocco fa scorrere la pagina (con l'orologio finto l'animazione è lenta: poi si forza la fine)
+  await page.waitForFunction(() => window.scrollY > 100, null, { timeout: 5000 });
+  await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
+  await page.waitForSelector('[data-testid=rules-accept][data-ready="1"]', { timeout: 5000 });
   await shot(page, 'rules-gate-end');
   await btn.click();
   await page.waitForSelector('.nav');
@@ -348,14 +342,13 @@ await scenario('rules gate: scroll obbligatorio', async () => {
   const p2 = await open({ viewport: D, seed: seed({ me: 'anna', houseExtra: { rules: { version: 1, text: { it: '## Una\n\nSolo una riga.' } } } }) });
   await goto(p2);
   await p2.waitForSelector('.onb-rules');
-  await p2.waitForTimeout(300);
-  assert.ok(await p2.locator('#onb-accept').isEnabled(), 'contenuto corto: subito abilitato');
+  await p2.waitForSelector('[data-testid=rules-accept][data-ready="1"]', { timeout: 4000 });   // contenuto corto: subito pronto
   assert.match(await body(p2), /Solo una riga/);
   await shot(p2, 'rules-gate-short-desktop');
   await done(p2);
   const p3 = await open({ dark: true, lang: 'en-US', seed: seed({ me: 'anna', houseExtra: { lang: 'en' } }) });
   await goto(p3); await p3.waitForSelector('.onb-rules'); await noRawKeys(p3, 'rules gate en');
-  assert.match(await body(p3), /I have read and accept the rules/);
+  assert.match(await body(p3), /Scroll to the bottom to continue/);
   await shot(p3, 'rules-gate-en-dark'); await done(p3);
 });
 

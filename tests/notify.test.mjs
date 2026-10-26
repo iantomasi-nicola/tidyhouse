@@ -82,8 +82,8 @@ test('server notifiche: scambi, solleciti, scorte', async () => {
   const got = []; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title, p.body]), now: new Date('2026-10-30T10:00:00Z'), vapidPublic: 'PUB' });
   const byEp = (e) => got.filter((g) => g[0] === e).map((g) => g[1] + '|' + g[2]);
   assert.ok(byEp('eA').some((s) => /Richiesta di scambio/.test(s)), 'A riceve la richiesta di B');
-  assert.ok(byEp('eC').some((s) => /Sollecito.*segna!/.test(s)));
-  assert.ok(byEp('eB').some((s) => /Sapone/.test(s)) && byEp('eC').some((s) => /Sapone/.test(s)) && byEp('eA').some((s) => /Sapone/.test(s)), 'scorte: a tutti, anche a chi le ha aggiunte');
+  assert.ok(byEp('eC').some((s) => /segna!/.test(s)));
+  assert.ok(byEp('eB').some((s) => /Sapone/.test(s)) && byEp('eC').some((s) => /Sapone/.test(s)) && !byEp('eA').some((s) => /Sapone/.test(s)), 'scorte: a chi non le ha aggiunte');
   assert.equal(db.houses.H1.requests.r1.notified, true); assert.equal(db.houses.H1.requests.n1.notified, true);
   // non rimanda
   got.length = 0; await runNotify({ db, send: async (s) => got.push(s), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
@@ -114,11 +114,14 @@ test('server notifiche: sostituzioni, offerte, avvisi, spesa aggiunta e spesa co
   const got = []; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title, p.body]), now: new Date('2026-10-30T10:00:00Z'), vapidPublic: 'PUB' });
   const to = (e) => got.filter((g) => g[0] === e).map((g) => g[1] + '|' + g[2]).join(' ;; ');
   assert.match(to('eB'), /Looking for a substitute/); assert.match(to('eC'), /Cerca sostituto/); assert.doesNotMatch(to('eA'), /Cerca sostituto/, 'chi chiede non riceve');
-  assert.match(to('eC'), /Si offrono di aiutarti.*Pavimenti|Si offrono di aiutarti.*Bagno/);    // offerta B -> C (assegnato)
-  assert.match(to('eA'), /Qualcuno ha fatto il tuo turno/); assert.match(to('eA'), /Sostituzione concordata/, 'A sa che B accetta');
-  assert.match(to('eB'), /Sapone/); assert.match(to('eC'), /Sapone/); assert.match(to('eA'), /Sapone/, 'anche chi aggiunge riceve');
-  assert.match(to('eA'), /Pasta/); assert.match(to('eC'), /Pasta/); assert.match(to('eB'), /Pasta/, 'anche chi ha comprato riceve');
-  assert.equal(db.houses.H1.needs.x2.boughtNotified, true); assert.equal(db.houses.H1.requests.n1.notified, true);
+  assert.match(to('eC'), /Si offrono di aiutarti/);    // offerta B -> C (assegnato)
+  assert.match(to('eA'), /ha pulito Cucina al posto tuo/); assert.match(to('eA'), /farà Pavimenti/, 'A sa che B accetta');
+  // spesa: voce nuova a chi non l'ha aggiunta; «comprato» solo a chi aveva aggiunto la voce
+  assert.match(to('eB'), /Sapone/); assert.match(to('eC'), /Sapone/); assert.doesNotMatch(to('eA'), /Sapone/, 'chi aggiunge non riceve');
+  assert.match(to('eA'), /B ha comprato: Pasta/); assert.doesNotMatch(to('eB'), /Pasta/, 'chi ha comprato non riceve'); assert.doesNotMatch(to('eC'), /Pasta/, 'gli altri non servono');
+  // più notifiche nella stessa esecuzione = UN solo avviso per dispositivo
+  assert.equal(got.filter((g) => g[0] === 'eC').length, 1); assert.match(got.find((g) => g[0] === 'eC')[1], /3 novità in casa/);
+  assert.ok(db.houses.H1.sent['bought:x2']); assert.ok(db.houses.H1.sent['need:x1:B'] && db.houses.H1.sent['need:x1:C'] && !db.houses.H1.sent['need:x1:A']); assert.equal(db.houses.H1.requests.n1.notified, true);
   const n = got.length; await runNotify({ db, send: async (s, p) => got.push(p), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
   assert.equal(got.length, n, 'nessun duplicato');
 });
@@ -140,11 +143,27 @@ test('server notifiche: prova a tutti (una richiesta per persona), chiusa dopo i
     members: { ...members(), dA2: { personId: 'A', push: { endpoint: 'eA2' } }, dX: { personId: 'B' } },
     requests: { t1: { kind: 'test', to: 'A', status: 'info', at: at(1) }, t2: { kind: 'test', to: 'B', status: 'info', at: at(1) }, t3: { kind: 'test', to: 'C', status: 'info', at: at(30) }, t4: { kind: 'test', to: 'ZZ', status: 'info', at: at(1) } },
   });
-  const got = []; const send = async (s, p) => got.push([s.endpoint, p.title]);
+  const got = []; const send = async (s, p) => got.push([s.endpoint, p.title + ' ' + p.body]);
   const r = await runNotify({ db, send, now, vapidPublic: 'PUB' });
-  const eps = got.filter((g) => /prova|test/i.test(g[1])).map((g) => g[0]).sort();
+  const eps = got.filter((g) => /Funziona|Works|prova|test/i.test(g[1])).map((g) => g[0]).sort();
   assert.deepEqual(eps, ['eA', 'eA2', 'eB'], 'A su entrambi i dispositivi, B su quello con push; C (prova vecchia) e ZZ (nessun dispositivo) no');
   for (const id of ['t1', 't2', 't3', 't4']) assert.equal(db.houses.H1.requests[id].notified, true, id + ' chiusa');
   const again = []; await runNotify({ db, send: async (s, p) => again.push(p.title), now: new Date(now.getTime() + 3600000), vapidPublic: 'PUB' });
   assert.ok(!again.some((x) => /prova|test/i.test(x)), 'nessuna ripetizione');
+});
+
+test('server notifiche: spesa raggruppata in un solo avviso e niente a chi è assente', async () => {
+  const now = new Date('2026-10-28T10:00:00Z');
+  const db = fakeDb({
+    members: members(),
+    trips: {},
+    needs: { a: { text: 'Latte', by: 'A', at: '2026-10-28T08:00:00Z', done: false }, b: { text: 'Pane', by: 'A', at: '2026-10-28T08:05:00Z', done: false }, c: { text: 'Uova', by: 'A', at: '2026-10-28T08:10:00Z', done: false } },
+  });
+  db.houses.H1.trips = { t1: { personId: 'C', from: '2026-10-26', to: '2026-10-31' } };   // C è via
+  const got = []; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title, p.body]), now, vapidPublic: 'PUB' });
+  const spesa = got.filter((g) => /Latte/.test(g[2]));
+  assert.deepEqual(spesa.map((g) => g[0]), ['eB'], 'solo B: A ha aggiunto, C è assente');
+  assert.match(spesa[0][2], /3 voci|3 items/); assert.match(spesa[0][2], /Latte.*Pane.*Uova/);
+  const again = []; await runNotify({ db, send: async (s, p) => again.push(p), now: new Date(now.getTime() + 3600000), vapidPublic: 'PUB' });
+  assert.ok(!again.some((p) => /Latte/.test(p.body)), 'nessuna ripetizione');
 });
