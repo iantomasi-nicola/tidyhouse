@@ -1,0 +1,21 @@
+{
+  "name": "Tidy House",
+  "short_name": "Tidy House",
+  "description": "Turni di pulizia di casa, equi e senza discussioni.",
+  "start_url": "./#/",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f5f7",
+  "theme_color": "#f5f5f7",
+  "lang": "it",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Segna fatto", "url": "./#/", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Assenze", "url": "./#/trips", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

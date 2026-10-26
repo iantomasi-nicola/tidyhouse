@@ -1,0 +1,17 @@
+{
+  "name": "tidyhouse",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Turni di pulizia di casa: PWA statica per GitHub Pages con notifiche push.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "notify": "node scripts/notify.mjs",
+    "backup": "node scripts/backup.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "web-push": "^3.6.7"
+  },
+  "engines": { "node": ">=20" }
+}

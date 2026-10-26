@@ -1,0 +1,77 @@
+{
+ "startSunday": "2026-10-04",
+ "roommates": [
+  {
+   "id": "Antonio",
+   "name": "Antonio",
+   "slot": 1,
+   "from": null,
+   "to": null
+  },
+  {
+   "id": "Duygu",
+   "name": "Duygu",
+   "slot": 2,
+   "from": null,
+   "to": null
+  },
+  {
+   "id": "Nicola",
+   "name": "Nicola",
+   "slot": 3,
+   "from": null,
+   "to": null
+  }
+ ],
+ "settings": {
+  "grace": 1,
+  "minRest": 3,
+  "startPriority": 4,
+  "window": 52
+ },
+ "weeks": {
+  "2026-10-04": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-10-11": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-10-18": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-10-25": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-11-21": {
+   "away": [
+    "Fabio"
+   ]
+  }
+ },
+ "today": "2026-10-26"
+}

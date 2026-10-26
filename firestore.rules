@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Ogni casa è un documento con ID lungo e non indovinabile (il "codice casa").
+    // Non si può elencare l'insieme delle case: serve conoscere il codice.
+    match /houses/{houseId} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if request.resource.data.keys().size() < 80
+                            && houseId.matches('[0-9A-Z]{12}');
+      allow delete: if true;
+
+      match /{sub}/{docId} {
+        allow get, list, write: if true;
+      }
+    }
+  }
+}

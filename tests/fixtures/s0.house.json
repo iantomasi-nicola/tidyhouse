@@ -1,0 +1,380 @@
+{
+ "startSunday": "2026-10-04",
+ "roommates": [
+  {
+   "id": "Antonio",
+   "name": "Antonio",
+   "slot": 1,
+   "from": null,
+   "to": null
+  },
+  {
+   "id": "Duygu",
+   "name": "Duygu",
+   "slot": 2,
+   "from": null,
+   "to": null
+  },
+  {
+   "id": "Nicola",
+   "name": "Nicola",
+   "slot": 3,
+   "from": null,
+   "to": null
+  }
+ ],
+ "settings": {
+  "grace": 1,
+  "minRest": 3,
+  "startPriority": 0,
+  "window": 10
+ },
+ "weeks": {
+  "2026-10-04": {
+   "result": {
+    "floor": "skipped:Duygu",
+    "bathroom": "done",
+    "kitchen": "by:Nicola"
+   }
+  },
+  "2026-10-11": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "skipped:Nicola",
+    "bathroom": "skipped:Nicola",
+    "kitchen": "by:Duygu"
+   }
+  },
+  "2026-10-18": {
+   "away": [
+    "Antonio",
+    "Duygu"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-10-25": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "by:Antonio"
+   }
+  },
+  "2026-11-01": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "skipped"
+   }
+  },
+  "2026-11-08": {
+   "result": {
+    "floor": "by:Antonio",
+    "bathroom": "done",
+    "kitchen": "skipped:Nicola"
+   }
+  },
+  "2026-11-15": {
+   "away": [
+    "Duygu"
+   ],
+   "result": {
+    "floor": "by:Antonio",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-11-22": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "skipped",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-11-29": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "skipped",
+    "kitchen": "done"
+   }
+  },
+  "2026-12-06": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-12-13": {
+   "away": [
+    "Antonio"
+   ],
+   "result": {
+    "floor": "skipped",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-12-20": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2026-12-27": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-01-03": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-01-10": {
+   "away": [
+    "Duygu"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "skipped",
+    "kitchen": "done"
+   }
+  },
+  "2027-01-17": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "skipped",
+    "kitchen": "done"
+   }
+  },
+  "2027-01-24": {
+   "away": [
+    "Antonio",
+    "Nicola"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "skipped:Nicola",
+    "kitchen": "done"
+   }
+  },
+  "2027-01-31": {
+   "everyone": true,
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-02-07": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-02-14": {
+   "result": {
+    "floor": "skipped",
+    "bathroom": "by:Antonio",
+    "kitchen": "done"
+   }
+  },
+  "2027-02-21": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-02-28": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "by:Nicola",
+    "bathroom": "by:Nicola",
+    "kitchen": "done"
+   }
+  },
+  "2027-03-07": {
+   "everyone": true,
+   "result": {
+    "floor": "",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-03-14": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "skipped:Nicola"
+   }
+  },
+  "2027-03-21": {
+   "result": {
+    "floor": "skipped",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-03-28": {
+   "result": {
+    "floor": "",
+    "bathroom": "done",
+    "kitchen": "by:Antonio"
+   }
+  },
+  "2027-04-04": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-04-11": {
+   "result": {
+    "floor": "",
+    "bathroom": "by:Duygu",
+    "kitchen": "done"
+   }
+  },
+  "2027-04-18": {
+   "away": [
+    "Duygu"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "skipped:Antonio"
+   }
+  },
+  "2027-04-25": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-05-02": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-05-09": {
+   "result": {
+    "floor": "by:Nicola",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-05-16": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-05-23": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "skipped:Nicola"
+   }
+  },
+  "2027-05-30": {
+   "away": [
+    "Duygu"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "",
+    "kitchen": "by:Nicola"
+   }
+  },
+  "2027-06-06": {
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-06-13": {
+   "away": [
+    "Nicola"
+   ],
+   "result": {
+    "floor": "done",
+    "bathroom": "done",
+    "kitchen": "done"
+   }
+  },
+  "2027-06-20": {
+   "result": {
+    "floor": "done",
+    "bathroom": "",
+    "kitchen": "by:Duygu"
+   }
+  },
+  "2027-06-27": {
+   "away": [
+    "Nicola"
+   ]
+  },
+  "2027-07-04": {
+   "away": [
+    "Nicola"
+   ]
+  },
+  "2027-08-08": {
+   "everyone": true
+  },
+  "2027-11-21": {
+   "away": [
+    "Fabio"
+   ]
+  }
+ },
+ "today": "2027-06-24"
+}

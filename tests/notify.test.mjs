@@ -1,0 +1,107 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { runNotify } from '../scripts/notify-core.mjs';
+import { encryptBackup, decryptBackup } from '../js/backupcrypto.js';
+import { addDays } from '../js/engine.js';
+
+const START = '2026-10-04';
+const wk = (i) => addDays(START, 7 * i);
+const rm = ['A', 'B', 'C'].map((n, i) => ({ id: n, name: n, slot: i + 1, from: null, to: null }));
+
+function fakeDb(extra = {}) {
+  const houses = { H1: { house: { id: 'H1', name: 'C', startSunday: START, roommates: rm, tz: 'Europe/Rome', lang: 'it', vapidPublic: 'PUB', ...(extra.house || {}) },
+    weeks: extra.weeks || {}, trips: {}, members: extra.members || {}, sent: extra.sent || {}, requests: extra.requests || {}, needs: extra.needs || {}, views: extra.views || {} } };
+  const calls = [];
+  return {
+    houses, calls,
+    async listHouses() { return Object.entries(houses).map(([id, h]) => ({ id, house: h.house })); },
+    async coll(hid, c) { return houses[hid][c] || {}; },
+    async setDoc(hid, c, id, data) { calls.push(['set', c, id, data]); houses[hid][c] = houses[hid][c] || {}; houses[hid][c][id] = { ...(houses[hid][c][id] || {}), ...data }; if (data.push === null) delete houses[hid][c][id].push; },
+    async delDoc(hid, c, id) { calls.push(['del', c, id]); delete houses[hid][c][id]; },
+    async setHouse(hid, patch) { Object.assign(houses[hid].house, patch); },
+  };
+}
+const members = () => ({ dA: { personId: 'A', push: { endpoint: 'eA' }, lang: 'it' }, dB: { personId: 'B', push: { endpoint: 'eB' }, lang: 'en' }, dC: { personId: 'C', push: { endpoint: 'eC' } } });
+
+test('server notifiche: sabato invia a chi ha un turno, nella lingua del dispositivo, senza duplicati', async () => {
+  const db = fakeDb({ members: members() });
+  const sent = [];
+  const send = async (sub, payload) => { sent.push({ ep: sub.endpoint, ...payload }); };
+  const now = new Date('2026-10-31T09:15:00Z');
+  let r = await runNotify({ db, send, now, vapidPublic: 'PUB' });
+  assert.equal(r.sent, 3); assert.equal(sent.length, 3);
+  assert.match(sent.find((x) => x.ep === 'eB').title, /due tomorrow/);       // inglese
+  assert.match(sent.find((x) => x.ep === 'eA').title, /Domani scade/);       // italiano
+  assert.ok(db.houses.H1.house.serverRun);
+  // seconda esecuzione nella stessa ora: niente duplicati
+  sent.length = 0; r = await runNotify({ db, send, now: new Date('2026-10-31T09:45:00Z'), vapidPublic: 'PUB' });
+  assert.equal(r.sent, 0); assert.equal(sent.length, 0);
+});
+
+test('server notifiche: sottoscrizioni scadute (410) vengono rimosse e l\'invio non viene segnato come fatto', async () => {
+  const db = fakeDb({ members: { dA: { personId: 'A', push: { endpoint: 'gone' } } } });
+  const send = async () => { const e = new Error('gone'); e.statusCode = 410; throw e; };
+  const r = await runNotify({ db, send, now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'PUB' });
+  assert.equal(r.removed >= 1, true);
+  assert.equal(db.houses.H1.members.dA.push, undefined);
+  assert.equal(Object.keys(db.houses.H1.sent).length, 0);
+});
+
+test('server notifiche: errore temporaneo non marca come inviato (riprova alla prossima ora)', async () => {
+  const db = fakeDb({ members: members() });
+  const send = async () => { const e = new Error('boom'); e.statusCode = 500; throw e; };
+  const r = await runNotify({ db, send, now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'PUB' });
+  assert.equal(r.sent, 0); assert.equal(Object.keys(db.houses.H1.sent).length, 0);
+  const ok = []; const r2 = await runNotify({ db, send: async (s) => ok.push(s), now: new Date('2026-10-31T10:15:00Z'), vapidPublic: 'PUB' });
+  assert.equal(ok.length, 3); assert.equal(r2.sent, 3);
+});
+
+test('server notifiche: preferenze del dispositivo e persone senza push', async () => {
+  const m = members(); m.dA.prefs = { satDuty: false }; delete m.dC.push;
+  const db = fakeDb({ members: m });
+  const got = []; await runNotify({ db, send: async (s) => got.push(s.endpoint), now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'PUB' });
+  assert.deepEqual(got, ['eB']);
+});
+
+test('server notifiche: chiave VAPID diversa => casa saltata; casa rotta non blocca le altre', async () => {
+  const db = fakeDb({ members: members() });
+  const r = await runNotify({ db, send: async () => {}, now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'ALTRA' });
+  assert.equal(r.sent, 0); assert.match(r.skipped[0], /vapid/);
+  db.houses.H2 = { house: { id: 'H2' } };
+  const r2 = await runNotify({ db, send: async () => {}, now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'PUB' });
+  assert.ok(r2.skipped.some((s) => s.startsWith('H2')));
+  assert.equal(r2.sent, 3);
+});
+
+test('server notifiche: scambi, solleciti, scorte', async () => {
+  const db = fakeDb({
+    members: members(), house: { notif: { needs: { on: true } } },
+    requests: { r1: { to: 'A', from: 'B', status: 'pending', week: wk(4) }, n1: { kind: 'nudge', to: 'C', from: 'admin', text: 'segna!', status: 'pending' }, r2: { to: 'A', from: 'B', status: 'accepted', notified: true } },
+    needs: { x1: { text: 'Sapone', by: 'A', at: '2026-10-31T08:00:00Z', done: false } },
+  });
+  const got = []; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title, p.body]), now: new Date('2026-10-30T10:00:00Z'), vapidPublic: 'PUB' });
+  const byEp = (e) => got.filter((g) => g[0] === e).map((g) => g[1] + '|' + g[2]);
+  assert.ok(byEp('eA').some((s) => /Richiesta di scambio/.test(s)), 'A riceve la richiesta di B');
+  assert.ok(byEp('eC').some((s) => /Sollecito.*segna!/.test(s)));
+  assert.ok(byEp('eB').some((s) => /Sapone/.test(s)) && byEp('eC').some((s) => /Sapone/.test(s)) && !byEp('eA').some((s) => /Sapone/.test(s)), 'scorte: a tutti tranne chi le ha aggiunte');
+  assert.equal(db.houses.H1.requests.r1.notified, true); assert.equal(db.houses.H1.requests.n1.notified, true);
+  // non rimanda
+  got.length = 0; await runNotify({ db, send: async (s) => got.push(s), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
+  assert.equal(got.length, 0);
+});
+
+test('server notifiche: pulizia delle voci vecchie', async () => {
+  const db = fakeDb({ members: {}, sent: { old: { at: '2026-01-01T00:00:00Z' }, fresh: { at: '2026-10-30T00:00:00Z' } }, views: { v1: { at: '2026-01-01T00:00:00Z' }, v2: { at: '2026-10-29T00:00:00Z' } } });
+  await runNotify({ db, send: async () => {}, now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'PUB' });
+  assert.equal(db.houses.H1.sent.old, undefined); assert.ok(db.houses.H1.sent.fresh);
+  assert.equal(db.houses.H1.views.v1, undefined); assert.ok(db.houses.H1.views.v2);
+});
+
+test('backup cifrato: round-trip, passphrase errata, dati illeggibili', async () => {
+  const env = await encryptBackup({ a: 1, nome: 'Casa è bella' }, 'frase segreta');
+  assert.ok(!JSON.stringify(env).includes('bella'));
+  assert.deepEqual(await decryptBackup(env, 'frase segreta'), { a: 1, nome: 'Casa è bella' });
+  await assert.rejects(decryptBackup(env, 'sbagliata'), /wrong-passphrase/);
+  await assert.rejects(decryptBackup({ foo: 1 }, 'x'), /invalid/);
+  assert.notEqual((await encryptBackup({ a: 1 }, 'x')).ct, (await encryptBackup({ a: 1 }, 'x')).ct, 'IV/sale casuali');
+});
