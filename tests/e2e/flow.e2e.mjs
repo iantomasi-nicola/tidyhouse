@@ -281,6 +281,7 @@ const run = async () => {
     assert.ok((await logs(page)).some((l) => l.type === 'agreed'));
     // ora "ho pulito io al posto di X" è diretto (concordato): nessuna segnalazione di volontariato
     assert.match(await text(page, '[data-testid=alert-agreed]'), /Hai concordato: Pavimenti/);
+    await page.waitForTimeout(900);                       // la Home si ridisegna a cascata dopo la risposta: si aspetta che si fermi
     await page.click('[data-testid=alert-agreed] [data-act=done]');
     await gate(page, 'all');
     await page.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[0].kind === 'by');
