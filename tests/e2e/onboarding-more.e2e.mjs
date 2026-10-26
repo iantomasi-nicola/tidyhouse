@@ -1,16 +1,20 @@
 // E2E (Playwright) di onboarding + "Altro". Esegui con:  node tests/e2e/onboarding-more.e2e.mjs
 // Screenshot in SHOT_DIR (variabile d'ambiente, di default la scratchpad). Nessun errore in console ammesso.
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import { start, seed } from './helpers.mjs';
 import { hashPin } from '../../js/actions.js';
 
-const SHOT = process.env.SHOT_DIR || '/tmp/claude-0/-home-user/31bb54fa-07b7-55b0-a8eb-c0a272017a85/scratchpad/onboarding/';
+const SHOT = (process.env.SHOT_DIR || path.join(os.tmpdir(), 'tidyhouse-onboarding')).replace(/\/?$/, '/');
+// foglio Excel reale (non nel repo): se manca lo scenario di import viene saltato, come in settings.e2e.mjs
 const XLSX = process.env.XLSX_FILE || '/root/.claude/uploads/31bb54fa-07b7-55b0-a8eb-c0a272017a85/1f8df62c-House_Cleaning_Plan_Magliocco.xlsx';
 const NOW = '2026-10-28T10:00:00';
 const M = { width: 390, height: 844 };
 const D = { width: 1440, height: 900 };
 const HID = 'LOCALTEST001';
+const CODE_A = 'ABCD2345EFGH';   // «Casa Rossi» nel cloud finto
 fs.mkdirSync(SHOT, { recursive: true });
 
 const salt = 'SALT1234ABCD';
@@ -20,10 +24,46 @@ const NORULES = { requireRules: false };
 const env = await start();
 let failed = 0; const only = process.argv[2];
 
+// Cloud finto in memoria: sostituisce vendor/firebase.js con un mini Firestore (nessuna rete, nessuna scrittura reale).
+// `fake` = { CODICE: documentoCasa } -> abilita il cloud con quelle case; lo stato e' leggibile in window.__fakeDb.
+function fakeFirebase(docs) {
+  return `
+const DB = ${JSON.stringify(docs)};
+window.__fakeDb = DB;
+const clone = (x) => JSON.parse(JSON.stringify(x));
+const DEL = { __del: true };
+const merge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b)) { if (v && v.__del) delete o[k]; else if (v && typeof v === 'object' && !Array.isArray(v) && o[k] && typeof o[k] === 'object' && !Array.isArray(o[k])) o[k] = merge(o[k], v); else o[k] = v; } return o; };
+export const initializeApp = () => ({});
+export const initializeFirestore = () => ({});
+export const persistentLocalCache = () => ({});
+export const persistentMultipleTabManager = () => ({});
+export const connectFirestoreEmulator = () => {};
+export const deleteField = () => DEL;
+export const doc = (_db, ...p) => ({ path: p.join('/') });
+export const collection = (_db, ...p) => ({ path: p.join('/'), coll: true });
+export const query = (c) => c; export const orderBy = () => ({}); export const limit = () => ({});
+const snap = (path) => ({ id: path.split('/').pop(), exists: () => path in DB, data: () => clone(DB[path]), metadata: { hasPendingWrites: false, fromCache: false } });
+const list = (c) => { const pre = c.path + '/'; const ds = Object.keys(DB).filter((k) => k.startsWith(pre) && !k.slice(pre.length).includes('/')).map(snap); return { forEach: (f) => ds.forEach(f), docs: ds, size: ds.length }; };
+export const getDoc = async (r) => snap(r.path);
+export const getDocs = async (c) => list(c);
+export const deleteDoc = async (r) => { delete DB[r.path]; };
+export const onSnapshot = (ref, a, b) => { const cb = typeof a === 'function' ? a : b; Promise.resolve().then(() => cb(ref.coll ? list(ref) : snap(ref.path))); return () => {}; };
+export const writeBatch = () => { const ops = []; return { set: (r, d, o) => ops.push(['s', r.path, d, o]), delete: (r) => ops.push(['d', r.path]), commit: async () => { for (const [t, p, d, o] of ops) { if (t === 'd') delete DB[p]; else DB[p] = o && o.merge ? merge(DB[p] || {}, clone(d)) : clone(d); } } }; };
+`;
+}
+const rossi = (extra = {}) => {
+  const base = seed({ houseExtra: { ...NORULES, ...extra } })['cp:h:' + HID].house;
+  return { ...base, id: CODE_A, name: 'Casa Rossi' };
+};
+
 // Di default il cloud e' spento (config.js vuoto): niente rete. Con { cloud: true } resta la config reale (solo per vedere la UI, mai per scrivere).
-async function open({ cloud = false, ...opts } = {}) {
+async function open({ cloud = false, fake = null, ...opts } = {}) {
   const page = await env.page({ now: NOW, viewport: M, ...opts });
-  if (!cloud) await page.route('**/config.js', (r) => r.fulfill({ contentType: 'text/javascript', body: 'window.CASA_CONFIG = { firebase: { apiKey: "", projectId: "" }, publicUrl: "" };' }));
+  if (fake) {
+    const docs = Object.fromEntries(Object.entries(fake).map(([code, house]) => ['houses/' + code, house]));
+    await page.route('**/config.js', (r) => r.fulfill({ contentType: 'text/javascript', body: 'window.CASA_CONFIG = { firebase: { apiKey: "fake", projectId: "fake" }, publicUrl: "" };' }));
+    await page.route('**/vendor/firebase.js', (r) => r.fulfill({ contentType: 'text/javascript', body: fakeFirebase(docs) }));
+  } else if (!cloud) await page.route('**/config.js', (r) => r.fulfill({ contentType: 'text/javascript', body: 'window.CASA_CONFIG = { firebase: { apiKey: "", projectId: "" }, publicUrl: "" };' }));
   return page;
 }
 async function done(page) {
@@ -126,84 +166,206 @@ await scenario('join: messaggi di errore senza cloud', async () => {
   await done(page);
 });
 
-async function fillWizardBasics(page, { name = 'Casa Rossi' } = {}) {
+// ---------------------------------------------------------------- join in un tocco (cloud finto in memoria: mai la rete vera)
+const cloudSeed = (me, extra = {}) => ({ 'cp:houses': [{ id: CODE_A, name: 'Casa Rossi', mode: 'cloud', me, lastUsed: 9 }], 'cp:last': CODE_A, ...extra });
+
+await scenario('join: un tocco sul proprio nome = dentro (nome casa in alto, nessun campo)', async () => {
+  const page = await open({ fake: { [CODE_A]: rossi() } });
+  let taps = 0;
+  await goto(page, '/join/' + CODE_A);
+  await page.waitForSelector('.who');
+  assert.equal((await page.locator('.onb-housename').innerText()).trim(), 'Casa Rossi');
+  assert.equal(await page.locator('.who').count(), 3);
+  assert.equal(await page.locator('input:visible').count(), 0, 'nessun campo da compilare');
+  const box = await page.locator('.who').first().boundingBox();
+  assert.ok(box.height >= 64, 'pulsanti grandi: ' + box.height);
+  await noOverflow(page, 'who join'); await noRawKeys(page, 'who join');
+  await shot(page, 'join-who-mobile');
+  await page.locator('.who', { hasText: 'Bruno' }).click(); taps++;
+  await page.waitForSelector('.nav', { timeout: 6000 });
+  const r = await reg(page);
+  assert.equal(r.length, 1); assert.equal(r[0].id, CODE_A); assert.equal(r[0].me, 'bruno');
+  assert.equal(await page.evaluate(() => location.hash), '#/');
+  assert.equal(taps, 1, 'tocchi dal link alla Home (regole escluse)');
+  const dev = await page.evaluate(() => Object.values(window.__fakeDb).filter((d) => d && d.personId === 'bruno').length);
+  assert.ok(dev >= 1, 'il dispositivo e\' registrato sulla casa');
+  await done(page);
+  // scuro + inglese
+  const p2 = await open({ fake: { [CODE_A]: rossi({ lang: 'en' }) }, dark: true, lang: 'en-US' });
+  await goto(p2, '/join/' + CODE_A); await p2.waitForSelector('.who');
+  assert.match(await body(p2), /Tap your name to get in/); await noRawKeys(p2, 'who join en');
+  await shot(p2, 'join-who-dark-en'); await done(p2);
+});
+
+await scenario('join: con regole obbligatorie dopo il tocco restano le regole', async () => {
+  const page = await open({ fake: { [CODE_A]: rossi({ requireRules: true }) } });
+  await goto(page, '/join/' + CODE_A);
+  await page.waitForSelector('.who');
+  await page.locator('.who', { hasText: 'Carla' }).click();
+  await page.waitForSelector('.onb-rules', { timeout: 6000 });
+  await passRules(page);
+  assert.equal((await reg(page))[0].me, 'carla');
+  await done(page);
+});
+
+await scenario('join: stessa casa gia\' salvata -> entra senza chiedere nulla', async () => {
+  const page = await open({ fake: { [CODE_A]: rossi() }, seed: cloudSeed('carla') });
+  await goto(page, '/join/' + CODE_A);
+  await page.waitForSelector('.nav', { timeout: 6000 });
+  assert.equal(await page.locator('.gate .who, .onb-ask, input.code').count(), 0);
+  assert.equal((await reg(page))[0].me, 'carla', 'identita\' conservata');
+  assert.equal(await page.evaluate(() => location.hash), '#/');
+  assert.match(await body(page), /Casa Rossi/);
+  await done(page);
+  // link aperto mentre la casa e' gia' caricata (app aperta)
+  const p2 = await open({ fake: { [CODE_A]: rossi() }, seed: cloudSeed('anna') });
+  await goto(p2, '/'); await p2.waitForSelector('.nav');
+  await p2.evaluate((c) => { location.hash = '#/join/' + c; }, CODE_A);
+  await p2.waitForFunction(() => location.hash === '#/');
+  assert.equal(await p2.locator('.gate .who, .onb-ask').count(), 0);
+  assert.ok(await p2.locator('.nav').isVisible());
+  await done(p2);
+});
+
+await scenario('join: link di una casa diversa -> una riga di domanda', async () => {
+  const s = () => ({ ...seed({ me: 'anna', houseExtra: NORULES }) });
+  const page = await open({ fake: { [CODE_A]: rossi() }, seed: s() });
+  await goto(page, '/join/' + CODE_A);
+  await page.waitForSelector('.onb-ask');
+  assert.match(await page.locator('.onb-askq').innerText(), /Hai già «Casa Test» su questo dispositivo\. Aggiungere anche questa casa\?/);
+  assert.equal(await page.locator('.nav, .gate .who').count(), 0, 'non entra da solo');
+  assert.equal((await reg(page)).length, 1, 'niente aggiunto prima della risposta');
+  await noOverflow(page, 'join ask'); await noRawKeys(page, 'join ask');
+  await shot(page, 'join-ask-mobile');
+  // «No»: resta nella casa salvata
+  await page.locator('#onb-join-no').click();
+  await page.waitForSelector('.nav', { timeout: 6000 });
+  await page.waitForFunction(() => /Casa Test/.test(document.body.innerText));
+  assert.equal((await reg(page)).length, 1);
+  assert.equal(await page.evaluate(() => location.hash), '#/');
+  await done(page);
+  // «Si»: aggiunge e chiede chi sei (2 tocchi in tutto)
+  const p2 = await open({ fake: { [CODE_A]: rossi() }, seed: s(), dark: true });
+  await goto(p2, '/join/' + CODE_A);
+  await p2.waitForSelector('.onb-ask');
+  await shot(p2, 'join-ask-dark');
+  let taps = 0;
+  await p2.locator('#onb-join-yes').click(); taps++;
+  await p2.waitForSelector('.who', { timeout: 6000 });
+  await p2.locator('.who', { hasText: 'Carla' }).click(); taps++;
+  await p2.waitForSelector('.nav', { timeout: 6000 });
+  assert.equal(taps, 2);
+  const r = await reg(p2);
+  assert.equal(r.length, 2); assert.equal(r.find((x) => x.id === CODE_A).me, 'carla');
+  await done(p2);
+  // inglese
+  const p3 = await open({ fake: { [CODE_A]: rossi() }, seed: s(), lang: 'en-US' });
+  await goto(p3, '/join/' + CODE_A); await p3.waitForSelector('.onb-ask');
+  assert.match(await body(p3), /You already have “Casa Test” on this device\. Add this house too\?/);
+  await noRawKeys(p3, 'join ask en'); await done(p3);
+});
+
+// ---------------------------------------------------------------- crea casa (3 passi)
+const openWizard = async (page) => {
   await page.getByRole('button', { name: /Crea una nuova casa|Create a new house/ }).click();
   await page.waitForSelector('#onb-name');
-  await page.fill('#onb-name', name);
-}
+  await page.waitForFunction(() => { const i = document.getElementById('onb-name'); return document.activeElement === i && i.selectionStart === 0 && i.selectionEnd === i.value.length; });
+};
+// il cursore va da solo nel campo principale del passo (la tastiera del telefono si apre subito)
+const waitFocus = (page, sel) => page.waitForFunction((q) => document.activeElement && document.activeElement.matches(q), sel);
+const NEXT = /^(Avanti|Next)/;
+// il filtro anti doppio tocco dell'app ignora un secondo click sullo stesso punto entro 350 ms: un utente vero non lo raggiunge
+const tapNext = async (page) => { await page.waitForTimeout(400); await page.getByRole('button', { name: NEXT }).click(); };
+const tapNextFocus = async (page, sel) => { await tapNext(page); await waitFocus(page, sel); };
 
-await scenario('create: wizard locale completo -> Home', async () => {
+await scenario('create: default sensati + wizard locale completo -> Home', async () => {
   const page = await open();
   await goto(page);
-  await fillWizardBasics(page);
-  // domenica di default = fine della settimana corrente (28/10/2026 e' mercoledi')
-  assert.equal(await page.inputValue('#onb-start'), '2026-11-01');
+  await openWizard(page);
+  // nome proposto e selezionato: scrivere sovrascrive
+  const sel = await page.evaluate(() => { const i = document.getElementById('onb-name'); return { v: i.value, s: i.selectionStart, e: i.selectionEnd, f: document.activeElement === i }; });
+  assert.equal(sel.v, 'La nostra casa'); assert.equal(sel.s, 0); assert.equal(sel.e, sel.v.length); assert.ok(sel.f, 'campo nome gia\' attivo');
+  assert.match(await body(page), /Passo 1 di 3/);
+  // domenica della settimana corrente gia' impostata, nascosta sotto «Altre opzioni»
+  assert.ok(await page.locator('#onb-start').isHidden());
+  await page.getByText('Altre opzioni').click();
+  assert.equal(await page.inputValue('#onb-start'), '2026-11-01');   // 28/10/2026 e' mercoledi'
   await page.fill('#onb-start', '2026-10-28');
   assert.equal(await page.inputValue('#onb-start'), '2026-11-01');
   assert.ok(await page.locator('.onb-adjusted').isVisible());
-  // cloud non disponibile -> solo locale
-  assert.ok(await page.locator('.onb-choice[data-v=cloud] input').isDisabled());
+  assert.ok(await page.locator('.onb-choice[data-v=cloud] input').isDisabled());   // cloud non configurato -> solo locale
   assert.ok(await page.locator('.onb-choice[data-v=local] input').isChecked());
-  await shot(page, 'create-1');
+  await shot(page, 'create-1-options');
+  // il foglio Excel resta disponibile, come opzione secondaria
+  assert.ok(await page.locator('label[for=onb-xlsx]').isVisible());
   // validazione nome
   await page.fill('#onb-name', '');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
+  await tapNext(page);
   assert.match(await page.locator('.onb-err').innerText(), /nome alla casa/);
-  await page.fill('#onb-name', 'Casa Rossi');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  // passo 2
+  await page.locator('#onb-name').click();
+  await page.keyboard.type('Casa Rossi');
+  await tapNextFocus(page, ".onb-prow input");
+  // passo 2: cursore gia' sul primo campo, tastiera con tasto «avanti»
   await page.waitForSelector('.onb-person');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  assert.match(await page.locator('.onb-err').innerText(), /Compila tutti i nomi/);
+  assert.equal(await page.locator('.onb-person').count(), 3);
+  assert.equal(await page.locator('.onb-person input[type=text]').first().getAttribute('enterkeyhint'), 'next');
+  assert.ok(await page.evaluate(() => document.activeElement === document.querySelector('.onb-person input[type=text]')), 'focus sul primo nome');
+  assert.match(await body(page), /Passo 2 di 3/);
+  // nessun nome: errore
+  await tapNext(page);
+  assert.match(await page.locator('.onb-err').innerText(), /almeno 1 persona/);
   const names = page.locator('.onb-person input[type=text]');
-  await names.nth(0).fill('Anna'); await names.nth(1).fill('anna'); await names.nth(2).fill('Carla');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
+  await names.nth(0).fill('Anna'); await names.nth(1).fill('anna');
+  await tapNext(page);
   assert.match(await page.locator('.onb-err').innerText(), /stesso nome/);
   await names.nth(1).fill('Bruno');
-  // 4 persone al massimo
-  await page.getByRole('button', { name: /Aggiungi persona/ }).click();
-  assert.equal(await page.locator('.onb-person').count(), 4);
+  // aggiunta rapida: Invio nell'ultima riga compilata aggiunge una riga e ci porta il cursore (max 4)
+  await names.nth(2).fill('Carla');
+  await names.nth(2).press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('.onb-person').length === 4);
   assert.ok(await page.getByRole('button', { name: /Aggiungi persona/ }).isDisabled());
+  assert.ok(await page.waitForFunction(() => document.activeElement === document.querySelectorAll('.onb-person input[type=text]')[3]));
   await page.locator('.onb-person').nth(3).getByRole('button', { name: /Rimuovi/ }).click();
   assert.equal(await page.locator('.onb-person').count(), 3);
-  // date avanzate
+  // date avanzate (facoltative)
   await page.locator('.onb-person').nth(2).locator('button[aria-expanded]').click();
   assert.ok(await page.locator('.onb-adv').nth(2).isVisible());
   assert.match(await page.locator('.onb-adv').nth(2).innerText(), /Uscita non nota: potrai segnarla più avanti/);
-  assert.match(await page.locator('.onb-adv').nth(2).innerText(), /Uscita prevista \(indicativa\)/);
   await page.locator('.onb-adv').nth(2).locator('input[type=date]').nth(2).fill('2027-02-28');
   await noOverflow(page, 'create step 2');
   await shot(page, 'create-2');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  // passo 3
+  await tapNextFocus(page, "#onb-pin");
+  // passo 3: solo il PIN, tastiera numerica
   await page.waitForSelector('#onb-pin');
-  await page.locator('.onb-admin').nth(1).click();
-  await page.getByRole('button', { name: /^Avanti/ }).click();
+  assert.match(await body(page), /Passo 3 di 3/);
+  assert.equal(await page.getAttribute('#onb-pin', 'inputmode'), 'numeric');
+  assert.ok(await page.evaluate(() => document.activeElement === document.getElementById('onb-pin')), 'focus sul PIN');
+  assert.equal(await page.locator('#onb-pin2').count(), 0, 'nessuna conferma del PIN');
+  assert.match(await page.locator('.onb-adminline').innerText(), /Admin:\s*Anna/);   // il primo (tu) e' gia' admin
+  await page.getByRole('button', { name: /^Crea casa/ }).click();
   assert.match(await page.locator('.onb-err').innerText(), /PIN troppo corto/);
-  await page.fill('#onb-pin', '1234'); await page.fill('#onb-pin2', '1235');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  assert.match(await page.locator('.onb-err').innerText(), /non coincidono/);
-  await page.fill('#onb-pin2', '1234');
+  await page.getByRole('button', { name: /^Cambia/ }).click();
+  assert.equal(await page.locator('.onb-admin').count(), 3);
+  await page.locator('.onb-admin').nth(1).click();
+  assert.match(await page.locator('.onb-adminline').innerText(), /Admin:\s*Bruno/);
+  await page.fill('#onb-pin', '1234');
   await noOverflow(page, 'create step 3');
   await shot(page, 'create-3');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  // passo 4
-  await page.waitForSelector('.onb-dl');
-  assert.match(await body(page), /Casa Rossi/);
-  await shot(page, 'create-4');
-  await page.getByRole('button', { name: /Crea casa/ }).click();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: /^Crea casa/ }).click();
   await page.waitForSelector('.onb-done');
   assert.match(await body(page), /Casa creata!/);
+  assert.match(await body(page), /Casa Rossi/);
   await page.waitForTimeout(700);
-  await shot(page, 'create-done');
+  await shot(page, 'create-done-local');
   const r = await reg(page);
   assert.equal(r.length, 1); assert.equal(r[0].mode, 'local'); assert.equal(r[0].name, 'Casa Rossi');
   const st = await store(page, r[0].id);
   assert.equal(st.house.startSunday, '2026-11-01');
   assert.deepEqual(st.house.roommates.map((x) => x.name), ['Anna', 'Bruno', 'Carla']);
   assert.deepEqual(st.house.adminIds, [st.house.roommates[1].id]);
-  // nota: buildHouse (nucleo) scarta expectedTo: verifichiamo solo che `to` resti vuoto
-  assert.ok(!st.house.roommates[2].to);
+  assert.equal(st.house.tz, await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), 'fuso orario del dispositivo');
+  assert.ok(!st.house.roommates[2].to);   // nota: buildHouse (nucleo) scarta expectedTo
   assert.equal(r[0].me, st.house.roommates[1].id);
   await page.locator('#onb-go').click();
   await page.waitForSelector('.nav, .onb-rules', { timeout: 6000 });
@@ -214,15 +376,65 @@ await scenario('create: wizard locale completo -> Home', async () => {
   await done(page);
 });
 
-await scenario('create: import del foglio Excel reale', async () => {
+await scenario('create: solo con la tastiera (default + Invio) -> Home', async () => {
   const page = await open();
   await goto(page);
-  await fillWizardBasics(page, { name: 'Casa Magliocco' });
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  const names = page.locator('.onb-person input[type=text]');
-  await names.nth(0).fill('X1'); await names.nth(1).fill('X2'); await names.nth(2).fill('X3');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  await page.waitForSelector('#onb-xlsx');
+  await openWizard(page);
+  await page.keyboard.press('Enter');                     // nome proposto «La nostra casa»
+  await page.waitForSelector('.onb-person'); await waitFocus(page, '.onb-prow input');
+  await page.keyboard.type('Io'); await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');                     // riga 2 vuota -> riga 3
+  await page.keyboard.press('Enter');                     // riga 3 vuota, ultima -> avanti
+  await waitFocus(page, '#onb-pin');
+  await page.keyboard.type('2468'); await page.keyboard.press('Enter');
+  await page.waitForSelector('.onb-done');
+  const r = await reg(page); const st = await store(page, r[0].id);
+  assert.equal(r[0].name, 'La nostra casa');
+  assert.deepEqual(st.house.roommates.map((x) => x.name), ['Io']);
+  assert.deepEqual(st.house.adminIds, [st.house.roommates[0].id]);
+  await done(page);
+});
+
+await scenario('create: cloud (finto) -> QR e link per invitare', async () => {
+  const page = await open({ fake: {} });
+  await goto(page);
+  await openWizard(page);
+  await page.getByText('Altre opzioni').click();
+  assert.ok(await page.locator('.onb-choice[data-v=cloud] input').isChecked(), 'cloud predefinito se disponibile');
+  await page.locator('#onb-name').click(); await page.keyboard.press('Control+A'); await page.keyboard.type('Casa Nuvola');
+  await tapNextFocus(page, ".onb-prow input");
+  await page.keyboard.type('Ada'); await page.keyboard.press('Enter'); await page.keyboard.type('Bea');
+  await tapNextFocus(page, "#onb-pin");
+  await page.waitForSelector('#onb-pin');
+  await page.keyboard.type('1357'); await page.keyboard.press('Enter');
+  await page.waitForSelector('.onb-done');
+  await page.waitForSelector('[data-testid=invite-qr] svg');
+  assert.match(await body(page), /Fai inquadrare il QR/);
+  const link = await page.locator('.onb-linkbox').innerText();
+  assert.match(link, /#\/join\/[0-9A-Z]{12}$/);
+  assert.match(await page.locator('[data-testid=house-code]').innerText(), /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+  const bw = await page.locator('.onb-done .qr').boundingBox();
+  assert.ok(bw.width <= 220);
+  await noOverflow(page, 'created cloud'); await noRawKeys(page, 'created cloud');
+  await shot(page, 'create-done-cloud');
+  assert.equal((await reg(page))[0].mode, 'cloud');
+  const keys = await page.evaluate(() => Object.keys(window.__fakeDb).filter((k) => /^houses\/[^/]+$/.test(k)));
+  assert.equal(keys.length, 1);
+  await done(page);
+  const p2 = await open({ fake: {}, dark: true });
+  await goto(p2); await openWizard(p2);
+  await p2.keyboard.press('Enter'); await waitFocus(p2, '.onb-prow input'); await p2.keyboard.type('Ada'); await tapNextFocus(p2, "#onb-pin");
+  await p2.keyboard.type('1357'); await p2.keyboard.press('Enter');
+  await p2.waitForSelector('[data-testid=invite-qr] svg'); await shot(p2, 'create-done-cloud-dark');
+  await done(p2);
+});
+
+await scenario('create: import del foglio Excel reale (salta se il file manca)', async () => {
+  if (!fs.existsSync(XLSX)) { console.log('     (file Excel non trovato: ' + XLSX + ' - imposta XLSX_FILE; scenario saltato)'); return; }
+  const page = await open();
+  await goto(page);
+  await openWizard(page);
+  await page.fill('#onb-name', 'Casa Magliocco');
   await page.setInputFiles('#onb-xlsx', XLSX);
   await page.waitForSelector('.onb-dl', { timeout: 15000 });
   const prev = await page.locator('.onb-import').innerText();
@@ -231,19 +443,17 @@ await scenario('create: import del foglio Excel reale', async () => {
   assert.match(prev, /Fabio/);
   assert.match(prev, /ignorat/);
   assert.match(prev, /settimane con dati/);
-  assert.equal(await page.locator('.onb-admin').count(), 3);
   await shot(page, 'create-import-preview');
-  await page.fill('#onb-pin', 'abcd'); await page.fill('#onb-pin2', 'abcd');
+  await tapNext(page);
   // il passo 2 e' bloccato con i nomi del foglio
-  await page.getByRole('button', { name: /^Indietro/ }).click();
   assert.match(await body(page), /Antonio/); assert.equal(await page.locator('.onb-person').count(), 0);
   await shot(page, 'create-import-step2');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  assert.equal(await page.inputValue('#onb-pin'), 'abcd');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  await page.waitForSelector('.onb-dl');
-  assert.match(await body(page), /Importati 3 coinquilini/);
-  await page.getByRole('button', { name: /Crea casa/ }).click();
+  await tapNext(page);
+  await page.fill('#onb-pin', 'abcd');
+  await page.getByRole('button', { name: /^Cambia/ }).click();
+  assert.equal(await page.locator('.onb-admin').count(), 3);
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: /^Crea casa/ }).click();
   await page.waitForSelector('.onb-done');
   const r = await reg(page); const st = await store(page, r[0].id);
   assert.equal(st.house.startSunday, '2026-10-04');
@@ -259,35 +469,45 @@ await scenario('create: import del foglio Excel reale', async () => {
 await scenario('create: file non valido + annulla import', async () => {
   const page = await open();
   await goto(page);
-  await fillWizardBasics(page);
-  await page.getByRole('button', { name: /^Avanti/ }).click();
-  const names = page.locator('.onb-person input[type=text]');
-  await names.nth(0).fill('A'); await names.nth(1).fill('B'); await names.nth(2).fill('C');
-  await page.getByRole('button', { name: /^Avanti/ }).click();
+  await openWizard(page);
   fs.writeFileSync(SHOT + 'bad.xlsx', 'questo non e un excel');
   await page.setInputFiles('#onb-xlsx', SHOT + 'bad.xlsx');
-  await page.waitForSelector('.onb-err');
+  await page.waitForSelector('.onb-import .onb-err');
   assert.match(await page.locator('.onb-import .onb-err').innerText(), /Non riesco a leggere il file/);
+  assert.equal(await page.locator('#onb-name').inputValue(), 'La nostra casa', 'il nome non si perde');
   await done(page);
 });
 
 await scenario('create: en + desktop + dark', async () => {
   const page = await open({ lang: 'en-US', viewport: D, dark: true });
   await goto(page);
-  await fillWizardBasics(page, { name: 'Test House' });
-  assert.match(await body(page), /Step 1 of 4/);
+  await openWizard(page);
+  assert.match(await body(page), /Step 1 of 3/);
+  assert.equal(await page.inputValue('#onb-name'), 'Our house');
   await noRawKeys(page, 'create en');
   await shot(page, 'create-1-en-desktop-dark');
-  await page.getByRole('button', { name: /^Next/ }).click();
+  await tapNextFocus(page, ".onb-prow input");
   await noRawKeys(page, 'create en 2');
+  assert.match(await body(page), /Step 2 of 3/);
+  await page.keyboard.type('Ann'); await tapNextFocus(page, "#onb-pin");
+  await page.waitForSelector('#onb-pin');
+  assert.match(await body(page), /Choose an admin PIN/); await noRawKeys(page, 'create en 3');
+  await shot(page, 'create-3-en-desktop-dark');
   await done(page);
+  // mobile scuro: passi 1-3
+  const p2 = await open({ dark: true });
+  await goto(p2); await openWizard(p2); await shot(p2, 'create-1-dark');
+  await tapNextFocus(p2, ".onb-prow input"); await p2.keyboard.type('Anna'); await shot(p2, 'create-2-dark');
+  await tapNextFocus(p2, "#onb-pin"); await p2.waitForSelector('#onb-pin'); await p2.keyboard.type('1234'); await shot(p2, 'create-3-dark');
+  await done(p2);
 });
 
 await scenario('who: lista persone, uscite, PIN admin', async () => {
   const hx = { ...ADMIN, ...NORULES, roommates: [{ id: 'anna', name: 'Anna', slot: 1, from: null, to: null }, { id: 'bruno', name: 'Bruno', slot: 2, from: null, to: '2026-10-01' }, { id: 'carla', name: 'Carla', slot: 3, from: null, to: null }] };
   const page = await open({ seed: seed({ me: null, admin: false, houseExtra: hx }) });
   await goto(page);
-  assert.match(await body(page), /Benvenuto in Casa Test/);
+  assert.equal((await page.locator('.onb-housename').innerText()).trim(), 'Casa Test');
+  assert.match(await body(page), /Tocca il tuo nome per entrare/);
   const order = await page.locator('.who .onb-wname').allInnerTexts();
   assert.deepEqual(order, ['Anna', 'Carla', 'Bruno']);
   assert.ok(await page.locator('.who.gone').count() === 1);
@@ -390,7 +610,7 @@ await scenario('hub: voci, badge, admin/non admin, feature spente', async () => 
   const page = await open({ seed: s });
   await goto(page, '/more');
   const t = await body(page);
-  for (const x of ['Scorte e spesa', 'Scambi turno', 'Ultimo che esce', 'Checklist ricorrenti', 'Regole della casa', 'Registro attività', 'Invita coinquilini', 'Esporta dati', 'Impostazioni', "Installa l'app", 'Informazioni', 'Versione 1.0.0']) assert.match(t, new RegExp(x), x);
+  for (const x of ['Scorte e spesa', 'Scambi turno', 'Ultimo che esce', 'Checklist ricorrenti', 'Regole della casa', 'Registro attività', 'Invita coinquilini', 'Esporta dati', 'Impostazioni', "Installa l'app", 'Informazioni', 'Versione \\d+\\.\\d+\\.\\d+']) assert.match(t, new RegExp(x), x);
   assert.match(t, /2 da comprare/);
   assert.equal(await page.locator('a.li[href="#/needs"] .chip').innerText(), '2');
   assert.equal(await page.locator('a.li[href="#/requests"] .chip').innerText(), '1');
@@ -557,6 +777,7 @@ await scenario('tasks: CRUD admin, suggerimenti, sola lettura', async () => {
   await shot(page, 'tasks-sheet');
   await page.locator('.sheet').getByRole('button', { name: /^Salva/ }).click();
   await page.waitForFunction(() => /Pulisci il microonde/.test(document.body.innerText));
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
   let st = await store(page);
   assert.equal(st.house.tasks.length, 3);
   const nt = st.house.tasks.find((x) => x.text === 'Pulisci il microonde');
@@ -566,6 +787,7 @@ await scenario('tasks: CRUD admin, suggerimenti, sola lettura', async () => {
   await page.fill('#mx-task-text', 'Pulisci il microonde a fondo');
   await page.locator('.sheet').getByRole('button', { name: /^Salva/ }).click();
   await page.waitForFunction(() => /microonde a fondo/.test(document.body.innerText));
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
   // disattiva
   await page.locator('.mx-task', { hasText: 'microonde a fondo' }).locator('.switch').click();
   await page.waitForFunction(() => document.querySelector('.mx-task.off'));
@@ -699,7 +921,7 @@ await scenario('about', async () => {
   const page = await open({ seed: S() });
   await goto(page, '/more/about');
   const t = await body(page);
-  assert.match(t, /Versione 1\.0\.0/); assert.match(t, /github\.com\/iantomasi-nicola\/tidyhouse/);
+  assert.match(t, /Versione \d+\.\d+\.\d+/); assert.match(t, /github\.com\/iantomasi-nicola\/tidyhouse/);
   assert.equal(await page.locator('a[href="https://github.com/iantomasi-nicola/tidyhouse"]').count(), 1);
   await noOverflow(page, 'about'); await noRawKeys(page, 'about');
   await shot(page, 'about');

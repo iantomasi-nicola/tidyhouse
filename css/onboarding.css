@@ -1,11 +1,6 @@
 /* Onboarding: landing, join, chi sei, nuova casa, regole, link non valido, offline. */
 .gate.onb { position: relative; align-content: start; padding-top: calc(var(--safe-t) + 36px); }
 @media (min-height: 780px) { .gate.onb { align-content: center; } }
-.gate.onb::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background:
-    radial-gradient(70% 38% at 12% -4%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 72%),
-    radial-gradient(60% 34% at 100% 2%, color-mix(in srgb, #30b0a0 20%, transparent), transparent 72%),
-    radial-gradient(50% 30% at 50% 108%, color-mix(in srgb, #bf5af2 10%, transparent), transparent 70%); }
 .gate.onb.wide .panel { width: min(100%, 540px); }
 .onb-panel { gap: 20px; }
 .gate.onb .logo { margin-inline: auto; }
@@ -110,7 +105,7 @@
 /* casa creata */
 .onb-done { position: fixed; inset: 0; z-index: 45; overflow: auto; background: var(--bg); }
 body.onb-lock { overflow: hidden; }
-.onb-check { background: linear-gradient(160deg, #34c77b, #1f9d8a) !important; box-shadow: 0 18px 36px -14px rgba(31,157,138,.65) !important; animation: pop .6s var(--spring) both; }
+.onb-check { background: var(--ok) !important; box-shadow: none !important; animation: pop .6s var(--spring) both; }
 .onb-check svg.i { stroke-width: 2.4; }
 .onb-linkbox { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8125rem; background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; overflow-wrap: anywhere; user-select: all; text-align: left; }
 .onb-done .card { text-align: left; }
@@ -131,7 +126,7 @@ body.onb-lock { overflow: hidden; }
 .onb-accept span { font-weight: 600; }
 
 /* link non valido / offline */
-.gate.onb .onb-warn-logo { background: linear-gradient(160deg, #ff9f0a, #ff6a3d); box-shadow: 0 18px 36px -14px rgba(255,106,61,.55); }
+.gate.onb .onb-warn-logo { background: var(--warn); box-shadow: none; }
 .onb-nf .btn-row .btn, .onb-join .btn-row .btn { flex: 1 1 auto; }
 
 @media (min-width: 900px) {
@@ -154,3 +149,33 @@ body.onb-lock { overflow: hidden; }
 .onb-card .input:focus, .onb-code .input:focus { background: var(--surface); }
 .onb-adv .input { background: var(--surface); }
 .onb-adv input[type=date] { padding: 0 10px; font-size: .9375rem; }
+
+/* chi sei: nome della casa in alto, nomi come grandi pulsanti (un tocco = dentro) */
+.onb-who .onb-housename { font-size: 2rem; overflow-wrap: anywhere; }
+.onb-who .onb-whoq { font-size: 1.25rem; font-weight: 650; color: var(--text); }
+.onb-who .who-grid { gap: 12px; }
+.onb-who .who { min-height: 72px; padding: 14px 18px; font-size: 1.25rem; border-radius: var(--r-xl, 24px); }
+.onb-who .who .onb-wname { font-size: 1.25rem; }
+
+/* invito a una casa diversa da quella salvata */
+.onb-ask { gap: 14px; }
+.onb-askq { margin: 0; font-weight: 600; }
+.onb-ask .btn-row .btn { flex: 1 1 auto; }
+
+/* wizard a 3 passi */
+.input.lg { min-height: 60px; font-size: 1.25rem; font-weight: 600; }
+.input.onb-pin { letter-spacing: .3em; text-align: center; font-variant-numeric: tabular-nums; }
+.onb-opts { border-radius: var(--r-md); background: var(--surface-2); padding: 0 14px; }
+.onb-opts > summary { font-weight: 650; color: var(--text-2); list-style: none; }
+.onb-opts > summary::-webkit-details-marker { display: none; }
+.onb-opts > summary::after { content: ""; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform .2s; }
+.onb-opts[open] > summary::after { transform: rotate(-135deg); }
+.onb-opts-body { padding: 4px 0 14px; }
+.onb-adminline { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+.onb-adminline > span { display: inline-flex; align-items: center; gap: 6px; }
+.onb-adminline svg.i { width: 1.1em; height: 1.1em; color: var(--accent-ink); }
+.onb-admins[hidden] { display: none; }
+
+/* casa creata: QR compatto */
+.onb-done .qr svg { width: 176px; height: 176px; }
+.onb-done .onb-h:focus { outline: none; }
