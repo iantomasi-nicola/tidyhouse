@@ -239,6 +239,12 @@ function widgetAlerts(ctx, M) {
         actions: [h('a', { class: 'btn sm', href: '#/settings/invite' }, t('home.newCode')),
           h('button', { class: 'btn sm soft', type: 'button', onclick: async () => { try { await ctx.actions.setHouse({ ignoreLeft: { [r.id]: true } }); } catch { ctx.toast(t('error')); } } }, t('home.ignore'))] }));
     }
+    const exits = typeof ctx.actions.expectedExits === 'function' ? ctx.actions.expectedExits(21) : [];
+    for (const r of exits) {
+      rows.push(alertRow({ tone: r.overdue ? 'r' : 'o', ic: 'calendar', title: r.overdue ? t('home.expectedExitOver', { name: r.name }) : t('home.expectedExit', { name: r.name, date: fmtDate(r.expectedTo) }), testid: 'alert-expected',
+        actions: [h('a', { class: 'btn sm', href: '#/settings/roommates' }, t('home.reviewExit')),
+          h('button', { class: 'btn sm soft', type: 'button', onclick: async () => { try { await ctx.actions.setHouse({ ignoreLeft: { [r.id]: true } }); } catch { ctx.toast(t('error')); } } }, t('home.ignore'))] }));
+    }
     for (const k of new Set(validateRoommates(ctx.house.roommates || [], M.today))) {
       rows.push(alertRow({ tone: 'o', ic: 'alert', title: t('set.roommates.' + k), href: '#/settings/roommates', testid: 'alert-' + k }));
     }

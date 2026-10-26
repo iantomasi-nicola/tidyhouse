@@ -173,6 +173,23 @@ const run = async () => {
     noErrors(page);
   });
 
+  await test('admin: uscita prevista (futura e passata), ignora', async () => {
+    const rm = seed()['cp:h:LOCALTEST001'].house.roommates.map((r) => (r.id === 'carla' ? { ...r, expectedTo: '2026-11-10' } : r.id === 'bruno' ? { ...r, expectedTo: '2026-10-20' } : r));
+    const page = await open({ s: mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: rm } }) });
+    await page.waitForSelector('[data-testid="alert-expected"]');
+    assert.equal(await page.locator('[data-testid="alert-expected"]').count(), 2);
+    const all = await page.locator('[data-testid="alert-expected"]').allInnerTexts();
+    assert.ok(all.some((x) => /Carla dovrebbe uscire il 10 nov: prepara il cambio/.test(x)), all.join('|'));
+    assert.ok(all.some((x) => /L'uscita prevista di Bruno è passata/.test(x)), all.join('|'));
+    assert.equal(await page.getAttribute('[data-testid="alert-expected"] a.btn', 'href'), '#/settings/roommates');
+    await shot(page, 'expected-exit-390');
+    await page.click('[data-testid="alert-expected"] .btn.soft');
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid="alert-expected"]').length === 1);
+    noErrors(page);
+    const na = await open({ s: mk({ me: 'bruno', admin: false, weeks: doneWeeks(), houseExtra: { roommates: rm } }) });
+    assert.equal(await na.locator('[data-testid="alert-expected"]').count(), 0);
+  });
+
   await test('non admin: niente avvisi admin', async () => {
     const s = mk({ me: 'bruno', admin: false, weeks: doneWeeks(), ...withDario('2026-10-20') });
     const page = await open({ s });

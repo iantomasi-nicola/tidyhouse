@@ -892,7 +892,7 @@ function dataSection(ctx) {
     mode,
     group(t('setX.data.export'), exp),
     group(t('setX.data.import'), [imp], t('setX.data.importFoot')),
-    group(t('data.autoBackup'), [liRow({ ic: 'refresh', tone: '', title: t('data.autoBackup'), desc: t('setX.data.autoBackupText') })]),
+    group(null, [liRow({ ic: 'refresh', tone: '', title: t('data.autoBackup'), desc: t('setX.data.autoBackupText') })]),
     group(t('setX.data.danger'), [
       h('button', { class: 'li', type: 'button', 'data-testid': 'data-leave', onclick: async () => { if (await confirmDialog({ title: t('setX.data.leave'), text: t('setX.data.leaveHint'), ok: t('setX.data.leave'), danger: true })) ctx.leaveHouse(); } }, h('div', { class: 'ico o' }, icon('x')), h('div', { class: 'grow t' }, t('setX.data.leave'))),
       h('button', { class: 'li', type: 'button', 'data-testid': 'data-reset', onclick: resetSheet }, h('div', { class: 'ico r' }, icon('trash')), h('div', { class: 'grow t', style: { color: 'var(--bad)' } }, t('data.reset'))),

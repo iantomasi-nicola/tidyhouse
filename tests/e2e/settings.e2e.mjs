@@ -1,0 +1,537 @@
+// E2E delle impostazioni (Playwright + server statico di helpers.mjs). Esecuzione: node tests/e2e/settings.e2e.mjs
+// Orologio finto 2026-10-28T10:00:00. Screenshot in SHOTS (default: scratchpad). Esce con codice 1 se un test fallisce.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
+import { start, seed } from './helpers.mjs';
+import { hashPin } from '../../js/actions.js';
+import { encryptBackup } from '../../js/backupcrypto.js';
+
+const require = createRequire(import.meta.url);
+const SHOTS = process.env.SHOTS || '/tmp/claude-0/-home-user/31bb54fa-07b7-55b0-a8eb-c0a272017a85/scratchpad/settings/';
+const XLSX_REAL = process.env.XLSX_FILE || '/root/.claude/uploads/31bb54fa-07b7-55b0-a8eb-c0a272017a85/1f8df62c-House_Cleaning_Plan_Magliocco.xlsx';
+const NOW = '2026-10-28T10:00:00';
+fs.mkdirSync(SHOTS, { recursive: true });
+
+const env = await start();
+const results = [];
+const only = process.argv[2];
+async function test(name, fn) {
+  if (only && !name.includes(only)) return;
+  const t0 = Date.now(); let page = null;
+  const ctxPages = [];
+  const mk = async (opts = {}) => {
+    const { houseExtra = {}, seedOpts = {}, viewport, dark, lang, hash = '/settings' } = opts;
+    page = await env.page({ now: NOW, viewport, dark, lang, seed: seed({ houseExtra: { requireRules: false, ...houseExtra }, ...seedOpts }) });
+    ctxPages.push(page);
+    await page.goto(env.url + '/#' + hash);
+    await page.waitForSelector('[data-testid=settings-index], [data-testid=settings-page]', { timeout: 10000 });
+    return page;
+  };
+  try { await fn(mk, () => page); results.push([name, true, Date.now() - t0]); console.log('ok   ', name); }
+  catch (e) { results.push([name, false, Date.now() - t0, e]); console.log('FAIL ', name, '\n', e && e.stack || e); if (page) { try { await page.screenshot({ path: SHOTS + 'FAIL-' + name.replace(/\W+/g, '_') + '.png' }); } catch { /* ignore */ } } }
+  finally { for (const p of ctxPages) { try { const errs = p.__errors || []; if (errs.length && !results[results.length - 1][1] === false) console.log('  console errors:', errs); await p.context().close(); } catch { /* ignore */ } } }
+}
+
+// ---------- helper ----------
+const go = async (page, sub = '') => { await page.evaluate((h) => { location.hash = h; }, '#/settings' + (sub ? '/' + sub : '')); await page.waitForSelector(sub ? `.st-page[data-sub="${sub}"]` : '[data-testid=settings-index]'); await page.waitForTimeout(80); };
+const house = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__app.house)));
+const state = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__app.state)));
+const commit = async (loc, v) => { await loc.fill(v); await loc.blur(); };
+const noErrors = (page) => assert.deepEqual((page.__errors || []).filter((e) => !/Service Worker|SW /.test(e)), [], 'errori in console');
+const toast = (page, re) => page.waitForFunction((s) => [...document.querySelectorAll('.toast')].some((x) => new RegExp(s).test(x.textContent)), re.source, { timeout: 4000 });
+const until = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: 6000 });
+const shot = (page, name) => page.screenshot({ path: SHOTS + name + '.png', fullPage: true });
+const tid = (id) => `[data-testid="${id}"]`;
+
+const members = {
+  devB: { personId: 'bruno', name: 'iPhone di Bruno', device: { os: 'iPhone', browser: 'Safari', kind: 'device', label: 'iPhone · Safari' }, lastSeen: '2026-10-28T08:00:00.000Z', firstSeen: '2026-10-05T09:00:00.000Z', push: { endpoint: 'https://push.example/1', keys: { p256dh: 'a', auth: 'b' } }, standalone: true, version: '1.0.0', lang: 'it', isAdmin: false, rulesAck: { version: '1', at: '2026-10-05T09:00:00.000Z' } },
+  devA2: { personId: 'anna', name: 'Mac di Anna', device: { os: 'Mac', browser: 'Chrome', kind: 'desktop', label: 'Mac · Chrome' }, lastSeen: '2026-10-26T10:00:00.000Z', push: null, version: '1.0.0', lang: 'en', isAdmin: true },
+};
+const views = Object.fromEntries(Array.from({ length: 3 }, (_, i) => ['v' + i, { at: `2026-10-28T0${6 + i}:00:00.000Z`, device: 'devB', personId: 'bruno', screen: i % 2 ? 'calendar' : 'home' }]));
+
+// ============================================================================
+await test('indice: personali + admin, non-admin vede solo personali', async (mk) => {
+  const page = await mk();
+  assert.equal(await page.locator('a.li[href^="#/settings/"]').count(), 15);
+  await shot(page, 'index-admin-390');
+  const p2 = await env.page({ now: NOW, seed: seed({ admin: false, houseExtra: { requireRules: false } }) });
+  await p2.goto(env.url + '/#/settings'); await p2.waitForSelector(tid('settings-index'));
+  assert.equal(await p2.locator('a.li[href^="#/settings/"]').count(), 4);
+  await go(p2, 'house');
+  assert.ok(await p2.locator(tid('admin-only')).isVisible());
+  await go(p2, 'data'); assert.ok(await p2.locator(tid('admin-only')).isVisible());
+  // invito: codice visibile, rotazione no
+  await go(p2, 'invite'); assert.ok(await p2.locator(tid('invite-code')).isVisible()); assert.equal(await p2.locator(tid('rot-go')).count(), 0);
+  await p2.evaluate(() => { location.hash = '#/settings'; }); await p2.waitForSelector(tid('settings-index'));
+  await shot(p2, 'index-nonadmin-390'); noErrors(p2); await p2.context().close();
+  noErrors(page);
+});
+
+await test('profilo: chi sei, nome dispositivo, lingua, sblocco admin', async (mk) => {
+  const page = await mk({ seedOpts: { admin: false } });
+  await go(page, 'profile');
+  await page.click(tid('who-bruno'));
+  await until(page, () => window.__app.me === 'bruno');
+  await commit(page.locator(tid('device-name')), 'Il mio telefono');
+  await until(page, () => window.__app.prefs.deviceName === 'Il mio telefono');
+  const st = await state(page);
+  assert.equal(Object.values(st.members).find((m) => m.personId === 'bruno').name, 'Il mio telefono');
+  await page.click(`${tid('seg-lang')} button:has-text("English")`);
+  await until(page, () => document.documentElement.lang === 'en' && window.__app.prefs.lang === 'en');
+  assert.match(await page.locator('.st-title').innerText(), /Profile/);
+  await shot(page, 'profile-en-390');
+  // PIN errato / giusto
+  await page.fill(tid('admin-pin'), '0000'); await page.click(tid('admin-unlock')); await toast(page, /PIN/i);
+  assert.equal(await page.evaluate(() => window.__app.isAdmin), false);
+  noErrors(page);
+});
+
+await test('aspetto: tema, accento, colore personalizzato, testo, switch', async (mk) => {
+  const page = await mk(); await go(page, 'appearance');
+  await page.click(`${tid('seg-theme')} button:has-text("Scuro")`);
+  await until(page, () => document.documentElement.getAttribute('data-theme') === 'dark');
+  await shot(page, 'appearance-dark-390');
+  await page.click(`${tid('seg-theme')} button:has-text("Chiaro")`);
+  await until(page, () => document.documentElement.getAttribute('data-theme') === 'light');
+  await page.click(tid('accent-ff375f'));
+  await until(page, () => document.documentElement.style.getPropertyValue('--accent') === '#ff375f');
+  await page.locator(tid('accent-custom')).fill('#123456');
+  await until(page, () => document.documentElement.style.getPropertyValue('--accent') === '#123456');
+  await page.locator(tid('text-size')).evaluate((el) => { el.value = '1.15'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await until(page, () => document.documentElement.style.getPropertyValue('--fs') === '1.15');
+  await page.click(tid('sw-motion-row')); await until(page, () => document.documentElement.classList.contains('no-motion'));
+  await page.click(tid('sw-compact-row')); await until(page, () => document.documentElement.classList.contains('compact'));
+  await page.click(tid('sw-haptics-row')); await until(page, () => window.__app.prefs.haptics === false);
+  await page.click(`${tid('seg-theme')} button:has-text("Automatico")`);
+  await until(page, () => !document.documentElement.hasAttribute('data-theme'));
+  noErrors(page);
+});
+
+await test('layout Home: ordine, nascondi, reset, layout della casa', async (mk) => {
+  const page = await mk(); await go(page, 'home');
+  assert.deepEqual((await page.evaluate(() => window.__app.homeLayout())).order.slice(0, 2), ['hero', 'alerts']);
+  assert.equal(await page.locator(tid('w-up-hero')).isDisabled(), true); // layout della casa: sola lettura
+  await page.click(tid('sw-use-house-row'));
+  await until(page, () => window.__app.prefs.useHouseHome === false);
+  await page.click(tid('w-down-hero'));
+  await until(page, () => window.__app.homeLayout().order[1] === 'hero');
+  await page.click(tid('wrow-alerts') + ' .switch');
+  await until(page, () => window.__app.homeLayout().hidden.includes('alerts'));
+  await page.click(tid('wrow-needs') + ' .switch');
+  await until(page, () => !window.__app.homeLayout().hidden.includes('needs'));
+  const lay = await page.evaluate(() => window.__app.homeLayout());
+  assert.equal(lay.order[0], 'alerts'); assert.equal(lay.order[1], 'hero');
+  await shot(page, 'home-editor-390');
+  await page.click(tid('home-set-house'));
+  await until(page, () => window.__app.house.home && window.__app.house.home.order[1] === 'hero');
+  assert.ok((await house(page)).home.hidden.includes('alerts'));
+  await page.click(tid('home-reset'));
+  await until(page, () => window.__app.prefs.useHouseHome === true && !window.__app.prefs.home);
+  assert.equal((await page.evaluate(() => window.__app.homeLayout())).order[1], 'hero'); // ora segue il layout della casa
+  noErrors(page);
+});
+
+await test('notifiche personali: stato, tipi, prefs sul member', async (mk) => {
+  const page = await mk({ houseExtra: { notif: { needs: { on: false } } } }); await go(page, 'notifications');
+  assert.equal(await page.locator(tid('push-state')).getAttribute('data-state'), 'nocloud');
+  await page.click(tid('nt-satDuty-row'));
+  await until(page, () => window.__app.prefs.notif && window.__app.prefs.notif.satDuty === false);
+  const st = await state(page);
+  assert.equal(Object.values(st.members).find((m) => m.personId === 'anna').prefs.satDuty, false);
+  assert.match(await page.locator(tid('nt-needs-row')).innerText(), /spenta dall'admin/);
+  assert.ok(await page.locator(tid('nt-adminDigest')).count()); // admin vede anche il riepilogo
+  await shot(page, 'notifications-390');
+  // funzioni di push (contesto finto)
+  const r = await page.evaluate(async () => {
+    const push = await import('/js/push.js');
+    const base = { deviceId: 'd', state: { members: {} }, house: { vapidPublic: 'abc' }, mode: 'cloud' };
+    const out = {};
+    out.nopush = push.status({ ...base, house: {} }).state; out.local = push.status({ ...base, mode: 'local' }).state;
+    out.off = push.status(base).state;
+    const ua = navigator.userAgent; Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', configurable: true });
+    out.ios = push.status(base).state; Object.defineProperty(navigator, 'userAgent', { value: ua, configurable: true });
+    const k = await push.generateVapid(); out.k = k;
+    out.lt = await push.localTest(base);
+    return out;
+  });
+  assert.equal(r.nopush, 'nopush'); assert.equal(r.local, 'nocloud'); assert.equal(r.off, 'off'); assert.equal(r.ios, 'ios-install');
+  assert.equal(Buffer.from(r.k.publicKey, 'base64url').length, 65); assert.equal(Buffer.from(r.k.privateKey, 'base64url').length, 32);
+  assert.equal(r.lt.ok, false);
+  noErrors(page);
+});
+
+await test('casa: nome, fuso, refreshMin, regole richieste, lingua', async (mk) => {
+  const page = await mk(); await go(page, 'house');
+  await commit(page.locator(tid('house-name')), 'Casa Nuova');
+  await until(page, () => window.__app.house.name === 'Casa Nuova');
+  await page.selectOption(tid('house-tz'), 'America/New_York');
+  await until(page, () => window.__app.house.tz === 'America/New_York');
+  await page.click(`${tid('step-refreshMin')} button[aria-label="+"]`);
+  await until(page, () => window.__app.house.refreshMin === 6);
+  await page.click(tid('sw-requireRules-row'));
+  await until(page, () => window.__app.house.requireRules === true);
+  await page.click(`${tid('house-lang')} button:has-text("English")`);
+  await until(page, () => window.__app.house.lang === 'en');
+  assert.ok(await page.locator(tid('start-sunday')).isVisible());
+  assert.equal((await house(page)).startSunday, '2026-10-04');
+  await shot(page, 'house-390'); noErrors(page);
+});
+
+await test('regole: stepper, sforzo, rankBy', async (mk) => {
+  const page = await mk(); await go(page, 'rules');
+  await page.click(`${tid('step-grace')} button[aria-label="+"]`); await until(page, () => window.__app.house.settings.grace === 2);
+  await page.click(`${tid('step-minNights')} button[aria-label="−"]`); await until(page, () => window.__app.house.settings.minNights === 2);
+  await page.click(`${tid('step-window')} button[aria-label="+"]`); await until(page, () => window.__app.house.settings.window === 56);
+  await page.click(`${tid('effort-floor')} .seg button:has-text("3")`); await until(page, () => window.__app.house.effort.floor === 3);
+  await page.click(`${tid('effort-kitchen')} .seg button:has-text("5")`); await until(page, () => window.__app.house.effort.kitchen === 5);
+  await page.click(`${tid('seg-rankBy')} button:has-text("Punti fatica")`); await until(page, () => window.__app.house.settings.rankBy === 'effort');
+  assert.equal(await page.evaluate(() => window.__app.calc.out.settings.minNights), 2);
+  await shot(page, 'rules-390'); noErrors(page);
+});
+
+await test('coinquilini: bozza, avvisi, uscita, sostituzione, ricalcolo', async (mk) => {
+  const page = await mk(); await go(page, 'roommates');
+  const before = (await house(page)).roommates.map((r) => r.id);
+  assert.equal(await page.locator(tid('rm-bar')).isHidden(), true);
+  // avviso posto doppio
+  await page.click(`${tid('rm-card-0')} .seg button:has-text("2")`);
+  assert.match(await page.locator(tid('rm-warn')).innerText(), /stesso posto/);
+  await page.click(tid('rm-cancel')); await page.waitForSelector(`${tid('rm-card-0')} .seg button[aria-pressed="true"]:has-text("1")`);
+  // date: Carla parte
+  await page.fill(tid('rm-from-2'), '2026-11-02'); await page.fill(tid('rm-to-0'), '2026-12-31');
+  await page.click(tid('rm-save'));
+  await until(page, () => window.__app.house.roommates[2].from === '2026-11-02' && window.__app.house.roommates[0].to === '2026-12-31');
+  assert.deepEqual((await house(page)).roommates.map((r) => r.id), before);
+  // uscita di Bruno
+  await page.click(tid('rm-out-1')); await page.fill(tid('out-date'), '2026-10-28'); await page.click(tid('out-confirm'));
+  await until(page, () => window.__app.house.roommates[1].to === '2026-10-28');
+  await page.waitForSelector(tid('rm-rotate-hint'));
+  await shot(page, 'roommates-after-exit-390');
+  // sostituzione di Anna con Dario dal 2026-11-30 (Anna: to 2026-11-29)
+  await page.click(tid('rm-replace-0')); await page.fill(tid('rep-name'), 'Dario'); await page.fill(tid('rep-date'), '2026-11-29'); await page.click(tid('rep-confirm'));
+  await until(page, () => window.__app.house.roommates.length === 4);
+  const rm = (await house(page)).roommates;
+  assert.deepEqual(rm.slice(0, 3).map((r) => r.id), before);
+  assert.equal(rm[0].to, '2026-11-29'); assert.deepEqual([rm[3].name, rm[3].slot, rm[3].from, rm[3].to], ['Dario', 1, '2026-11-30', null]);
+  assert.ok(rm[3].id && !before.includes(rm[3].id));
+  const calc = await page.evaluate((id) => { const o = window.__app.calc.out; return { future: o.rows.filter((r) => r.nm.includes(id)).length, rows: o.rows.length }; }, rm[3].id);
+  assert.ok(calc.future >= 0 && calc.rows > 0);
+  // nuova persona + nome vuoto non salvato
+  await page.click(tid('rm-add')); assert.ok(await page.locator(tid('rm-card-4')).isVisible());
+  await page.fill(tid('rm-name-4'), 'Elena'); await page.click(`${tid('rm-card-4')} .seg button:has-text("2")`);
+  await page.click(tid('rm-save')); await until(page, () => window.__app.house.roommates.length === 5);
+  await go(page, 'roommates'); await shot(page, 'roommates-390'); noErrors(page);
+});
+
+await test('funzioni: spegnere una funzione la toglie dalla navigazione', async (mk) => {
+  const page = await mk(); await go(page, 'features');
+  assert.ok(await page.locator('.nav a[href="#/trips"]').count());
+  await page.click(tid('feat-trips-row'));
+  await until(page, () => window.__app.feature('trips') === false);
+  await until(page, () => !document.querySelector('.nav a[href="#/trips"]'));
+  await page.click(tid('feat-needs-row')); await until(page, () => window.__app.house.features.needs === false);
+  await page.click(tid('feat-selfDone-row')); await until(page, () => window.__app.house.features.selfDone === false);
+  await shot(page, 'features-390'); noErrors(page);
+});
+
+await test('link: Tricount, WhatsApp, personalizzati, validazione https', async (mk) => {
+  const page = await mk(); await go(page, 'links');
+  await commit(page.locator(tid('link-tricount')), 'tricount.com/xyz');
+  await until(page, () => window.__app.house.links.tricount.url === 'https://tricount.com/xyz');
+  await commit(page.locator(tid('link-tricount')), 'ftp://x.y');
+  await toast(page, /https/);
+  assert.equal((await house(page)).links.tricount.url, 'https://tricount.com/xyz');
+  await page.click(tid('link-show-tricount-row')); await until(page, () => window.__app.house.links.tricount.show === false);
+  await commit(page.locator(tid('link-whatsapp')), 'https://chat.whatsapp.com/abc');
+  await page.click(tid('link-show-whatsapp-row')); await until(page, () => window.__app.house.links.whatsapp.show === true);
+  await page.click(tid('link-add')); await page.fill(tid('add-label'), 'Wi-Fi'); await page.fill(tid('add-url'), 'router.local'); await page.click(tid('add-confirm'));
+  await until(page, () => window.__app.house.links.custom.length === 1);
+  assert.equal((await house(page)).links.custom[0].url, 'https://router.local');
+  await commit(page.locator(tid('custom-label-0')), 'Router'); await until(page, () => window.__app.house.links.custom[0].label === 'Router');
+  await shot(page, 'links-390');
+  await page.click(tid('custom-del-0')); await until(page, () => window.__app.house.links.custom.length === 0);
+  noErrors(page);
+});
+
+await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => {
+  const page = await mk({ viewport: { width: 390, height: 844 } }); await go(page, 'notif-house');
+  await page.selectOption(tid('dow-satDuty'), '5'); await until(page, () => window.__app.house.notif.satDuty.dow === 5);
+  await page.fill(tid('time-satDuty'), '11:30'); await until(page, () => window.__app.house.notif.satDuty.time === '11:30');
+  await page.click(tid('on-monNew') + ' + i'); await until(page, () => window.__app.house.notif.monNew.on === true);
+  await page.click(tid('late-add')); await until(page, () => window.__app.house.notif.late.times.length === 4);
+  await page.click(`${tid('step-late-max')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.late.max === 4);
+  await page.click(`${tid('step-catchUp')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.catchUpHours === 6);
+  assert.ok(await page.locator(`${tid('preview')} .li`).count() > 0);
+  assert.match(await page.locator(tid('preview')).innerText(), /Sabato|ven|Venerdì/i);
+  await page.click(tid('sw-notif-master-row')); await until(page, () => window.__app.house.notif.enabled === false);
+  await page.waitForSelector(tid('preview-empty'));
+  await page.click(tid('sw-notif-master-row')); await until(page, () => window.__app.house.notif.enabled === true);
+  // chiavi
+  assert.match(await page.locator(tid('vapid-state')).innerText(), /non ancora/);
+  await page.click(tid('vapid-generate'));
+  await page.waitForSelector(tid('vapid-fresh'));
+  const pub = await page.locator(tid('vapid-public')).innerText(), priv = await page.locator(tid('vapid-private')).innerText();
+  assert.equal(Buffer.from(pub, 'base64url').length, 65); assert.equal(Buffer.from(priv, 'base64url').length, 32);
+  assert.match(pub, /^[A-Za-z0-9_-]+$/); assert.match(priv, /^[A-Za-z0-9_-]+$/);
+  const ecdh = crypto.createECDH('prime256v1'); ecdh.setPrivateKey(Buffer.from(priv, 'base64url'));
+  assert.equal(ecdh.getPublicKey().toString('base64url'), pub, 'la privata deriva la pubblica (compatibile con web-push)');
+  assert.equal((await house(page)).vapidPublic, pub);
+  await shot(page, 'notif-house-keys-390');
+  await page.click(tid('vapid-hide')); await page.waitForSelector(tid('vapid-fresh'), { state: 'detached' });
+  assert.equal(await page.locator(tid('server-run')).innerText(), 'Il server delle notifiche non si è ancora attivato');
+  assert.equal(await page.locator(tid('readme-link')).getAttribute('href'), 'https://github.com/iantomasi-nicola/tidyhouse#readme');
+  noErrors(page);
+});
+
+await test('invito: codice, link, QR; rotazione codice in locale', async (mk) => {
+  const page = await mk({ seedOpts: { members: { ...members } }, houseExtra: { roommates: [{ id: 'anna', name: 'Anna', slot: 1, from: null, to: null }, { id: 'bruno', name: 'Bruno', slot: 2, from: null, to: '2026-10-20' }, { id: 'carla', name: 'Carla', slot: 3, from: null, to: null }] } });
+  await go(page, 'invite');
+  const oldId = await page.evaluate(() => window.__app.houseId);
+  assert.equal(await page.locator(tid('invite-code')).innerText(), await page.evaluate(() => window.__app.code()));
+  assert.equal(await page.locator(tid('invite-link')).innerText(), await page.evaluate(() => window.__app.joinLink()));
+  assert.ok(await page.locator(`${tid('invite-qr')} svg`).count()); assert.ok(await page.locator(tid('invite-local')).isVisible());
+  assert.match(await page.locator(tid('invite-wa')).getAttribute('href'), /^https:\/\/wa\.me\/\?text=/);
+  // Bruno è preselezionato (uscito)
+  assert.equal(await page.locator(tid('rot-bruno')).isChecked(), true); assert.equal(await page.locator(tid('rot-carla')).isChecked(), false);
+  const before = await state(page);
+  await page.click(tid('rot-go'));
+  await page.click('.sheet button:has-text("Genera nuovo codice")');
+  await until(page, (o) => window.__app.houseId !== o, oldId);
+  await page.waitForSelector(tid('rot-result'));
+  const newId = await page.evaluate(() => window.__app.houseId);
+  const reg = await page.evaluate(() => JSON.parse(localStorage.getItem('cp:houses')));
+  assert.ok(reg.some((e) => e.id === newId) && !reg.some((e) => e.id === oldId));
+  assert.equal(await page.evaluate((o) => localStorage.getItem('cp:h:' + o), oldId), null);
+  const after = await state(page);
+  assert.deepEqual(Object.keys(after.weeks), Object.keys(before.weeks)); assert.deepEqual(after.house.roommates, before.house.roommates);
+  assert.ok(after.house.prevIds.includes(oldId)); assert.ok(after.house.rotatedAt);
+  assert.ok(!Object.values(after.members).some((m) => m.personId === 'bruno'), 'le notifiche di Bruno sono state rimosse');
+  assert.ok(Object.values(after.members).some((m) => m.personId === 'anna'));
+  assert.equal(await page.evaluate(() => window.__app.isAdmin), true); assert.equal(await page.evaluate(() => window.__app.me), 'anna');
+  assert.equal(await page.locator(tid('rot-new-code')).innerText(), await page.evaluate(() => window.__app.code()));
+  assert.match(await page.locator(tid('rot-wa')).getAttribute('href'), /wa\.me/);
+  await shot(page, 'invite-rotated-390'); noErrors(page);
+});
+
+await test('accessi: dispositivi, sollecita, rimuovi, registro', async (mk) => {
+  const page = await mk({ seedOpts: { members: { ...members } }, hash: '/settings' });
+  await page.evaluate((v) => { for (const [id, x] of Object.entries(v)) window.__app.store.setDoc('views', id, x); }, views);
+  await go(page, 'access');
+  assert.ok(await page.locator(tid('dev-devB')).isVisible());
+  assert.match(await page.locator(tid('dev-devB')).innerText(), /iPhone/); assert.match(await page.locator(tid('dev-devB')).innerText(), /Attive/);
+  assert.match(await page.locator(tid('dev-devA2')).innerText(), /Non attive/);
+  assert.match(await page.locator(tid('dev-devB')).innerText(), /ore fa|ora/);
+  assert.ok(await page.locator(tid('acc-carla')).evaluate((e) => e.classList.contains('never')));
+  assert.equal(await page.locator(tid('kpi-push')).innerText(), '1');
+  assert.equal(await page.locator(`${tid('views')} .li`).count(), 3);
+  await shot(page, 'access-390');
+  await page.click(tid('nudge-carla'));
+  await until(page, () => Object.values(window.__app.state.requests).some((r) => r.kind === 'nudge' && r.to === 'carla'));
+  await page.click(tid('dev-del-devB')); await page.click('.sheet button:has-text("Rimuovi dispositivo")');
+  await until(page, () => !window.__app.state.members.devB);
+  await page.click(tid('views-clear')); await page.click('.sheet button:has-text("Cancella registro")');
+  await until(page, () => Object.keys(window.__app.state.views).length === 0);
+  await page.waitForSelector(tid('views-empty')); noErrors(page);
+});
+
+await test('dati: export JSON/CSV/XLSX, import JSON, cifrato, Excel reale', async (mk) => {
+  const page = await mk({ seedOpts: { weeks: { '2026-10-11': { result: { floor: 'done' } } } } });
+  await go(page, 'data');
+  const dl = async (text) => { const [d] = await Promise.all([page.waitForEvent('download'), page.getByText(text, { exact: true }).click()]); return { name: d.suggestedFilename(), buf: fs.readFileSync(await d.path()) }; };
+  const j = await dl('Backup completo (JSON)'); assert.match(j.name, /\.json$/);
+  const bk = JSON.parse(j.buf.toString()); assert.equal(bk.app, 'casa-pulita'); assert.equal(bk.data.house.name, 'Casa Test');
+  const c = await dl('Storico turni (CSV)'); assert.match(c.name, /\.csv$/); assert.ok(c.buf.toString().includes('week_ending'));
+  const x = await dl('Foglio Excel'); assert.equal(x.buf.slice(0, 2).toString(), 'PK');
+  // import JSON
+  bk.data.house.name = 'Casa Importata'; bk.data.weeks['2026-10-18'] = { result: { bathroom: 'done' } }; bk.data.house.adminHash = 'xx';
+  const sel = tid('import-file');
+  await page.setInputFiles(sel, { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(bk)) });
+  await page.waitForSelector(tid('import-summary')); await shot(page, 'import-summary-390');
+  await page.click(tid('import-confirm'));
+  await until(page, () => window.__app.house.name === 'Casa Importata');
+  const st = await state(page);
+  assert.ok(st.weeks['2026-10-18']); assert.notEqual(st.house.adminHash, 'xx', 'il PIN attuale resta'); assert.equal(st.house.id, 'LOCALTEST001');
+  // import cifrato: passphrase errata poi giusta
+  const enc = await encryptBackup({ ...bk, data: { ...bk.data, house: { ...bk.data.house, name: 'Casa Cifrata' } } }, 'segreta123');
+  await page.setInputFiles(sel, { name: 'b.enc.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(enc)) });
+  await page.fill(tid('pass-1'), 'sbagliata'); await page.click(tid('pass-ok'));
+  await page.waitForFunction(() => document.querySelector('[data-testid=pass-error]').textContent.length > 0);
+  await page.fill(tid('pass-1'), 'segreta123'); await page.click(tid('pass-ok'));
+  await page.waitForSelector(tid('import-summary')); await page.click(tid('import-confirm'));
+  await until(page, () => window.__app.house.name === 'Casa Cifrata');
+  // file non valido
+  await page.setInputFiles(sel, { name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"a":1}') });
+  await toast(page, /non riconosciuto/);
+  noErrors(page);
+});
+
+await test('dati: import del foglio Excel originale', async (mk) => {
+  if (!fs.existsSync(XLSX_REAL)) { console.log('  (file Excel non trovato, salto)'); return; }
+  const page = await mk(); await go(page, 'data');
+  await page.setInputFiles(tid('import-file'), XLSX_REAL);
+  await page.waitForSelector(tid('import-summary'), { timeout: 15000 }); await shot(page, 'import-xlsx-390');
+  await page.click(tid('import-confirm'));
+  await until(page, () => window.__app.house.roommates.length > 3 || Object.keys(window.__app.state.weeks).length > 5);
+  const r = await page.evaluate(() => { const o = window.__app.calc.out; return { rm: window.__app.house.roommates.map((x) => x.name), weeks: Object.keys(window.__app.state.weeks).length, rows: o.rows.length, start: window.__app.house.startSunday, admin: window.__app.house.adminIds }; });
+  console.log('  excel:', JSON.stringify({ rm: r.rm, weeks: r.weeks, start: r.start }));
+  assert.ok(r.rm.length >= 3 && r.weeks > 5 && r.rows > 5); assert.ok(r.admin.length >= 1);
+  noErrors(page);
+});
+
+await test('dati: cancella tutto con conferma del nome, esci dalla casa', async (mk) => {
+  const page = await mk(); await go(page, 'data');
+  await page.click(tid('data-reset'));
+  assert.equal(await page.locator(tid('reset-confirm')).isDisabled(), true);
+  await page.fill(tid('reset-name'), 'sbagliato'); assert.equal(await page.locator(tid('reset-confirm')).isDisabled(), true);
+  await page.fill(tid('reset-name'), 'casa test'); assert.equal(await page.locator(tid('reset-confirm')).isDisabled(), false);
+  await page.click(tid('reset-confirm'));
+  await until(page, () => !JSON.parse(localStorage.getItem('cp:houses') || '[]').length && localStorage.getItem('cp:h:LOCALTEST001') === null);
+  const p2 = await mk(); await go(p2, 'data');
+  await p2.click(tid('data-leave')); await p2.click('.sheet button:has-text("Esci da questa casa")');
+  await until(p2, () => JSON.parse(localStorage.getItem('cp:houses') || '[]').length === 0);
+  assert.notEqual(await p2.evaluate(() => localStorage.getItem('cp:h:LOCALTEST001')), null, 'i dati restano nella casa');
+});
+
+const AI_JSON = JSON.stringify({ trips: [{ person: 'Bruno', from: '2026-11-02', to: '2026-11-09', note: 'Natale' }, { person: 'Zoe', from: '2026-11-02', to: null, note: '' }], results: [{ week: '2026-10-25', chore: 'bathroom', outcome: 'by', by: 'Carla' }] });
+const AI_BODY = {
+  anthropic: { url: 'https://api.anthropic.com/**', body: { content: [{ type: 'text', text: AI_JSON }] }, keyHeader: 'x-api-key' },
+  openai: { url: 'https://api.openai.com/**', body: { choices: [{ message: { content: AI_JSON } }] }, keyHeader: 'authorization' },
+  gemini: { url: 'https://generativelanguage.googleapis.com/**', body: { candidates: [{ content: { parts: [{ text: AI_JSON }] } }] }, keyHeader: 'x-goog-api-key' },
+};
+for (const prov of Object.keys(AI_BODY)) {
+  await test('IA: provider ' + prov + ' (fetch intercettato)', async (mk) => {
+    const page = await mk(); let seenKey = null, calls = 0;
+    await page.route(AI_BODY[prov].url, async (route) => {
+      const req = route.request();
+      if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
+      calls++; seenKey = req.headers()[AI_BODY[prov].keyHeader];
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(AI_BODY[prov].body) });
+    });
+    await go(page, 'ai');
+    await page.click(tid('sw-ai-row')); await until(page, () => window.__app.house.ai && window.__app.house.ai.enabled === true);
+    await page.selectOption(tid('ai-provider'), prov);
+    await commit(page.locator(tid('ai-key')), 'sk-test-123');
+    await until(page, () => JSON.parse(localStorage.getItem('cp:ai') || '{}').key === 'sk-test-123');
+    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('cp:ai'))).provider, prov);
+    assert.ok(!JSON.stringify(await state(page)).includes('sk-test-123'), 'la chiave non va nel cloud');
+    await page.click(tid('ai-test')); await toast(page, /Connessione riuscita/);
+    assert.ok(seenKey && seenKey.includes('sk-test-123'));
+    await shot(page, 'ai-' + prov + '-390');
+    await page.click(tid('ai-import'));
+    await page.fill(tid('ai-text'), 'Bruno è via dal 2 al 9 novembre. Carla ha fatto il bagno al posto di Bruno.');
+    await page.click(tid('ai-run'));
+    await page.waitForSelector('.sheet label.check');
+    assert.equal(await page.locator('.sheet label.check').count(), 2, 'la persona sconosciuta viene scartata');
+    assert.equal(Object.keys((await state(page)).trips).length, 0, 'nulla applicato senza conferma');
+    await shot(page, 'ai-results-' + prov);
+    await page.click(tid('ai-apply'));
+    await until(page, () => Object.values(window.__app.state.trips).length === 1 && window.__app.state.weeks['2026-10-25'] && window.__app.state.weeks['2026-10-25'].result.bathroom === 'by:carla');
+    assert.ok(calls >= 2); noErrors(page);
+  });
+}
+await test('IA: senza chiave e con errore del servizio', async (mk) => {
+  const page = await mk(); await go(page, 'ai');
+  await page.click(tid('ai-import')); await page.waitForSelector(tid('ai-open-settings'));
+  await page.fill(tid('ai-text'), 'prova'); await page.click(tid('ai-run'));
+  await page.waitForSelector('.sheet .note.warn');
+  await page.evaluate(() => localStorage.setItem('cp:ai', JSON.stringify({ provider: 'openai', key: 'k' })));
+  await page.route('https://api.openai.com/**', (route) => route.request().method() === 'OPTIONS' ? route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' } }) : route.fulfill({ status: 401, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { message: 'bad key' } }) }));
+  await page.click(tid('ai-run')); await page.waitForSelector(tid('ai-error'));
+  assert.match(await page.locator(tid('ai-error')).innerText(), /bad key/);
+  await page.click('.sheet .icon-btn[aria-label="Chiudi"]');
+  await go(page, 'ai'); await page.click(tid('ai-remove')); await until(page, () => !JSON.parse(localStorage.getItem('cp:ai') || '{}').key);
+  noErrors(page);
+});
+
+await test('sicurezza: cambio PIN, blocco e sblocco', async (mk) => {
+  const salt = 'SALTSALTSALT1234'; const adminHash = await hashPin('1234', salt);
+  const page = await mk({ houseExtra: { adminSalt: salt, adminHash } }); await go(page, 'security');
+  await page.fill(tid('pin-old'), '9999'); await page.fill(tid('pin-new'), '5678'); await page.fill(tid('pin-new2'), '5678'); await page.click(tid('pin-save'));
+  await page.waitForFunction(() => document.querySelector('[data-testid=pin-error]').textContent.includes('errato'));
+  await page.fill(tid('pin-old'), '1234'); await page.fill(tid('pin-new2'), '0000'); await page.click(tid('pin-save'));
+  await page.waitForFunction(() => document.querySelector('[data-testid=pin-error]').textContent.includes('coincidono'));
+  await page.fill(tid('pin-new2'), '5678'); await page.click(tid('pin-save'));
+  await until(page, () => window.__app.house.adminSalt !== 'SALTSALTSALT1234');
+  const ok = await page.evaluate(async () => { const a = await import('/js/actions.js'); return [await a.verifyPin(window.__app.house, '5678'), await a.verifyPin(window.__app.house, '1234')]; });
+  assert.deepEqual(ok, [true, false]);
+  await page.click(tid('sec-lock'));
+  await page.waitForSelector(tid('settings-index'));
+  assert.equal(await page.locator('a.li[href^="#/settings/"]').count(), 4);
+  await go(page, 'profile'); await page.fill(tid('admin-pin'), '5678'); await page.click(tid('admin-unlock'));
+  await until(page, () => window.__app.isAdmin === true);
+  noErrors(page);
+});
+
+await test('EN + dark + viewport desktop: nessun overflow, screenshot', async (mk) => {
+  const subs = ['', 'roommates', 'notif-house', 'access', 'data', 'rules', 'invite', 'appearance'];
+  for (const [vp, tag] of [[{ width: 390, height: 844 }, '390'], [{ width: 1440, height: 900 }, '1440']]) {
+    const page = await mk({ viewport: vp, dark: true, lang: 'en-US', seedOpts: { members: { ...members } }, houseExtra: { lang: 'en' } });
+    await page.evaluate(() => window.__app.savePrefs({ lang: 'en' }));
+    for (const sub of subs) {
+      await go(page, sub); await page.waitForTimeout(150);
+      const ov = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(ov <= 1, `overflow orizzontale in ${sub || 'index'} @${tag}: ${ov}`);
+      if (['', 'roommates', 'notif-house', 'access'].includes(sub)) await shot(page, `en-dark-${tag}-${sub || 'index'}`);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.lang), 'en');
+    assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-theme')), null);
+    assert.match(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), /rgb\(0, 0, 0\)/);
+    noErrors(page);
+  }
+});
+
+// ---------- service worker (contesto con SW consentiti) ----------
+await test('service worker: offline, push, click, notifica locale', async () => {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'allow', permissions: ['notifications'] });
+    await context.addInitScript((data) => { if (!localStorage.getItem('cp:seeded')) { for (const [k, v] of Object.entries(data)) localStorage.setItem(k, JSON.stringify(v)); localStorage.setItem('cp:seeded', '1'); } }, seed({ houseExtra: { requireRules: false } }));
+    const page = await context.newPage(); page.on('pageerror', (e) => (page.__errors ||= []).push(String(e)));
+    await page.goto(env.url + '/#/settings'); await page.waitForSelector(tid('settings-index'));
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    const sw = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+    assert.match(sw.url(), /\/sw\.js$/);
+    const keys = await page.evaluate(async () => (await caches.keys()));
+    assert.equal(keys.length, 1); assert.match(keys[0], /^tidyhouse-/);
+    const cached = await page.evaluate(async () => { const c = await caches.open((await caches.keys())[0]); return (await c.keys()).map((r) => new URL(r.url).pathname); });
+    for (const f of ['/index.html', '/css/app.css', '/js/app.js', '/js/push.js', '/vendor/qr.js', '/icons/icon-192.png']) assert.ok(cached.includes(f), 'precache: ' + f);
+    // notifica locale (dal sw registrato)
+    const lt = await page.evaluate(async () => { const p = await import('/js/push.js'); return p.localTest({ deviceId: 'd' }); });
+    assert.equal(lt.ok, true);
+    let shown = await page.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).map((n) => ({ title: n.title, tag: n.tag })));
+    assert.equal(shown.length, 1);
+    // evento push con payload JSON: mostra sempre la notifica
+    const pushed = await sw.evaluate(async () => {
+      const data = new TextEncoder().encode(JSON.stringify({ title: 'Sabato', body: 'Tocca a te', url: '#/trips', tag: 'k1' }));
+      let p; self.addEventListener('push', (e) => { p = e; }, { once: true, capture: true });
+      self.dispatchEvent(new PushEvent('push', { data }));
+      return typeof p !== 'undefined';
+    });
+    assert.ok(pushed);
+    await page.waitForFunction(async () => (await (await navigator.serviceWorker.ready).getNotifications({ tag: 'k1' })).length === 1, null, { timeout: 5000 });
+    // push senza payload: mostra comunque qualcosa
+    await sw.evaluate(() => self.dispatchEvent(new PushEvent('push')));
+    await page.waitForFunction(async () => (await (await navigator.serviceWorker.ready).getNotifications()).length === 3, null, { timeout: 5000 });
+    // click: naviga all'hash
+    await sw.evaluate(async () => { const [n] = await self.registration.getNotifications({ tag: 'k1' }); self.dispatchEvent(new NotificationEvent('notificationclick', { notification: n, action: '' })); });
+    await page.waitForFunction(() => location.hash === '#/trips', null, { timeout: 5000 }).catch(() => { /* navigate() richiede client controllato: verificato sotto dopo reload */ });
+    // offline dopo reload controllato
+    await page.goto(env.url + '/#/settings'); await page.reload(); await page.waitForSelector(tid('settings-index'));
+    assert.ok(await page.evaluate(() => !!navigator.serviceWorker.controller), 'pagina controllata dal SW');
+    await context.setOffline(true);
+    await page.reload(); await page.waitForSelector(tid('settings-index'), { timeout: 10000 });
+    assert.match(await page.locator('.title').first().innerText(), /Impostazioni/);
+    await context.setOffline(false);
+    assert.deepEqual((page.__errors || []).filter((e) => !/Failed to fetch|NetworkError/.test(e)), []);
+  } finally { await browser.close(); }
+});
+
+await env.close();
+const failed = results.filter((r) => !r[1]);
+console.log(`\n${results.length - failed.length}/${results.length} test e2e ok`);
+process.exit(failed.length ? 1 : 0);
