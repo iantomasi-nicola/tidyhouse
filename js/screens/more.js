@@ -27,7 +27,8 @@ function dayLabel(ctx, day) {
   const today = ctx.today();
   if (day === today) return t('today');
   if (day === addDays(today, -1)) return t('yesterday');
-  return `${dowLong(day, ctx.lang)} ${fmtDate(day, ctx.lang, { year: day.slice(0, 4) !== today.slice(0, 4) })}`;
+  const l = `${dowLong(day, ctx.lang)} ${fmtDate(day, ctx.lang, { year: day.slice(0, 4) !== today.slice(0, 4) })}`;
+  return l.charAt(0).toUpperCase() + l.slice(1);
 }
 const personName = (ctx, id) => (id === 'admin' ? t('misc.admin') : id ? ctx.name(id) : '—');
 /** Esegue un'azione mostrando un toast se fallisce. */
