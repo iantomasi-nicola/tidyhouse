@@ -301,7 +301,7 @@ const run = async () => {
     assert.match(await text(p2, '[data-widget=alerts] [data-testid^=req-]'), new RegExp(`${NAME[B]} cerca un sostituto: Bagno`));
     await p2.click('[data-widget=alerts] [data-act=req-no]');
     await p2.waitForFunction(() => Object.values(window.__app.state.requests).some((r) => r.kind === 'cover' && r.status === 'declined'));
-    assert.equal(await p2.locator('[data-widget=alerts] [data-testid^=req-]').count(), 0);
+    await p2.waitForSelector('[data-widget=alerts] [data-testid^=req-]', { state: 'detached' });
     assert.equal((await wk(p2)).agreed?.bathroom ?? null, null);
     noErrors(p2);
   });
@@ -517,7 +517,7 @@ const run = async () => {
     await desk.locator('.cal-panel [data-toggle=floor]').click();
     await gate(desk, 'all');
     await desk.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[0].kind === 'done');
-    assert.equal(await desk.locator('.cal-panel [data-toggle=floor]').getAttribute('aria-pressed'), 'true');
+    await pressed(desk, '.cal-panel [data-toggle=floor]', true);
     await shot(desk, 'calendar-1440-done');
     noErrors(desk);
     const home = await open({ s: mk({ me: 'anna', admin: true, weeks }), viewport: DESKTOP });

@@ -198,7 +198,7 @@ button.li:active, a.li:active { background: var(--surface-2); }
 .hero .meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .hero .chip { background: rgba(0,0,0,.2); color: #fff; }
 .hero .btn { background: #fff; color: color-mix(in srgb, var(--accent) 75%, #000); }
-.hero .btn.glass { background: rgba(0,0,0,.22); color: #fff; }
+.hero .btn.glass { background: rgba(0,0,0,.32); color: #fff; }
 .hero.calm { background: #188038; box-shadow: none; }
 .hero.rest { background: #00796b; box-shadow: none; }
 .hero.away { background: #5f6368; box-shadow: none; }

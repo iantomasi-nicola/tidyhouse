@@ -2,6 +2,9 @@
 // Personali (tutti): profile, appearance, home, notifications. Amministrazione (solo admin): house, rules, roommates,
 // features, links, notif-house, invite*, access, data, ai, security. (*invite: codice/link visibili a tutti, rotazione solo admin)
 import { h, icon, loadCss, avatar, stepper, seg, liRow, copyText, download, confirmDialog, deviceInfo } from '../ui.js';
+import { registerStrings as __reg } from '../i18n.js';
+import { it as __flowIt, en as __flowEn } from '../strings/flow.js';
+__reg(__flowIt, __flowEn);   // widget.shared & co. servono anche aprendo direttamente le impostazioni
 import { t, registerStrings, fmtDate, fmtWeekRange, LANGS } from '../i18n.js';
 import { DEFAULT_TASK_PENALTY, DEFAULT_FEATURES, NOTIF_TYPES, HOME_WIDGETS, DEFAULT_HOME, PALETTE, planNotifications, notifCfg, effortOf, localParts, uid, buildStats, historyRows, toCsv, validateHouse } from '../extras.js';
 import { validateRoommates, addDays, DEFAULT_SETTINGS, CHORES } from '../engine.js';

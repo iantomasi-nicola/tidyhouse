@@ -58,7 +58,11 @@ export class Actions {
   canAway(personId) { return this.admin || (!!this.me && personId === this.me && feature(this.house, 'selfAway')); }
   canPlan(sunday, chore) { if (!feature(this.house, 'planDay')) return false; if (this.admin) return true; const r = this.row(sunday); return !!r && !!this.me && r.assigned[CHORES.indexOf(chore)] === this.me; }
   canTrip(personId) { return feature(this.house, 'trips') && (this.admin || personId === this.me); }
-  canTask(sunday, chore) { return this.admin || (!!this.me && (this.row(sunday) || { assigned: [] }).assigned[CHORES.indexOf(chore)] === this.me); }
+  canTask(sunday, chore) {   // l'assegnato, l'admin, o chi è responsabile di un arretrato di quella mansione
+    if (this.admin) return true; if (!this.me) return false;
+    const row = this.row(sunday); if (row && row.assigned[CHORES.indexOf(chore)] === this.me) return true;
+    try { const weeks = { ...(this.s.state.weeks || {}) }; return checklistOwners({ ...this.house, weeks }, this.out(), weeks, sunday).some((x) => x.chore === chore && x.owner === this.me); } catch { return false; }
+  }
   need(ok) { if (!ok) throw new Error('permission'); }
 
   // ---- registro ----
@@ -79,6 +83,7 @@ export class Actions {
   weekDoc(sunday) { return (this.s.state.weeks || {})[sunday] || {}; }
   /** Voci di checklist ancora da spuntare per una mansione di una settimana. */
   pendingChecklist(sunday, chore, { all = false } = {}) {
+    if (!feature(this.house, 'tasks')) return [];   // funzione spenta: nessun blocco
     const weeks = { ...(this.s.state.weeks || {}) }; const eh = { ...this.house, weeks }; const out = this.out();
     const row = out.rows.find((r) => r.sunday === sunday); const assignee = row && row.assigned[CHORES.indexOf(chore)];
     return checklistOwners(eh, out, weeks, sunday)
