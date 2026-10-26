@@ -180,11 +180,11 @@ let wiz = null;
 function newWiz() {
   return {
     step: 1, name: '', startSunday: toSunday(todayStr()), startAdjusted: false,
-    mode: 'local', people: [{ name: '', from: '', to: '', adv: false }, { name: '', from: '', to: '', adv: false }, { name: '', from: '', to: '', adv: false }],
+    mode: 'local', people: [{ name: '', from: '', to: '', expectedTo: '', adv: false }, { name: '', from: '', to: '', expectedTo: '', adv: false }, { name: '', from: '', to: '', expectedTo: '', adv: false }],
     adminIdx: 0, pin: '', pin2: '', showPin: false, imported: null, importing: false, importErr: '', busy: false, err: '',
   };
 }
-const peopleNow = () => (wiz.imported ? wiz.imported.roommates.map((r) => ({ name: r.name, from: r.from || '', to: r.to || '' })) : wiz.people);
+const peopleNow = () => (wiz.imported ? wiz.imported.roommates.map((r) => ({ name: r.name, from: r.from || '', to: r.to || '', expectedTo: '' })) : wiz.people);
 
 function createStage(boot) {
   if (!wiz) { wiz = newWiz(); wiz.mode = boot.cloudAvailable ? 'cloud' : 'local'; }
@@ -214,7 +214,7 @@ function createStage(boot) {
       if (list.length > MAX_PEOPLE) return t('setup.maxPeople');
       if (list.some((p) => !norm(p.name))) return t('onb.err.emptyName');
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) if (same(list[i].name, list[j].name)) return t('onb.err.dupName');
-      if (list.some((p) => (p.from && !isIso(p.from)) || (p.to && !isIso(p.to)) || (p.from && p.to && p.to <= p.from))) return t('onb.err.dates');
+      if (list.some((p) => (p.from && !isIso(p.from)) || (p.to && !isIso(p.to)) || (p.expectedTo && !isIso(p.expectedTo)) || (p.from && p.to && p.to <= p.from))) return t('onb.err.dates');
       return '';
     }
     if (n === 3) {
@@ -264,7 +264,7 @@ function createStage(boot) {
         h('button', { type: 'button', class: 'btn soft', onclick: () => { W.imported = null; W.adminIdx = 0; render(); } }, t('setup.skipImport'))];
     }
     const list = h('div', { class: 'onb-people' });
-    const addBtn = h('button', { type: 'button', class: 'btn tonal block', onclick: () => { if (W.people.length >= MAX_PEOPLE) return; W.people.push({ name: '', from: '', to: '', adv: false }); paint(true); } }, icon('plus'), t('setup.addPerson'));
+    const addBtn = h('button', { type: 'button', class: 'btn tonal block', onclick: () => { if (W.people.length >= MAX_PEOPLE) return; W.people.push({ name: '', from: '', to: '', expectedTo: '', adv: false }); paint(true); } }, icon('plus'), t('setup.addPerson'));
     const paint = (focusLast) => {
       clear(list);
       W.people.forEach((p, i) => {
@@ -273,8 +273,11 @@ function createStage(boot) {
         const adv = h('div', { class: 'onb-adv', hidden: !p.adv },
           h('div', { class: 'field' }, h('label', null, t('onb.from')), h('input', { class: 'input', type: 'date', value: p.from, 'aria-label': t('onb.from') + ' ' + (p.name || i + 1), onchange: (e) => { p.from = e.target.value; } })),
           h('div', { class: 'field' }, h('label', null, t('onb.to')), h('input', { class: 'input', type: 'date', value: p.to, 'aria-label': t('onb.to') + ' ' + (p.name || i + 1), onchange: (e) => { p.to = e.target.value; } })),
+          h('p', { class: 'onb-hint onb-adv-hint' }, t('onb.toUnknown')),
+          h('div', { class: 'field onb-adv-wide' }, h('label', null, t('onb.expectedTo')), h('input', { class: 'input', type: 'date', value: p.expectedTo || '', 'aria-label': t('onb.expectedTo') + ' ' + (p.name || i + 1), onchange: (e) => { p.expectedTo = e.target.value; } }),
+            h('p', { class: 'onb-hint' }, t('onb.expectedToHint'))),
           h('p', { class: 'onb-hint onb-adv-hint' }, t('onb.advancedHint')));
-        const toggleAdv = h('button', { type: 'button', class: 'icon-btn' + (p.adv || p.from || p.to ? ' on' : ''), 'aria-label': t('onb.advanced'), 'aria-expanded': String(!!p.adv), title: t('onb.advanced'), onclick: () => { p.adv = !p.adv; paint(); } }, icon('calendar'));
+        const toggleAdv = h('button', { type: 'button', class: 'icon-btn' + (p.adv || p.from || p.to || p.expectedTo ? ' on' : ''), 'aria-label': t('onb.advanced'), 'aria-expanded': String(!!p.adv), title: t('onb.advanced'), onclick: () => { p.adv = !p.adv; paint(); } }, icon('calendar'));
         const rm = W.people.length > 1 ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('onb.removePerson', { name: p.name || (i + 1) }), onclick: () => { W.people.splice(i, 1); paint(); } }, icon('x')) : null;
         list.append(h('div', { class: 'onb-person' }, h('div', { class: 'onb-prow' }, av, inp, toggleAdv, rm), adv));
         if (focusLast && i === W.people.length - 1) setTimeout(() => inp.focus(), 20);
@@ -367,7 +370,7 @@ function createStage(boot) {
     try {
       const id = await boot.createHouse({
         name: norm(W.name), startSunday: W.imported ? W.imported.startSunday : toSunday(W.startSunday),
-        roommates: people.map((p) => ({ name: norm(p.name), from: p.from || null, to: p.to || null })),
+        roommates: people.map((p) => ({ name: norm(p.name), from: p.from || null, to: p.to || null, ...(!p.to && p.expectedTo ? { expectedTo: p.expectedTo } : {}) })),
         adminName: adminP.name, pin: W.pin, mode: boot.cloudAvailable ? W.mode : 'local', imported: W.imported || undefined,
       });
       const summary = { name: norm(W.name), mode: boot.cloudAvailable ? W.mode : 'local', id };

@@ -103,3 +103,5 @@
 .st-page a.li, .st-page button.li, .st-page label.li { color: var(--text); }
 .st-page .li .d { overflow-wrap: anywhere; }
 .st-savebar[hidden]{display:none}
+.st-chips-col { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.st-expected { display: grid; gap: 6px; }

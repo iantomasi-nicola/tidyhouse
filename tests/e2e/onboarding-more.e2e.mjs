@@ -48,7 +48,7 @@ async function noRawKeys(page, label) {
 }
 async function passRules(page) {
   if (!(await page.locator('.onb-rules').count())) return;
-  await page.evaluate(() => { const b = document.querySelector('.onb-rules'); b.scrollTop = b.scrollHeight; });
+  await page.evaluate(() => { const b = document.querySelector('.onb-rules'); b.scrollTo({ top: b.scrollHeight, behavior: 'instant' }); });
   await page.waitForTimeout(200);
   await page.locator('#onb-accept').check();
   await page.getByRole('button', { name: /Ho letto|I've read/ }).click();
@@ -168,6 +168,10 @@ await scenario('create: wizard locale completo -> Home', async () => {
   // date avanzate
   await page.locator('.onb-person').nth(2).locator('button[aria-expanded]').click();
   assert.ok(await page.locator('.onb-adv').nth(2).isVisible());
+  assert.match(await page.locator('.onb-adv').nth(2).innerText(), /Uscita non nota: potrai segnarla più avanti/);
+  assert.match(await page.locator('.onb-adv').nth(2).innerText(), /Uscita prevista \(indicativa\)/);
+  await page.locator('.onb-adv').nth(2).locator('input[type=date]').nth(2).fill('2027-02-28');
+  await noOverflow(page, 'create step 2');
   await shot(page, 'create-2');
   await page.getByRole('button', { name: /^Avanti/ }).click();
   // passo 3
@@ -179,6 +183,7 @@ await scenario('create: wizard locale completo -> Home', async () => {
   await page.getByRole('button', { name: /^Avanti/ }).click();
   assert.match(await page.locator('.onb-err').innerText(), /non coincidono/);
   await page.fill('#onb-pin2', '1234');
+  await noOverflow(page, 'create step 3');
   await shot(page, 'create-3');
   await page.getByRole('button', { name: /^Avanti/ }).click();
   // passo 4
@@ -196,6 +201,8 @@ await scenario('create: wizard locale completo -> Home', async () => {
   assert.equal(st.house.startSunday, '2026-11-01');
   assert.deepEqual(st.house.roommates.map((x) => x.name), ['Anna', 'Bruno', 'Carla']);
   assert.deepEqual(st.house.adminIds, [st.house.roommates[1].id]);
+  // nota: buildHouse (nucleo) scarta expectedTo: verifichiamo solo che `to` resti vuoto
+  assert.ok(!st.house.roommates[2].to);
   assert.equal(r[0].me, st.house.roommates[1].id);
   await page.locator('#onb-go').click();
   await page.waitForSelector('.nav, .onb-rules', { timeout: 6000 });
@@ -318,7 +325,7 @@ await scenario('rules gate: scroll obbligatorio', async () => {
   assert.ok(await page.locator('.onb-scrollhint').isVisible());
   await shot(page, 'rules-gate');
   // la checkbox da sola non basta
-  await page.evaluate(() => { const b = document.querySelector('.onb-rules'); b.scrollTop = b.scrollHeight; });
+  await page.evaluate(() => { const b = document.querySelector('.onb-rules'); b.scrollTo({ top: b.scrollHeight, behavior: 'instant' }); });
   await page.waitForTimeout(200);
   assert.ok(await page.locator('#onb-accept').isEnabled());
   assert.ok(await btn.isDisabled());

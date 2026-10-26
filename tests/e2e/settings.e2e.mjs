@@ -151,13 +151,15 @@ await test('notifiche personali: stato, tipi, prefs sul member', async (mk) => {
     const base = { deviceId: 'd', state: { members: {} }, house: { vapidPublic: 'abc' }, mode: 'cloud' };
     const out = {};
     out.nopush = push.status({ ...base, house: {} }).state; out.local = push.status({ ...base, mode: 'local' }).state;
-    out.off = push.status(base).state;
+    out.lt = await push.localTest(base); out.denied = push.status(base).state;
     const ua = navigator.userAgent; Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', configurable: true });
     out.ios = push.status(base).state; Object.defineProperty(navigator, 'userAgent', { value: ua, configurable: true });
     const k = await push.generateVapid(); out.k = k;
-    out.lt = await push.localTest(base);
     return out;
   });
+  await page.context().grantPermissions(['notifications'], { origin: env.url });
+  r.off = await page.evaluate(async () => (await import('/js/push.js')).status({ deviceId: 'd', state: { members: {} }, house: { vapidPublic: 'abc' }, mode: 'cloud' }).state);
+  assert.equal(r.denied, 'denied');
   assert.equal(r.nopush, 'nopush'); assert.equal(r.local, 'nocloud'); assert.equal(r.off, 'off'); assert.equal(r.ios, 'ios-install');
   assert.equal(Buffer.from(r.k.publicKey, 'base64url').length, 65); assert.equal(Buffer.from(r.k.privateKey, 'base64url').length, 32);
   assert.equal(r.lt.ok, false);
@@ -227,6 +229,42 @@ await test('coinquilini: bozza, avvisi, uscita, sostituzione, ricalcolo', async 
   await go(page, 'roommates'); await shot(page, 'roommates-390'); noErrors(page);
 });
 
+await test('coinquilini: uscita non nota, prevista (indicativa) e certa', async (mk) => {
+  const page = await mk({ houseExtra: { roommates: [
+    { id: 'anna', name: 'Anna', slot: 1, from: null, to: null },
+    { id: 'bruno', name: 'Bruno', slot: 2, from: null, to: null, expectedTo: '2026-11-10' },
+    { id: 'carla', name: 'Carla', slot: 3, from: null, to: '2026-12-20' }] } });
+  await go(page, 'roommates');
+  assert.match(await page.locator(tid('rm-chips-0')).innerText(), /Uscita non nota/);
+  assert.doesNotMatch(await page.locator(tid('rm-chips-0')).innerText(), /prevista/);
+  assert.match(await page.locator(tid('rm-chips-1')).innerText(), /uscita prevista il 10 nov/);
+  assert.match(await page.locator(tid('rm-chips-2')).innerText(), /esce il 20 dic/);
+  assert.equal(await page.locator(tid('rm-expected-2')).count(), 0, 'con uscita certa non c\'è il campo indicativo');
+  assert.match(await page.locator(tid('rm-expected-hint')).innerText(), /Bruno/);
+  assert.equal(await page.locator(tid('rm-bar')).isHidden(), true, 'uscita non nota non è un errore né una modifica');
+  assert.equal(await page.locator(tid('rm-warn')).innerText(), '');
+  await shot(page, 'roommates-expected-390');
+  // l'uscita prevista non cambia i turni
+  const plan = () => page.evaluate(() => JSON.stringify(window.__app.calc.out.rows.map((r) => r.assigned)));
+  const p0 = await plan();
+  await page.fill(tid('rm-expected-0'), '2026-12-01'); await page.click(tid('rm-save'));
+  await until(page, () => window.__app.house.roommates[0].expectedTo === '2026-12-01');
+  assert.equal(await plan(), p0);
+  // conferma uscita di Bruno: to certa, expectedTo svuotata
+  await page.click(tid('rm-out-1'));
+  assert.equal(await page.locator(tid('out-date')).inputValue(), '2026-11-10');
+  await page.fill(tid('out-date'), '2026-11-12'); await page.click(tid('out-confirm'));
+  await until(page, () => window.__app.house.roommates[1].to === '2026-11-12');
+  const rm = (await house(page)).roommates;
+  assert.ok(!('expectedTo' in rm[1]) || !rm[1].expectedTo); assert.equal(rm[0].expectedTo, '2026-12-01');
+  assert.deepEqual(rm.map((r) => r.id), ['anna', 'bruno', 'carla']);
+  // se si imposta "fino al" l'indicativa sparisce e non viene conservata
+  await page.fill(tid('rm-to-0'), '2026-12-05'); assert.equal(await page.locator(tid('rm-expected-0')).count(), 0);
+  await page.click(tid('rm-save')); await until(page, () => window.__app.house.roommates[0].to === '2026-12-05');
+  assert.ok(!(await house(page)).roommates[0].expectedTo);
+  noErrors(page);
+});
+
 await test('funzioni: spegnere una funzione la toglie dalla navigazione', async (mk) => {
   const page = await mk(); await go(page, 'features');
   assert.ok(await page.locator('.nav a[href="#/trips"]').count());
@@ -261,7 +299,7 @@ await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => 
   const page = await mk({ viewport: { width: 390, height: 844 } }); await go(page, 'notif-house');
   await page.selectOption(tid('dow-satDuty'), '5'); await until(page, () => window.__app.house.notif.satDuty.dow === 5);
   await page.fill(tid('time-satDuty'), '11:30'); await until(page, () => window.__app.house.notif.satDuty.time === '11:30');
-  await page.click(tid('on-monNew') + ' + i'); await until(page, () => window.__app.house.notif.monNew.on === true);
+  await page.click(tid('ncard-monNew') + ' .switch'); await until(page, () => window.__app.house.notif.monNew.on === true);
   await page.click(tid('late-add')); await until(page, () => window.__app.house.notif.late.times.length === 4);
   await page.click(`${tid('step-late-max')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.late.max === 4);
   await page.click(`${tid('step-catchUp')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.catchUpHours === 6);
@@ -443,7 +481,8 @@ await test('IA: senza chiave e con errore del servizio', async (mk) => {
   await page.click(tid('ai-run')); await page.waitForSelector(tid('ai-error'));
   assert.match(await page.locator(tid('ai-error')).innerText(), /bad key/);
   await page.click('.sheet .icon-btn[aria-label="Chiudi"]');
-  await go(page, 'ai'); await page.click(tid('ai-remove')); await until(page, () => !JSON.parse(localStorage.getItem('cp:ai') || '{}').key);
+  await page.evaluate(() => window.__app.rerender()); await page.waitForFunction(() => !document.querySelector('[data-testid=ai-remove]') || !document.querySelector('[data-testid=ai-remove]').disabled);
+  await page.click(tid('ai-remove')); await until(page, () => !JSON.parse(localStorage.getItem('cp:ai') || '{}').key);
   noErrors(page);
 });
 

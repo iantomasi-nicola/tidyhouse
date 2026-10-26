@@ -133,7 +133,7 @@ export async function render(ctx, params = {}) {
   if (sub !== curSub) { resetDrafts(); curSub = sub; }
   const def = SECTIONS[sub];
   if (!sub || !def) return indexPage(ctx);
-  if (def.admin && !def.open && !ctx.isAdmin) return page(ctx, t(def.title), h('div', { class: 'empty', 'data-testid': 'admin-only' }, icon('lock'), h('div', { style: { fontWeight: 650, color: 'var(--text)' } }, t('ai.adminOnly')), h('div', { class: 'small' }, t('setX.adminOnly.hint'))));
+  if (def.admin && !def.open && !ctx.isAdmin) return page(ctx, t(def.title), h('div', { class: 'empty', 'data-testid': 'admin-only' }, icon('lock'), h('div', { style: { fontWeight: 650, color: 'var(--text)' } }, t('ai.adminOnly')), h('div', { class: 'small' }, t('setX.adminOnly.hint'))), sub);
   let body;
   try { body = await def.build(ctx); } catch (e) { console.error(e); body = note('bad', 'alert', t('error'), ' ', h('span', { class: 'small muted' }, String(e && e.message || e))); }
   return page(ctx, t(def.title), body, sub);
@@ -365,7 +365,7 @@ function rulesSection(ctx) {
 // ============================================================================
 // ROOMMATES (editor come nel foglio)
 // ============================================================================
-const normRm = (r) => ({ id: r.id || null, name: String(r.name || '').trim(), slot: Number(r.slot) || 1, from: r.from || null, to: r.to || null, color: r.color || null });
+const normRm = (r) => ({ id: r.id || null, name: String(r.name || '').trim(), slot: Number(r.slot) || 1, from: r.from || null, to: r.to || null, expectedTo: r.to ? null : (r.expectedTo || null), color: r.color || null });
 const rmList = () => S.rm.map(({ _k, ...r }) => r);
 const rmDirty = () => JSON.stringify(rmList().map(normRm)) !== S.rmBase;
 function rmInit(ctx) {
@@ -420,7 +420,7 @@ function roommatesSection(ctx) {
     const color = r.color || PALETTE[i % PALETTE.length];
     const name = h('input', { class: 'input', value: r.name || '', placeholder: t('set.roommates.name'), 'aria-label': t('set.roommates.name'), 'data-testid': 'rm-name-' + i, maxlength: 30, autocomplete: 'off' });
     name.addEventListener('input', () => { r.name = name.value; refresh(); });
-    const dateIn = (key, label, testid) => { const el = h('input', { class: 'input', type: 'date', value: r[key] || '', 'aria-label': label, 'data-testid': testid }); el.addEventListener('change', () => { r[key] = el.value || null; draw(); }); return h('label', { class: 'field' }, h('span', { class: 'lbl' }, label), el); };
+    const dateIn = (key, label, testid) => { const el = h('input', { class: 'input', type: 'date', value: r[key] || '', 'aria-label': label, 'data-testid': testid }); el.addEventListener('change', () => { r[key] = el.value || null; if (key === 'to' && r.to) r.expectedTo = null; draw(); }); return h('label', { class: 'field' }, h('span', { class: 'lbl' }, label), el); };
     const pal = S.rmColor === r._k ? h('div', { class: 'swatches st-pal' }, PALETTE.map((c) => h('button', { type: 'button', style: { background: c }, 'aria-label': c, 'aria-pressed': String(c === r.color), onclick: () => { r.color = c; S.rmColor = null; draw(); } })),
       h('label', { class: 'st-colorpick', title: t('setX.appearance.custom') }, h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(color) ? color : '#0a84ff', 'aria-label': t('setX.appearance.custom'), onchange: (e) => { r.color = e.target.value; S.rmColor = null; draw(); } }), icon('plus'))) : null;
     const slot = seg([1, 2, 3, 4].map((n) => [n, String(n)]), Number(r.slot) || 1, (v) => { r.slot = v; refresh(); });
@@ -428,24 +428,29 @@ function roommatesSection(ctx) {
     return h('section', { class: 'card st-card st-person stack tight', 'data-testid': 'rm-card-' + i },
       h('div', { class: 'row' },
         h('button', { class: 'st-dot', type: 'button', style: { background: color }, 'aria-label': t('set.roommates.color'), 'aria-expanded': String(S.rmColor === r._k), onclick: () => { S.rmColor = S.rmColor === r._k ? null : r._k; draw(); } }, (r.name || '?').trim().slice(0, 1).toUpperCase()),
-        h('div', { class: 'grow' }, name),
-        chip(t('set.roommates.status.' + st), kind)),
+        h('div', { class: 'grow' }, name)),
+      h('div', { class: 'st-chips', 'data-testid': 'rm-chips-' + i }, chip(t('set.roommates.status.' + st), kind),
+          !r.to ? chip(t('setX.rm.unknownExit'), '', 'clock') : r.to > today ? chip(t('setX.rm.leavesChip', { date: fmtDate(r.to, ctx.lang, { year: true }) }), 'warn') : null,
+          !r.to && r.expectedTo ? chip(t('setX.rm.expectedChip', { date: fmtDate(r.expectedTo, ctx.lang, { year: true }) }), 'warn', 'alert') : null),
       pal,
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('set.roommates.slot')), slot),
       h('div', { class: 'st-dates' }, dateIn('from', t('set.roommates.from'), 'rm-from-' + i), dateIn('to', t('set.roommates.to'), 'rm-to-' + i)),
+      r.to ? null : h('div', { class: 'st-expected' },
+        h('label', { class: 'field' }, h('span', { class: 'lbl' }, t('setX.rm.expectedTo')), (() => { const el = h('input', { class: 'input', type: 'date', value: r.expectedTo || '', 'aria-label': t('setX.rm.expectedTo'), 'data-testid': 'rm-expected-' + i }); el.addEventListener('change', () => { r.expectedTo = el.value || null; draw(); }); return el; })()),
+        h('p', { class: 'small muted' }, t('setX.rm.expectedHint'))),
       h('div', { class: 'btn-row' },
-        btn(t('set.roommates.moveOut'), () => moveOutSheet(r), { ic: 'unlock', id: 'rm-out-' + i }),
+        r.to ? null : btn(r.expectedTo ? t('setX.rm.confirmExit') : t('set.roommates.moveOut'), () => moveOutSheet(r), { ic: 'unlock', id: 'rm-out-' + i, cls: r.expectedTo ? 'tonal' : 'soft' }),
         btn(t('setX.rm.replace'), () => replaceSheet(r), { ic: 'swap', id: 'rm-replace-' + i }),
         h('button', { class: 'icon-btn st-del', type: 'button', 'aria-label': t('set.roommates.remove'), 'data-testid': 'rm-del-' + i, onclick: async () => { if (await confirmDialog({ title: t('set.roommates.remove'), text: t('set.roommates.removeHint'), ok: t('set.roommates.remove'), danger: true })) { S.rm.splice(i, 1); draw(); } } }, icon('trash'))));
   }
 
   function afterExit() { ctx.toast(t('setX.rm.exitSaved')); }
   function moveOutSheet(r) {
-    const d = h('input', { class: 'input', type: 'date', value: r.to || today, 'aria-label': t('set.roommates.to'), 'data-testid': 'out-date' });
+    const d = h('input', { class: 'input', type: 'date', value: r.to || r.expectedTo || today, 'aria-label': t('set.roommates.to'), 'data-testid': 'out-date' });
     const sh = ctx.sheet({ title: `${t('set.roommates.moveOut')} · ${r.name}`, body: h('div', { class: 'stack' }, h('p', { class: 'muted' }, t('setX.rm.moveOutHint')), h('label', { class: 'field' }, h('span', { class: 'lbl' }, t('set.roommates.to')), d),
       h('div', { class: 'btn-row' }, btn(t('cancel'), () => sh.close()), btn(t('set.roommates.moveOut'), async () => {
         if (!d.value) return; if (r.from && d.value < r.from) { ctx.toast(t('trips.invalid')); return; }
-        r.to = d.value; sh.close(); if (await rmSave(ctx)) afterExit();
+        r.to = d.value; r.expectedTo = null; sh.close(); if (await rmSave(ctx)) afterExit();
       }, { cls: '', id: 'out-confirm' }))) });
   }
   function replaceSheet(r) {
@@ -459,7 +464,7 @@ function roommatesSection(ctx) {
       h('div', { class: 'btn-row' }, btn(t('cancel'), () => sh.close()), btn(t('setX.rm.replace'), async () => {
         const name = nm.value.trim(); if (!name) { nm.focus(); return; } if (!d.value) return;
         if (r.from && d.value < r.from) { ctx.toast(t('trips.invalid')); return; }
-        r.to = d.value; S.rm.push({ _k: 'n' + uid(), name, slot: Number(r.slot) || 1, from: addDays(d.value, 1), to: null, color: null });
+        r.to = d.value; r.expectedTo = null; S.rm.push({ _k: 'n' + uid(), name, slot: Number(r.slot) || 1, from: addDays(d.value, 1), to: null, color: null });
         sh.close(); if (await rmSave(ctx)) afterExit();
       }, { cls: '', id: 'rep-confirm' }))) });
     setTimeout(() => nm.focus(), 420);
@@ -471,9 +476,11 @@ function roommatesSection(ctx) {
     h('div', { class: 'btn-row' },
       h('a', { class: 'btn', href: '#/settings/invite', 'data-testid': 'rm-go-invite' }, icon('qr'), t('setX.rm.rotateGo')),
       btn(t('setX.rm.ignore'), () => setHouse(ctx, { ignoreLeft: Object.fromEntries(left.map((r) => [r.id, true])) }), { id: 'rm-ignore' }))) : null;
+  const soon = ctx.actions.expectedExits ? ctx.actions.expectedExits(21) : [];
+  const soonHint = soon.length ? note('warn', 'clock', h('div', { 'data-testid': 'rm-expected-hint' }, t('setX.rm.expectedSoon', { names: soon.map((r) => `${r.name} (${fmtDate(r.expectedTo, ctx.lang, { year: true })})`).join(', ') }))) : null;
   return h('div', { class: 'stack' },
     h('p', { class: 'muted' }, t('set.roommates.hint')),
-    hint, list, warnBox,
+    soonHint, hint, list, warnBox,
     h('div', { class: 'btn-row' }, btn(t('set.roommates.add'), () => { S.rm.push({ _k: 'n' + uid(), name: '', slot: nextSlot(), from: null, to: null, color: null }); draw(); setTimeout(() => { const el = list.querySelector(`[data-testid="rm-name-${S.rm.length - 1}"]`); if (el) el.focus(); }, 30); }, { ic: 'plus', id: 'rm-add' })),
     bar);
   function nextSlot() { const used = new Set(S.rm.filter((r) => !r.to || r.to >= today).map((r) => Number(r.slot))); for (let s = 1; s <= 4; s++) if (!used.has(s)) return s; return 1; }
@@ -521,7 +528,7 @@ function linksSection(ctx) {
   const addSheet = () => {
     const lab = h('input', { class: 'input', placeholder: t('set.linkLabel'), 'aria-label': t('set.linkLabel'), maxlength: 30, 'data-testid': 'add-label' });
     const url = h('input', { class: 'input', type: 'url', inputmode: 'url', placeholder: 'https://', 'aria-label': t('set.linkUrl'), 'data-testid': 'add-url' });
-    const sh = ctx.sheet({ title: t('set.customLink'), body: h('form', { class: 'stack', onsubmit: async (e) => {
+    const sh = ctx.sheet({ title: t('set.customLink'), body: h('form', { class: 'stack', novalidate: true, onsubmit: async (e) => {
       e.preventDefault(); const name = lab.value.trim(); const u = normUrl(url.value);
       if (!name) { lab.focus(); return; } if (!u) { ctx.toast(t('setX.links.https')); url.focus(); return; }
       sh.close(); await setCustom([...custom, { id: uid(), label: name.slice(0, 30), url: u, show: true }]);

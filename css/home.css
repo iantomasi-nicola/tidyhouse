@@ -34,7 +34,7 @@
 .hm-herosub { margin: -4px 0 14px; opacity: .92; font-size: .9375rem; max-width: 36em; }
 .hero .meta { margin-bottom: 0; }
 .hm-heroactions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
-.hm-heroactions .btn { flex: 1 1 150px; }
+.hm-heroactions .btn { flex: 1 1 0; min-width: max-content; white-space: nowrap; padding: 0 18px; font-size: 1rem; }
 .hero.calm .btn { color: #136f5c; }
 .hero.rest .btn { color: #4443c7; }
 .hero.late .btn { color: #c0333a; }

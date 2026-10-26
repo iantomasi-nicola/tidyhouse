@@ -235,7 +235,7 @@ const run = async () => {
   });
 
   await test('funzioni spente spariscono', async () => {
-    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { features: { needs: false, trips: false, whatsapp: false, requests: false, tasks: false, ranking: false, planDay: false, selfAway: false }, home: { order: ['hero', 'quick', 'checklist', 'ranking', 'needs', 'week'], hidden: [] } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { features: { needs: false, trips: false, whatsapp: false, requests: false, tasks: false, ranking: false, planDay: false, selfAway: false }, home: { order: ['hero', 'quick', 'checklist', 'ranking', 'needs', 'week'], hidden: ['alerts', 'links', 'away', 'upcoming', 'makeups'] } } });
     const page = await open({ s });
     assert.deepEqual(await widgets(page), ['hero', 'week'], 'widget visibili');
     assert.equal(await page.locator('.hm-heroaway, [data-testid="plan-tip"]').count(), 0);

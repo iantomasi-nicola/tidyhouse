@@ -141,3 +141,13 @@ body.onb-lock { overflow: hidden; }
   .onb-dl { grid-template-columns: 1fr; gap: 2px 0; }
   .onb-dl dd { margin-bottom: 10px; }
 }
+
+.onb-adv-wide { grid-column: 1 / -1; }
+.onb-adv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.onb-adv > * { min-width: 0; }
+.onb-adv .input { min-width: 0; max-width: 100%; }
+.onb-form .input { background: var(--surface); box-shadow: inset 0 0 0 1px var(--hair); }
+.onb-form .input:focus { box-shadow: inset 0 0 0 1px var(--accent); }
+.onb-card .input, .onb-code .input { background: var(--surface-2); box-shadow: none; }
+.onb-card .input:focus, .onb-code .input:focus { background: var(--surface); }
+.onb-adv .input { background: var(--surface); }
