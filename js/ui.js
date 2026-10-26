@@ -25,11 +25,16 @@ function add(el, kids) {
 export const $ = (s, r = document) => r.querySelector(s);
 export const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 
-const cssLoaded = new Set();
+const cssLoaded = new Set(); const cssPending = new Set();
+/** Carica un foglio di stile una sola volta. Le schermate possono aspettare `cssReady()` prima di mostrarsi (niente contenuto senza stile / layout shift). */
 export function loadCss(href) {
   if (cssLoaded.has(href)) return; cssLoaded.add(href);
-  document.head.append(h('link', { rel: 'stylesheet', href: new URL('../' + href, import.meta.url).href }));
+  const link = h('link', { rel: 'stylesheet', href: new URL('../' + href, import.meta.url).href });
+  const p = new Promise((res) => { link.addEventListener('load', res); link.addEventListener('error', res); setTimeout(res, 2500); }).then(() => cssPending.delete(p));
+  cssPending.add(p);
+  document.head.append(link);
 }
+export const cssReady = () => (cssPending.size ? Promise.all([...cssPending]) : Promise.resolve());
 
 // ---- icone (24x24, tratto) ----
 const P = {

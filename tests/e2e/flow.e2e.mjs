@@ -522,6 +522,47 @@ const run = async () => {
     noErrors(home);
   });
 
+  await test('arretrati di checklist: scalano a chi non li ha fatti (anche con un\'altra mansione); se è assente passano all\'assegnato', async () => {
+    const task = { id: 't9', chore: 'floor', text: 'Pulisci dietro i mobili', every: 2, anchor: '2026-10-25', enabled: true };
+    const hx = { tasks: [task] };
+    const base = mk({ houseExtra: hx });
+    const Xp = whoAt(base, -1).floor, Fc = whoAt(base).floor;      // chi aveva i pavimenti quando la voce scadeva / chi li ha adesso
+    assert.ok(Xp && Fc && Xp !== Fc, 'persone diverse tra le due settimane');
+    // 1) Xp (che ora ha un\'altra mansione) vede l\'arretrato come suo e lo può spuntare
+    const page = await open({ s: mk({ me: Xp, admin: false, houseExtra: hx }) });
+    const item = page.locator('[data-widget=checklist] [data-task=t9]');
+    await item.waitFor();
+    assert.equal(await item.getAttribute('data-reason'), 'arrears');
+    assert.match(await item.innerText(), /Arretrato della settimana del 25 ott: tocca a te perché non l'hai fatto/);
+    assert.ok(await item.isEnabled());
+    await shot(page, 'arrears-home-390');
+    await item.click();
+    await page.waitForFunction(() => { const w = window.__app.state.weeks['2026-11-01'] || {}; return !!(w.tasksDone && w.tasksDone.t9); });
+    assert.equal((await wk(page)).tasksDone.t9.by, Xp);
+    noErrors(page);
+    // 2) chi ha i pavimenti adesso (Fc) non è bloccato dall'arretrato di un altro che è a casa; lo vede col nome del responsabile
+    const p2 = await open({ s: mk({ me: Fc, admin: false, houseExtra: hx }) });
+    assert.equal(await p2.locator('[data-widget=checklist] [data-task=t9]').count(), 0, 'non è sua');
+    await openChore(p2, 'floor');
+    assert.match(await top(p2).locator('.cs-task').innerText(), new RegExp(`tocca a ${NAME[Xp]} perché non l'ha fatto`));
+    await shot(p2, 'arrears-sheet-390');
+    await top(p2).locator('[data-act=done]').click();
+    await p2.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[0].kind === 'done');
+    assert.equal(await p2.locator('[data-choice]').count(), 0, 'nessun dialogo: la voce non è sua');
+    noErrors(p2);
+    // 3) Xp assente: la voce passa a chi ha la mansione adesso, e blocca il suo "fatto"
+    const away = { [CUR]: { awayMap: { [Xp]: true } } };
+    const A2 = whoAt(mk({ weeks: { ...DONE, ...away }, houseExtra: hx })).floor;
+    assert.notEqual(A2, Xp);
+    const p3 = await open({ s: mk({ me: A2, admin: false, weeks: { ...DONE, ...away }, houseExtra: hx }) });
+    assert.match(await text(p3, '[data-widget=checklist]'), /Pulisci dietro i mobili/);
+    await p3.click('[data-testid="hero-todo"] [data-act="done"]');
+    await p3.waitForSelector('[data-choice="all"]');
+    assert.match(await top(p3).innerText(), /Pulisci dietro i mobili/);
+    await p3.click('[data-choice="cancel"]');
+    noErrors(p3);
+  });
+
   await env.close();
   const failed = results.filter((r) => !r[1]);
   console.log(`\n${results.length - failed.length}/${results.length} scenari ok`);

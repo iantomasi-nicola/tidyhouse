@@ -175,3 +175,6 @@
 .hm-qi { position: relative; }
 .hm-qbadge { position: absolute; top: -6px; right: -8px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-size: .6875rem; font-weight: 750; display: grid; place-items: center; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--tonal); }
 .hm-chore.done .hm-chorebtn { opacity: .92; }
+.hm-arrears { flex-basis: 100%; font-size: .75rem; font-weight: 600; line-height: 1.3; color: #a35f00; }
+:root[data-theme="dark"] .hm-arrears { color: var(--warn); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hm-arrears { color: var(--warn); } }

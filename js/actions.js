@@ -215,6 +215,27 @@ export class Actions {
   }
   async removeTrip(id) { const t = this.s.state.trips[id]; this.need(t && this.canTrip(t.personId)); await this.s.delDoc('trips', id); }
 
+  // ---- compiti condivisi (spazzatura, ecc.) ----
+  async completeShared(taskId) {
+    this.need(!!this.me || this.admin);
+    const t = (this.house.shared || []).find((x) => x.id === taskId); this.need(!!t);
+    const st = ((this.house.sharedState || {})[taskId]) || {};
+    const history = [...(st.history || []), { by: this.me || 'admin', at: this.ctx.now().toISOString() }].slice(-30);
+    await this.s.setHouse({ sharedState: { [taskId]: { history } } });
+    await this.log('shared', { text: t.text });
+  }
+  /** Annulla l'ultimo "fatto" (solo chi l'ha segnato o l'admin). */
+  async undoShared(taskId) {
+    const st = ((this.house.sharedState || {})[taskId]) || {}; const history = [...(st.history || [])];
+    const last = history[history.length - 1]; this.need(!!last && (this.admin || last.by === this.me));
+    history.pop(); await this.s.setHouse({ sharedState: { [taskId]: { history } } });
+  }
+  async saveShared(list) {
+    this.need(this.admin);
+    const clean = list.map((t) => ({ id: t.id || uid(), text: String(t.text || '').trim().slice(0, 60), every: Math.max(1, Math.min(60, parseInt(t.every, 10) || 1)), enabled: t.enabled !== false })).filter((t) => t.text);
+    await this.s.setHouse({ shared: clean });
+  }
+
   // ---- scorte ----
   async addNeed(text, urgent = false) {
     this.need(!!this.me || this.admin);

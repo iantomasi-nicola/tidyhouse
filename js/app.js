@@ -1,6 +1,6 @@
 // Nucleo dell'app: avvio, registro case, identità, tema, router, shell, aggiornamento pagina, accessi.
 // Le schermate vivono in js/screens/*.js e ricevono un `ctx` (vedi ARCHITECTURE.md).
-import { h, clear, icon, toast, sheet, closeAllSheets, hasOpenSheets, deviceInfo, haptic } from './ui.js';
+import { h, clear, icon, toast, sheet, closeAllSheets, hasOpenSheets, cssReady, deviceInfo, haptic } from './ui.js';
 import { t, tr, setLang, getLang, detectLang, registerStrings } from './i18n.js';
 import { it as coreIt, en as coreEn } from './strings/core.js';
 import { compute } from './engine.js';
@@ -220,6 +220,7 @@ async function renderStage() {
   try {
     const m = await loadOnboarding();
     node = S.stage === 'push' ? renderPushGate() : await m.renderGate(S.stage, boot, S.stageParams || {});
+    await cssReady();
     if (tk !== stageToken) return;
     if (['landing', 'join', 'who', 'rules'].includes(S.stage)) { const panel = node.querySelector ? (node.querySelector('.panel') || node) : node; const b = installBanner(); if (b) panel.append(b); }
   } catch (e) {
@@ -412,6 +413,7 @@ async function renderApp(force) {
     node = h('div', { class: 'card stack' }, h('h2', null, t('error')), h('p', { class: 'muted small' }, String(e && e.message || e)), h('a', { class: 'btn soft', href: '#/' }, t('nav.home')));
   }
   if (token !== renderToken) return;
+  await cssReady();   // il foglio di stile della schermata è già caricato quando compare il contenuto
   let reminder = null; try { reminder = await notifReminder(); } catch { /* ignore */ }
   if (token !== renderToken || S.stage !== 'app') return;
   // mentre la schermata si preparava l'utente può aver iniziato a scrivere: non togliergli il campo di sotto

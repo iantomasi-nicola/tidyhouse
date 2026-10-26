@@ -450,3 +450,19 @@ test('gate checklist: gli arretrati di un altro che è a casa non bloccano chi h
     const all = adm.a.pendingChecklist(sunday1, 'bathroom', { all: true }); assert.equal(all[0].owner, prevOwner); assert.equal(all[0].reason, 'arrears');
   } else assert.equal(pend.length, 1);
 });
+
+test('compiti condivisi: salvataggio admin, "fatto" di chiunque, annulla solo di chi ha segnato', async () => {
+  const hub = new MemoryHub(); await mkHouse(hub);
+  const adm = await client(hub, 'H1', { isAdmin: true });
+  const ids = adm.s.state.house.roommates.map((r) => r.id);
+  await adm.a.saveShared([{ text: '  Spazzatura  ', every: 3 }, { text: '', every: 2 }, { text: 'Riciclo', every: 999 }]);
+  const list = adm.s.state.house.shared; assert.equal(list.length, 2); assert.equal(list[0].text, 'Spazzatura'); assert.equal(list[1].every, 60); assert.ok(list[0].id);
+  const u = await client(hub, 'H1', { meId: ids[1] }); const v = await client(hub, 'H1', { meId: ids[2] });
+  await assert.rejects(u.a.saveShared([]), /permission/);
+  await u.a.completeShared(list[0].id); await v.a.completeShared(list[0].id);
+  assert.deepEqual(adm.s.state.house.sharedState[list[0].id].history.map((h) => h.by), [ids[1], ids[2]]);
+  await assert.rejects(u.a.undoShared(list[0].id), /permission/, 'l\'ultimo l\'ha segnato v');
+  await v.a.undoShared(list[0].id); assert.equal(adm.s.state.house.sharedState[list[0].id].history.length, 1);
+  await assert.rejects(u.a.completeShared('boh'), /permission/);
+  assert.ok(Object.values(adm.s.state.log).some((l) => l.type === 'shared'));
+});

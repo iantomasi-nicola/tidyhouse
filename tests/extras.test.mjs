@@ -305,3 +305,38 @@ test('checklist non fatta: scala alla settimana dopo e tocca a chi non l\'ha fat
     assert.ok(n.some((x) => x.type === 'satDuty') || n.some((x) => x.type === 'tasks'));
   }
 });
+
+test('compiti condivisi: da fare, a chi tocca (equo fra i presenti) e annulla', async () => {
+  const { sharedStatus } = await import('../js/extras.js');
+  const h = house({ shared: [{ id: 'tr', text: 'Spazzatura', every: 3, enabled: true }] });
+  const out = compute(h, '2026-10-28', 3);
+  let s = sharedStatus(h, out, '2026-10-28')[0];
+  assert.equal(s.due, true); assert.ok(['A', 'B', 'C'].includes(s.suggested));
+  // A ha buttato 2 volte, B una: tocca a C (0 volte)
+  const hist = [{ by: 'A', at: '2026-10-20T10:00:00Z' }, { by: 'B', at: '2026-10-23T10:00:00Z' }, { by: 'A', at: '2026-10-26T10:00:00Z' }];
+  const h2 = { ...h, sharedState: { tr: { history: hist } } };
+  s = sharedStatus(h2, out, '2026-10-28')[0];
+  assert.equal(s.suggested, 'C'); assert.equal(s.due, false); assert.equal(s.dueIn, 1); assert.equal(s.last.by, 'A');
+  assert.equal(sharedStatus(h2, out, '2026-10-29')[0].due, true);
+  // chi è assente non viene suggerito
+  const h3 = { ...h2, weeks: { [wk(4)]: { away: ['C'] } } };
+  assert.notEqual(sharedStatus(h3, compute(h3, '2026-10-28', 3), '2026-10-29')[0].suggested, 'C');
+  // notifica a chi tocca, una volta al giorno, solo se è da fare
+  const n = planNotifications({ house: h2, weeks: {}, now: nowRome('2026-10-29T08:20:00Z') }).filter((x) => x.type === 'shared');
+  assert.equal(n.length, 1); assert.equal(n[0].personId, 'C'); assert.match(notifMessage(n[0], h2, 'it').body, /Spazzatura/);
+  assert.equal(planNotifications({ house: h2, weeks: {}, now: nowRome('2026-10-28T08:20:00Z') }).filter((x) => x.type === 'shared').length, 0, 'non ancora da fare');
+  assert.equal(planNotifications({ house: { ...h2, features: { shared: false } }, weeks: {}, now: nowRome('2026-10-29T08:20:00Z') }).filter((x) => x.type === 'shared').length, 0, 'funzione spenta');
+});
+test('penalità: chi lascia un arretrato di checklist e poi si assenta, una volta per voce; ridotta dai punti fatica', async () => {
+  const h = house({ tasks: [{ id: 'k', chore: 'bathroom', text: 'Tappetino', every: 4, anchor: START, enabled: true }] });
+  const out0 = compute(h, wk(0), 12); const doer = out0.rows[0].assigned[1];
+  const weeks = { [wk(1)]: { away: [doer] }, [wk(2)]: { away: [doer] } };
+  for (let i = 0; i < 3; i++) weeks[wk(i)] = { ...(weeks[wk(i)] || {}), result: { floor: 'done', bathroom: 'done', kitchen: 'done' } };
+  const hh = { ...h, weeks, settings: { rankBy: 'effort', taskPenalty: 1 } };
+  const o = compute(hh, addDays(wk(3), -3), 6);
+  const st = buildStats(hh, o); const p = st.people.find((x) => x.id === doer);
+  assert.equal(p.penalties, 1, 'una sola penalità anche se è assente 2 settimane'); assert.equal(p.penaltyPoints, 1);
+  assert.ok(p.score <= p.effort);
+  const none = buildStats({ ...hh, weeks: { [wk(0)]: weeks[wk(0)], [wk(1)]: { result: weeks[wk(1)].result }, [wk(2)]: { result: weeks[wk(2)].result } } }, compute({ ...hh, weeks: { [wk(0)]: weeks[wk(0)], [wk(1)]: { result: weeks[wk(1)].result }, [wk(2)]: { result: weeks[wk(2)].result } } }, addDays(wk(3), -3), 6));
+  assert.equal(none.people.find((x) => x.id === doer).penalties, 0, 'presente: nessuna penalità');
+});

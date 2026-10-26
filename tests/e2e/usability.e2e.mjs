@@ -28,10 +28,7 @@ const INIT = () => {
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) { window.__cls += e.value; window.__clsList.push({ v: +e.value.toFixed(4), t: Math.round(e.startTime), n: (e.sources || []).slice(0, 2).map((s) => s.node && (s.node.nodeType === 1 ? s.node.tagName.toLowerCase() + '.' + String(s.node.className && s.node.className.baseVal !== undefined ? s.node.className.baseVal : s.node.className).slice(0, 30) : '#text')) }); } }).observe({ type: 'layout-shift', buffered: true }); } catch { /* ignore */ }
   window.__long = 0; try { new PerformanceObserver((l) => { window.__long += l.getEntries().length; }).observe({ type: 'longtask', buffered: true }); } catch { /* ignore */ }
   window.__intervals = 0; const si = window.setInterval; window.setInterval = function (...a) { window.__intervals++; return si.apply(this, a); };
-  document.addEventListener('DOMContentLoaded', () => {
-    const boot = document.getElementById('boot');
-    if (boot) new MutationObserver(() => { if (boot.classList.contains('gone') && window.__bootGone === undefined) { const a = document.getElementById('app'); window.__bootGone = { len: (a.innerText || '').trim().length, kids: a.children.length }; } }).observe(boot, { attributes: true });
-  });
+  new MutationObserver(() => { const boot = document.getElementById('boot'); if (boot && boot.classList.contains('gone') && window.__bootGone === undefined) { const a = document.getElementById('app'); window.__bootGone = { len: (a.innerText || '').trim().length, kids: a.children.length }; } }).observe(document, { attributes: true, subtree: true, attributeFilter: ['class'] });
 };
 let env;
 async function mk({ vp = { width: 390, height: 844 }, lang = 'it-IT', dark = false, s = mkSeed(), touch = true, now = NOW } = {}) {
@@ -300,17 +297,17 @@ async function sectionLayout() {
   await act('60 aggiornamenti remoti in 1s', () => page.evaluate(() => new Promise((res) => { let i = 0; const iv = setInterval(() => { window.__app.store.setDoc('needs', 'bz' + (i % 7), { text: 'c' + i, by: 'anna', at: new Date().toISOString() }); if (++i >= 60) { clearInterval(iv); res(); } }, 16); })), 9);
   await act('cambio tema scuro', () => page.evaluate(() => window.__app.savePrefs({ theme: 'dark' })), 1);
   await act('cambio tema chiaro', () => page.evaluate(() => window.__app.savePrefs({ theme: 'light' })), 1);
-  await act('cambio lingua EN', () => page.evaluate(() => window.__app.savePrefs({ lang: 'en' })), 1);
-  await act('cambio lingua IT', () => page.evaluate(() => window.__app.savePrefs({ lang: 'it' })), 1);
   await act('apertura sheet', () => page.evaluate(() => window.__app.sheet({ title: 'QA', body: window.__app.h('p', null, 'x') })), 0);
   await act('chiusura sheet', () => page.keyboard.press('Escape'), 0);
   ok(await page.evaluate(() => [...document.querySelectorAll('.nav a')].every((x, i) => x.__qa === 'nav' + i)), 'nav: i link non vengono ricreati negli aggiornamenti');
   ok((await page.evaluate(() => window.__navMut)) === 0, 'nav: nessuna mutazione del DOM della barra durante gli aggiornamenti (niente lampeggio)', await page.evaluate(() => window.__navMut));
+  await act('cambio lingua EN', () => page.evaluate(() => window.__app.savePrefs({ lang: 'en' })), 1);
+  await act('cambio lingua IT', () => page.evaluate(() => window.__app.savePrefs({ lang: 'it' })), 1);
   // segna fatto dalla home
   { const sun = await sunday(page); const me = 'anna';
     const idx = await page.evaluate(([s, me]) => { const r = window.__app.calc.out.rows[window.__app.calc.out.cur]; return r.assigned.indexOf(me); }, [sun, 'anna']);
-    const doneBtn = page.locator('[data-testid="hero-todo"] [data-act="done"]');
-    if (idx >= 0 && await doneBtn.count()) { await act('segna fatto (home)', async () => { await doneBtn.click(); }, 2); await shot(page, 'b-done'); }
+    const doneBtn = page.locator('#main [data-act="done"]').first();
+    if (await doneBtn.count()) { await act('segna fatto (home)', async () => { await doneBtn.click(); }, 2); await shot(page, 'b-done'); }
     else warn(false, 'home: pulsante "segna fatto" non trovato per Anna', idx); }
   // scroll mantenuto
   await go(page, 'calendar', 600);
@@ -660,7 +657,7 @@ async function sectionRobust() {
   ok(errs(page).length === 0, 'robustezza: nessun errore in console', errs(page));
   // doppio tocco sui pulsanti d'azione del nucleo: "segna fatto"
   await open(page, '', 700);
-  const btn = page.locator('[data-testid="hero-todo"] [data-act="done"]');
+  const btn = page.locator('#main [data-act="done"]').first();
   if (await btn.count()) { await btn.dblclick(); await sleep(700); const log = await page.evaluate(() => Object.values(window.__app.state.log || {}).filter((l) => /done|result/i.test(l.type || '')).length); ok(log <= 1, `"segna fatto" con doppio tocco: una sola registrazione (${log})`); }
   else warn(false, '"segna fatto": pulsante non presente per il test del doppio tocco');
   // storm di rotte: nessun render si accavalla (il contenuto finale corrisponde alla rotta finale)

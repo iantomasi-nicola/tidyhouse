@@ -4,7 +4,7 @@
 import { h, icon, avatar, toggle, seg, copyText, download, confetti, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 import { CHORES, addDays } from './engine.js';
-import { weekDays, planOf, delayOf, checklistFor, swapPatch, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
+import { weekDays, planOf, delayOf, checklistOwners, swapPatch, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
 
@@ -140,6 +140,32 @@ export function flowChips(ctx, sunday, chore) {
   const miss = incompleteOf(ctx, sunday, chore);
   if (miss.length) out.push({ key: 'incomplete', tone: 'bad', ic: 'alert', text: t('flow.incomplete', { n: miss.length }) });
   return out;
+}
+
+/** Voci di checklist di una settimana con il responsabile (chi non le ha fatte scala alla settimana dopo). */
+export function ownedItems(ctx, sunday) {
+  if (!ctx.feature('tasks')) return [];
+  try { return checklistOwners(houseW(ctx), ctx.calc.out, ctx.state.weeks || {}, sunday); } catch { return []; }
+}
+/** Può spuntare la voce chi ha la mansione, l'admin o il responsabile dell'arretrato (anche se questa settimana ha un'altra mansione). */
+export const canTick = (ctx, sunday, x) => ctx.actions.canTask(sunday, x.chore) || (!!ctx.me && x.owner === ctx.me);
+/** Spunta/togli una voce. Il responsabile di un arretrato senza la mansione scrive direttamente (le regole del nucleo ammettono solo l'assegnato). */
+export async function tickTask(ctx, sunday, x, done) {
+  const ws = !done && x.done && x.done.week ? x.done.week : sunday;
+  try { await ctx.actions.toggleTask(ws, x.task.id, x.chore, done); }
+  catch (e) {
+    if (!(e && e.message === 'permission' && ctx.me && x.owner === ctx.me)) throw e;
+    await ctx.store.setDoc('weeks', ws, { tasksDone: { [x.task.id]: done ? { by: ctx.me, at: ctx.now().toISOString() } : null } });
+    if (done) await ctx.actions.log('task', { text: x.task.text });
+  }
+}
+/** Riga di dettaglio di una voce: chi l'ha fatta, arretrato (di chi), a chi tocca. */
+export function taskNote(ctx, x) {
+  const t = ctx.t; const date = fmtDate(x.since, ctx.lang);
+  if (x.status === 'done') return t('tasks.doneBy', { name: ctx.name((x.done && x.done.by) || '') || t('misc.admin') });
+  if (x.reason === 'arrears') return x.owner === ctx.me ? t('flow.arrearsMine', { date }) : t('flow.arrearsOther', { date, name: ctx.name(x.owner) });
+  if (x.status === 'overdue') return t('tasks.overdue', { date });
+  return x.owner && x.owner !== ctx.me ? t('flow.ownerIs', { name: ctx.name(x.owner) }) : t('tasks.due');
 }
 
 const confettiAt = (el) => { try { const r = el.getBoundingClientRect(); confetti(r.left + r.width / 2, r.top + r.height / 2); } catch { /* ignore */ } };
@@ -435,23 +461,21 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
 
     // checklist del turno (obbligatoria prima di "fatto")
     if (ctx.feature('tasks') && assigned) {
-      const list = checklistFor(houseW(ctx), ctx.state.weeks || {}, sunday, chore);
+      const list = ownedItems(ctx, sunday).filter((x) => x.chore === chore);
       if (list.length) {
-        const can = A.canTask(sunday, chore);
         const nDone = list.filter((x) => x.status === 'done').length;
+        const canAny = list.some((x) => canTick(ctx, sunday, x));
         out.push(h('section', { class: 'cs-sec' },
           h('div', { class: 'eyebrow' }, h('span', null, t('flow.checklist')), h('span', { class: 'fl-progn', 'data-testid': 'chore-progress' }, `${nDone}/${list.length}`)),
           h('div', { class: 'bar fl-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(list.length), 'aria-valuenow': String(nDone), 'aria-label': t('flow.checklist') }, h('i', { style: { width: Math.round(100 * nDone / list.length) + '%' } })),
           h('div', { class: 'list' }, list.map((x) => {
             const isDone = x.status === 'done';
-            const ws = isDone && x.done && x.done.week ? x.done.week : sunday;
             const inner = [h('span', { class: 'checkcircle' + (isDone ? ' on' : '') }, icon('check')),
-              h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text),
-                h('div', { class: 'd' }, isDone ? t('tasks.doneBy', { name: ctx.name((x.done && x.done.by) || '') || t('misc.admin') }) : x.status === 'overdue' ? t('tasks.overdue', { date: fmtDate(x.since, ctx.lang) }) : t('tasks.due')))];
-            return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(isDone), onclick: () => run(ctx, () => A.toggleTask(ws, x.task.id, chore, !isDone)) }, inner)
+              h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text), h('div', { class: 'd', 'data-reason': x.reason }, taskNote(ctx, x)))];
+            return canTick(ctx, sunday, x) ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(isDone), onclick: () => run(ctx, () => tickTask(ctx, sunday, x, !isDone)) }, inner)
               : h('div', { class: 'li cs-task' }, inner);
           })),
-          h('p', { class: 'muted small cs-cap' }, can ? (nDone === list.length ? t('flow.checklistDone') : t('flow.checklistHint')) : t('flow.checklistOnly'))));
+          h('p', { class: 'muted small cs-cap' }, canAny ? (nDone === list.length ? t('flow.checklistDone') : t('flow.checklistHint')) : t('flow.checklistOnly'))));
       }
     }
 
@@ -618,13 +642,13 @@ export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
 
   // extra ricorrenti
   if (ctx.feature('tasks')) {
-    const list = CHORES.flatMap((chore) => checklistFor(houseW(ctx), ctx.state.weeks || {}, sunday, chore));
+    const list = ownedItems(ctx, sunday);
     if (list.length) out.push(section(ctx.t('home.checklist'), h('div', { class: 'list' }, list.map((x) => {
-      const done = x.status === 'done'; const c = ci(x.chore); const who = row.assigned[c];
-      const can = A.canTask(sunday, x.chore);
-      const ws = done && x.done && x.done.week ? x.done.week : sunday;
-      const inner = [h('span', { class: 'checkcircle' + (done ? ' on' : '') }, icon('check')), h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text), h('div', { class: 'd' }, `${ctx.t('chore.' + x.chore)}${who ? ' · ' + ctx.name(who) : ''}`))];
-      return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(done), onclick: () => run(ctx, () => A.toggleTask(ws, x.task.id, x.chore, !done)) }, inner) : h('div', { class: 'li cs-task' }, inner);
+      const done = x.status === 'done';
+      const can = canTick(ctx, sunday, x);
+      const inner = [h('span', { class: 'checkcircle' + (done ? ' on' : '') }, icon('check')), h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text),
+        h('div', { class: 'd' }, `${ctx.t('chore.' + x.chore)}${x.owner ? ' · ' + ctx.name(x.owner) : ''}${x.reason === 'arrears' && !done ? ' · ' + taskNote(ctx, x) : ''}`))];
+      return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(done), onclick: () => run(ctx, () => tickTask(ctx, sunday, x, !done)) }, inner) : h('div', { class: 'li cs-task' }, inner);
     }))));
   }
 

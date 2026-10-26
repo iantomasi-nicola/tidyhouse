@@ -4,10 +4,11 @@ import { tr, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 
 export const DEFAULT_FEATURES = {
   needs: true, stats: true, tasks: true, lastout: true, requests: true, planDay: true, whatsapp: true,
-  activity: true, trips: true, rules: true, ranking: true, ics: true, refresh: true,
+  activity: true, trips: true, rules: true, ranking: true, ics: true, refresh: true, shared: true,
   selfDone: true, selfAway: true, coverOthers: true,
 };
 export const DEFAULT_EFFORT = { floor: 1, bathroom: 1, kitchen: 1 };
+export const DEFAULT_TASK_PENALTY = 0.5;   // punti (fatica) tolti a chi lascia un arretrato e poi si assenta
 export const DEFAULT_NOTIF = {
   enabled: true, catchUpHours: 5,
   friAbsence: { on: true, dow: 5, time: '17:00' },
@@ -20,7 +21,7 @@ export const DEFAULT_NOTIF = {
   requests: { on: true }, needs: { on: true }, nudges: { on: true }, tasks: { on: true },
 };
 export const NOTIF_TYPES = ['friAbsence', 'satDuty', 'sunMark', 'late', 'monNew', 'planDay', 'adminDigest', 'requests', 'needs', 'nudges'];
-export const HOME_WIDGETS = ['hero', 'alerts', 'week', 'checklist', 'quick', 'links', 'away', 'upcoming', 'makeups', 'ranking', 'needs'];
+export const HOME_WIDGETS = ['hero', 'alerts', 'week', 'checklist', 'shared', 'quick', 'links', 'away', 'upcoming', 'makeups', 'ranking', 'needs'];
 export const DEFAULT_HOME = { order: [...HOME_WIDGETS], hidden: ['makeups', 'needs'] };
 export const PALETTE = ['#1a73e8', '#00796b', '#188038', '#e37400', '#d93025', '#c2185b', '#5f6368', '#00838f']; // Material: blu Google, teal, verde, arancio, rosso, rosa, grigio ardesia, ciano
 
@@ -114,12 +115,12 @@ export function checklistOwners(house, out, weeks, sunday) {
   if (!row) return [];
   return tasksForWeek(eh, weeks, sunday).map((it) => {
     const c = CHORES.indexOf(it.chore); const cur = row.assigned[c];
-    let owner = cur, reason = 'assignee';
+    let owner = cur, reason = 'assignee', handedFrom = '';
     if (it.status === 'overdue') {
       const prevRow = out.rows[weekIndex(house, it.since)]; const prev = prevRow && prevRow.assigned[c];
-      if (prev && prev !== cur) { const slot = row.nm.indexOf(prev); if (slot >= 0 && row.pr[slot] === 1) { owner = prev; reason = 'arrears'; } }
+      if (prev && prev !== cur) { const slot = row.nm.indexOf(prev); if (slot >= 0 && row.pr[slot] === 1) { owner = prev; reason = 'arrears'; } else if (slot >= 0) handedFrom = prev; /* assente: passa ad altri */ }
     }
-    return { ...it, owner, reason };
+    return { ...it, owner, reason, handedFrom };
   });
 }
 
@@ -134,6 +135,31 @@ export function delayOf(house, sunday, chore) {
   const e = dayNum(sunday), n = dayNum(d);
   return n > e && n <= e + 14 ? d : '';
 }
+// ============ Compiti condivisi (es. buttare la spazzatura) ============
+export const SHARED_TEMPLATES = [
+  { key: 'shared.t.trash', every: 3 }, { key: 'shared.t.recycle', every: 7 }, { key: 'shared.t.dishwasher', every: 2 },
+];
+/**
+ * Stato dei compiti condivisi: chi li ha fatti l'ultima volta, se sono da fare e a CHI TOCCA (suggerimento equo:
+ * fra chi è a casa questa settimana, chi li ha fatti meno volte di recente; a parità, chi li ha fatti meno di recente).
+ */
+export function sharedStatus(house, out, today) {
+  const row = out && out.cur >= 0 ? out.rows[out.cur] : null;
+  const present = row ? row.nm.filter((id, s) => id && row.pr[s] === 1) : (house.roommates || []).map((r) => r.id);
+  const state = house.sharedState || {};
+  return (house.shared || []).filter((t) => t.enabled !== false).map((task) => {
+    const st = state[task.id] || {}; const history = Array.isArray(st.history) ? st.history : [];
+    const last = history.length ? history[history.length - 1] : null;
+    const every = Math.max(1, parseInt(task.every, 10) || 1);
+    const lastDay = last ? last.at.slice(0, 10) : null;
+    const dueIn = lastDay ? dayNum(lastDay) + every - dayNum(today) : 0;
+    const counts = {}; for (const h of history.slice(-10)) counts[h.by] = (counts[h.by] || 0) + 1;
+    const lastAt = {}; for (const h of history) lastAt[h.by] = h.at;
+    const suggested = [...present].sort((a, b) => ((counts[a] || 0) - (counts[b] || 0)) || ((lastAt[a] || '') < (lastAt[b] || '') ? -1 : (lastAt[a] || '') > (lastAt[b] || '') ? 1 : 0))[0] || '';
+    return { task, last, dueIn, due: dueIn <= 0, counts, suggested, every };
+  });
+}
+
 /** Prossima settimana (indice) in cui un compito scade, a partire da `idx`. */
 export function nextDueWeek(house, task, idx) {
   const every = Math.max(1, parseInt(task.every, 10) || 1);
@@ -173,6 +199,16 @@ export function buildStats(house, out) {
   const monthly = new Map();
   let closedWeeks = 0;
   const run = Object.fromEntries(people.map((p) => [p.id, 0]));
+  // piccola penalità: arretrato di checklist lasciato a un altro perché chi non l'ha fatto era assente (una volta per voce)
+  const penaltyPts = (house.settings && house.settings.taskPenalty !== undefined) ? Number(house.settings.taskPenalty) : DEFAULT_TASK_PENALTY;
+  const handed = new Set();
+  try {
+    const weeksDocs = house.weeks || {};
+    for (const r of rows) {
+      if (r.P > J || r.P < fromP) continue;
+      for (const it of checklistOwners(house, out, weeksDocs, r.sunday)) if (it.handedFrom && by[it.handedFrom]) { const k = `${it.task.id}|${it.since}|${it.handedFrom}`; if (!handed.has(k)) { handed.add(k); by[it.handedFrom].penalties = (by[it.handedFrom].penalties || 0) + 1; } }
+    }
+  } catch { /* checklist non configurata */ }
   for (const r of rows) {
     if (!r.closed || r.P < fromP || r.P > J) continue;
     closedWeeks++;
@@ -221,7 +257,10 @@ export function buildStats(house, out) {
     p.rests = sumP[p.id] ? sumP[p.id].rests : 0;
     p.presence = p.weeksActive ? Math.round((100 * p.weeksHome) / p.weeksActive) : null;
     p.onTimeRate = p.onTimeBase ? Math.round((100 * p.onTime) / p.onTimeBase) : null;
-    p.score = byEffort ? p.effort : p.cleanedTotal;
+    p.penalties = p.penalties || 0; p.penaltyPoints = Math.round(p.penalties * penaltyPts * 10) / 10;
+    p.shared = Object.values(((house.sharedState || {})))
+      .reduce((a, st) => a + ((st && st.history) || []).filter((x) => x.by === p.id).length, 0);
+    p.score = byEffort ? Math.max(0, Math.round((p.effort - p.penaltyPoints) * 10) / 10) : p.cleanedTotal;
   }
   const maxScore = Math.max(0, ...people.map((p) => p.score));
   for (const p of people) p.tr = p.score > 0 && p.score === maxScore;
@@ -372,6 +411,10 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
     for (const [id, cs] of pairs(row, todays)) push({ type: 'planDay', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
     for (const l of lates.values()) push({ type: 'planDayLate', personId: l.id, week: sunday, chores: l.cs.map((c) => CHORES[c]), day: l.d, slot: l.d });
   }
+  // compiti condivisi (es. spazzatura): promemoria quotidiano a chi tocca, se è da fare
+  if (cfg.planDay.on && feature(house, 'shared') && lp.minutes >= hm(cfg.planDay.time) && lp.minutes - hm(cfg.planDay.time) <= catchUp) {
+    for (const x of sharedStatus(h2, out, today)) if (x.due && x.suggested) push({ type: 'shared', personId: x.suggested, week: sunday, text: x.task.text, slot: x.task.id });
+  }
   // ritardo annunciato che scade oggi: promemoria "oggi è il giorno"
   if (cfg.planDay.on && lp.minutes >= hm(cfg.planDay.time) && lp.minutes - hm(cfg.planDay.time) <= catchUp) {
     for (let i = Math.max(0, cur - 2); i < cur; i++) {
@@ -407,7 +450,7 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
 /** Sceglie i dispositivi destinatari di una notifica. */
 export function targetsFor(n, members, house) {
   const cfg = notifCfg(house);
-  const typeKey = n.type === 'planDayLate' ? 'planDay' : n.type;
+  const typeKey = n.type === 'planDayLate' ? 'planDay' : n.type === 'shared' ? 'tasks' : n.type;
   return Object.entries(members || {}).filter(([, m]) => m && m.push && m.push.endpoint && m.personId === n.personId
     && (!m.prefs || m.prefs[typeKey] !== false)
     && !(cfg[typeKey] && cfg[typeKey].on === false)).map(([id, m]) => ({ id, ...m }));
@@ -427,6 +470,7 @@ export function notifMessage(n, house, lang = 'it', weeks = {}) {
     case 'planDay': return { title: T('n.plan.title'), body: T('n.plan.body', { chores }), url: '#/' };
     case 'planDayLate': return { title: T('n.plan.late.title'), body: T('n.plan.late.body', { chores, day: dowLong(n.day, lang) }), url: '#/' };
     case 'adminDigest': return n.n ? { title: T('n.digest.title'), body: T('n.digest.body', { n: n.n, names: (n.names || []).join(', ') }), url: '#/calendar' } : { title: T('n.digest.title'), body: T('n.digest.ok'), url: '#/' };
+    case 'shared': return { title: T('n.shared.title'), body: T('n.shared.body', { text: n.text }), url: '#/' };
     case 'tasks': return { title: T('n.tasks.title'), body: T('n.tasks.body', { n: n.n }), url: '#/' };
     case 'test': return { title: T('n.test.title'), body: T('n.test.body'), url: '#/' };
     default: return { title: n.title || T('app.name'), body: n.body || '', url: n.url || '#/' };

@@ -3,8 +3,8 @@
 import { h, icon, avatar, loadCss, confetti, haptic, promptDialog, confirmDialog } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, validateRoommates } from '../engine.js';
-import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf } from '../choresheet.js';
-import { planOf, tasksForWeek, buildStats, weekDays } from '../extras.js';
+import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote } from '../choresheet.js';
+import { planOf, buildStats, weekDays } from '../extras.js';
 import { it, en } from '../strings/home.js';
 registerStrings(it, en);
 
@@ -35,7 +35,8 @@ function model(ctx) {
   const late = prev && me ? idx.filter((c) => prev.assigned[c] === me && !prev.res[c].kind) : [];
   return { out, eh, cur, row, prev, me, mine, late, today: ctx.today() };
 }
-const extrasLeft = (ctx, M, sunday, c) => (ctx.feature('tasks') ? tasksForWeek(M.eh, ctx.weeks, sunday).filter((x) => x.chore === CHORES[c] && x.status !== 'done').length : 0);
+// voci di checklist ancora da fare di cui sono responsabile io (anche arretrati di un'altra mansione)
+const extrasLeft = (ctx, M, sunday, c) => ownedItems(ctx, sunday).filter((x) => x.owner === M.me && x.status !== 'done' && (x.chore === CHORES[c] || x.reason === 'arrears')).length;
 
 /** Chip di stato di un turno. */
 function turnChips(ctx, M, row, c, isLate) {
@@ -334,24 +335,22 @@ function widgetChecklist(ctx, M) {
   const t = ctx.t;
   if (!ctx.feature('tasks') || !M.row) return null;
   const { row, me } = M;
-  const list = tasksForWeek(M.eh, ctx.weeks, row.sunday).filter((x) => {
-    const a = row.assigned[CHORES.indexOf(x.chore)];
-    return a && (a === me || ctx.isAdmin);
-  });
+  // a ciascuno le voci di cui è responsabile (anche arretrati di una mansione che questa settimana ha un altro); l'admin vede tutto
+  const list = ownedItems(ctx, row.sunday).filter((x) => x.owner && (x.owner === me || ctx.isAdmin));
   if (!list.length) return null;
   const done = list.filter((x) => x.status === 'done').length;
   const rows = list.map((x) => {
-    const idx = CHORES.indexOf(x.chore), a = row.assigned[idx], isDone = x.status === 'done';
-    const can = ctx.actions.canTask(row.sunday, x.chore);
-    const toggleSunday = isDone && x.done && x.done.week ? x.done.week : row.sunday;
-    return h('button', { class: 'li hm-task' + (isDone ? ' is-done' : ''), type: 'button', role: 'checkbox', 'aria-checked': String(isDone), disabled: can ? null : true, 'data-task': x.task.id,
-      onclick: async () => { try { await ctx.actions.toggleTask(toggleSunday, x.task.id, x.chore, !isDone); haptic(ctx.prefs.haptics, 8); } catch { ctx.toast(t('error')); } } },
+    const isDone = x.status === 'done', owner = x.owner;
+    const can = canTick(ctx, row.sunday, x);
+    return h('button', { class: 'li hm-task' + (isDone ? ' is-done' : ''), type: 'button', role: 'checkbox', 'aria-checked': String(isDone), disabled: can ? null : true, 'data-task': x.task.id, 'data-reason': x.reason,
+      onclick: async () => { try { await tickTask(ctx, row.sunday, x, !isDone); haptic(ctx.prefs.haptics, 8); } catch { ctx.toast(t('error')); } } },
     h('span', { class: 'checkcircle' + (isDone ? ' on' : '') }, icon('check')),
     h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text),
       h('div', { class: 'd hm-taskmeta' }, chip('', t('chore.' + x.chore), IC[x.chore]),
-        a && a !== me ? h('span', { class: 'hm-person' }, avatar(ctx.name(a), ctx.color(a), 'sm'), h('span', { class: 'hm-ell' }, ctx.name(a))) : null,
-        x.status === 'overdue' ? chip('warn', t('tasks.overdue', { date: fmtDate(x.since) }), 'clock') : null,
-        isDone && x.done && x.done.by ? h('span', null, t('tasks.doneBy', { name: x.done.by === 'admin' ? t('misc.admin') : ctx.name(x.done.by) })) : null)));
+        owner && owner !== me ? h('span', { class: 'hm-person' }, avatar(ctx.name(owner), ctx.color(owner), 'sm'), h('span', { class: 'hm-ell' }, ctx.name(owner))) : null,
+        x.reason === 'arrears' && !isDone ? h('span', { class: 'hm-arrears', 'data-testid': 'task-arrears' }, t(owner === me ? 'flow.arrearsMine' : 'flow.arrearsOther', { date: fmtDate(x.since), name: ctx.name(owner) }))
+          : x.status === 'overdue' ? chip('warn', t('tasks.overdue', { date: fmtDate(x.since) }), 'clock') : null,
+        isDone && x.done && x.done.by ? h('span', null, taskNote(ctx, x)) : null)));
   });
   return h('section', { class: 'hm-w', 'data-widget': 'checklist' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.checklist')), h('span', { class: 'hm-prog', 'data-testid': 'checklist-progress' }, `${done}/${list.length}`)), h('div', { class: 'list' }, rows));
 }
