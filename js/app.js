@@ -28,7 +28,7 @@ const deviceId = (() => { let d = ls.get('cp:device'); if (!d) { d = randomCode(
 /** Un dispositivo è admin se ha sbloccato con l'epoca corrente (cambiando admin l'epoca cresce e i vecchi dispositivi si bloccano). */
 const adminOn = (id, house) => { const v = ls.get('cp:admin', {})[id]; if (!v) return false; return (v === true ? 1 : v) === ((house && house.adminEpoch) || 1); };
 const markAdmin = (id, house) => { const a = ls.get('cp:admin', {}); a[id] = (house && house.adminEpoch) || 1; ls.set('cp:admin', a); };
-const saveRulesAck = () => { const r = ls.get('cp:rules', {}); r[S.houseId] = S.actions.rulesVersion(); ls.set('cp:rules', r); };
+const saveRulesAck = (v) => { const r = ls.get('cp:rules', {}); r[S.houseId] = v || S.actions.rulesVersion(); ls.set('cp:rules', r); };
 const registry = () => ls.get('cp:houses', []);
 const saveRegistry = (r) => ls.set('cp:houses', r);
 const regEntry = (id) => registry().find((x) => x.id === id);
@@ -65,8 +65,8 @@ async function attach(id, mode) {
   if (!res.exists) { b.close && b.close(); return { ok: false, reason: 'notfound' }; }
   S.houseId = id; S.mode = mode;
   S.store = new Store(b);
-  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null) });
-  S.store.on(() => { S.version++; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
+  S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null), localRulesAckSave: (v) => saveRulesAck(v) });
+  S.store.on(() => { S.version++; if (S.switching) return; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
   S.version++;
   return { ok: true };
 }
@@ -130,11 +130,14 @@ const ctx = {
   setMe(personId) { regUpdate(S.houseId, { me: personId }); if (S.actions) S.actions.touchMember({}).catch(() => {}); evaluate(); },
   async rotateCode(opts) {
     const wasAdmin = this.isAdmin, me = this.me, oldId = S.houseId, mode = S.mode, epoch = this.house.adminEpoch || 1;
-    const { newId } = await S.actions.rotateCode(opts);
+    S.switching = true;   // la cancellazione della vecchia casa svuota lo store: non deve far scattare «chi sei»/«regole»
+    let newId;
+    try { ({ newId } = await S.actions.rotateCode(opts)); } catch (e) { S.switching = false; throw e; }
     { const r = ls.get('cp:rules', {}); if (r[oldId]) { r[newId] = r[oldId]; ls.set('cp:rules', r); } }
     regRemove(oldId); { const a = ls.get('cp:admin', {}); delete a[oldId]; if (wasAdmin) a[newId] = epoch; ls.set('cp:admin', a); }
     regUpdate(newId, { name: this.house.name, mode, me, lastUsed: Date.now() });
     ls.set('cp:last', newId);
+    S.switching = false;
     const r = await attach(newId, mode); if (r.ok) { await S.actions.touchMember({}); evaluate(); }
     return newId;
   },
@@ -250,7 +253,7 @@ function evaluate() {
   if (!pushMod && ctx.cloud && isMobile()) { pushReady.then(() => evaluate()); return; }   // aspetta il controllo del browser (max ~1,5 s) prima di decidere sulle notifiche
   if (needPushGate()) { S.stage = 'push'; return renderStage(); }
   const first = !S.ready;
-  S.stage = 'app'; S.ready = true;
+  S.stage = 'app'; S.ready = true; stageToken++;   // una schermata di accesso ancora in preparazione non deve coprire l'app
   if (first) { try { recordView('open'); } catch { /* ignore */ } }
   registerDevice();
   renderApp(true);

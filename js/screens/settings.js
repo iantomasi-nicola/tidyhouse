@@ -285,7 +285,9 @@ function notifications(ctx) {
   };
   const buttons = [];
   if (s === 'off') buttons.push(btn(t('set.notif.enable'), () => run(push.enable, t('push.enabled')), { cls: '', ic: 'bell', id: 'push-enable' }));
-  if (s === 'on') buttons.push(btn(t('set.notif.test'), () => run(push.localTest, t('set.notif.testSent')), { cls: 'tonal', ic: 'bell', id: 'push-test' }),
+  // le prove restano sempre disponibili quando le notifiche sono attive su questo dispositivo (anche se lo stato calcolato oscilla)
+  const active = s === 'on' || (st.permission === 'granted' && st.subscribed && s !== 'ios-install' && s !== 'unsupported');
+  if (active) buttons.push(btn(t('set.notif.test'), () => run(push.localTest, t('set.notif.testSent')), { cls: 'tonal', ic: 'bell', id: 'push-test' }),
     btn(t('setX.notif.testServer'), async () => { try { await ctx.store.setDoc('requests', 'test' + Date.now().toString(36), { kind: 'test', to: ctx.me, device: ctx.deviceId, status: 'info', at: new Date().toISOString() }); ctx.toast(t('setX.notif.testServerSent'), 6000); } catch { ctx.toast(t('error')); } }, { cls: 'soft', ic: 'refresh', id: 'push-test-server' }), btn(t('set.notif.disable'), () => run(push.disable, t('push.disabled')), { cls: 'soft', ic: 'bellOff', id: 'push-disable' }));
   sbox.append(
     h('div', { class: 'row' }, h('div', { class: 'ico ' + (s === 'on' ? 'g' : s === 'denied' ? 'r' : '') }, icon(s === 'on' ? 'bell' : 'bellOff')),

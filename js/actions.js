@@ -263,7 +263,15 @@ export class Actions {
   async finishLastOut() { this.need(!!this.me || this.admin); await this.s.setHouse({ lastOut: { doneBy: this.me || 'admin', doneAt: this.ctx.now().toISOString() } }); }
 
   // ---- admin ----
-  async setHouse(patch) { this.need(this.admin); await this.s.setHouse(patch); }
+  async setHouse(patch) {
+    this.need(this.admin);
+    // chi cambia le regole (o le rende obbligatorie) le ha appena scritte: non rimandarlo alla schermata "leggi le regole"
+    const ack = !!(this.me && patch && ((patch.rules && patch.rules.version) || patch.requireRules === true));
+    const v = ack ? String((patch.rules && patch.rules.version) || this.rulesVersion()) : null;
+    if (ack && this.ctx.localRulesAckSave) this.ctx.localRulesAckSave(v);   // prima della scrittura: il rerender non deve vedere "non letto"
+    await this.s.setHouse(patch);
+    if (ack) await this.touchMember({ rulesAck: { version: v, at: this.ctx.now().toISOString() } }).catch(() => {});
+  }
   async setRoommates(list) {
     this.need(this.admin);
     // `to` = uscita CERTA (cambia i turni); `expectedTo` = uscita solo prevista/indicativa (non influisce sul piano); vuoti = "non si sa"

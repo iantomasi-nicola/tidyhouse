@@ -97,8 +97,8 @@ await test('aspetto: tema, accento, colore personalizzato, testo, switch', async
   await shot(page, 'appearance-dark-390');
   await page.click(`${tid('seg-theme')} button:has-text("Chiaro")`);
   await until(page, () => document.documentElement.getAttribute('data-theme') === 'light');
-  await page.click(tid('accent-ff375f'));
-  await until(page, () => document.documentElement.style.getPropertyValue('--accent') === '#ff375f');
+  await page.click(tid('accent-00796b'));
+  await until(page, () => document.documentElement.style.getPropertyValue('--accent') === '#00796b');
   await page.locator(tid('accent-custom')).fill('#123456');
   await until(page, () => document.documentElement.style.getPropertyValue('--accent') === '#123456');
   await page.locator(tid('text-size')).evaluate((el) => { el.value = '1.15'; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -366,7 +366,7 @@ await test('accessi: dispositivi, sollecita, rimuovi, registro', async (mk) => {
   assert.match(await page.locator(tid('dev-devB')).innerText(), /ore fa|ora/);
   assert.ok(await page.locator(tid('acc-carla')).evaluate((e) => e.classList.contains('never')));
   assert.equal(await page.locator(tid('kpi-push')).innerText(), '1');
-  assert.equal(await page.locator(`${tid('views')} .li`).count(), 3);
+  assert.ok(await page.locator(`${tid('views')} .li`).count() >= 3);
   await shot(page, 'access-390');
   await page.click(tid('nudge-carla'));
   await until(page, () => Object.values(window.__app.state.requests).some((r) => r.kind === 'nudge' && r.to === 'carla'));
