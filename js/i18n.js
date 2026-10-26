@@ -420,6 +420,12 @@ D.en = {
 };
 
 export const DICT = D;
+/** Registra stringhe aggiuntive di un modulo (le chiavi del nucleo non si possono sovrascrivere). */
+export function registerStrings(it, en) {
+  for (const [lang, src] of [['it', it], ['en', en]]) for (const [k, v] of Object.entries(src || {})) { if (!(k in CORE[lang])) D[lang][k] = v; }
+}
+const CORE = { it: { ...D.it }, en: { ...D.en } };
+export const CORE_KEYS = CORE;
 let current = 'it';
 export const getLang = () => current;
 export function setLang(l) { current = D[l] ? l : 'it'; return current; }

@@ -25,6 +25,12 @@ function add(el, kids) {
 export const $ = (s, r = document) => r.querySelector(s);
 export const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
 
+const cssLoaded = new Set();
+export function loadCss(href) {
+  if (cssLoaded.has(href)) return; cssLoaded.add(href);
+  document.head.append(h('link', { rel: 'stylesheet', href: new URL('../' + href, import.meta.url).href }));
+}
+
 // ---- icone (24x24, tratto) ----
 const P = {
   home: '<path d="M4 11.2 12 4l8 7.2V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.2H9v5.2H5.5A1.5 1.5 0 0 1 4 19z"/>',

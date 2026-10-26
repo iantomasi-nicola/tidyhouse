@@ -32,7 +32,7 @@ export function localDate(d) { const p = (x) => String(x).padStart(2, '0'); retu
 
 export class Actions {
   /** ctx: { meId, isAdmin, deviceId, now:()=>Date } */
-  constructor(store, ctx) { this.s = store; this.ctx = { now: () => new Date(), ...ctx }; }
+  constructor(store, ctx) { this.s = store; this.ctx = ctx; if (!ctx.now) ctx.now = () => new Date(); }
   get house() { return this.s.state.house || {}; }
   get me() { return this.ctx.meId; }
   get admin() { return !!this.ctx.isAdmin; }
