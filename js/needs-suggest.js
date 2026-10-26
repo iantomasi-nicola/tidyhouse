@@ -47,6 +47,14 @@ export function hasNeedHistory({ needs = {}, log = {} } = {}) {
   return Object.values(log || {}).some((l) => l && l.type === 'need' && l.p && typeof l.p.text === 'string' && l.p.text.trim());
 }
 
+/** Quante voci DIVERSE (normalizzate) compaiono nello storico: sotto una soglia la casa è «nuova» e si propongono le voci di partenza. */
+export function distinctNeeds({ needs = {}, log = {} } = {}) {
+  const keys = new Set();
+  for (const n of Object.values(needs || {})) if (n && typeof n.text === 'string' && normNeed(n.text)) keys.add(normNeed(n.text));
+  for (const l of Object.values(log || {})) if (l && l.type === 'need' && l.p && typeof l.p.text === 'string' && normNeed(l.p.text)) keys.add(normNeed(l.p.text));
+  return keys.size;
+}
+
 /** Suggerimenti di partenza (casa nuova): `starters` = testi localizzati; esclude quelli già in lista aperta. */
 export function starterNeeds(starters, needs = {}, limit = 8) {
   const open = new Set(Object.values(needs || {}).filter((n) => n && !n.done && typeof n.text === 'string').map((n) => normNeed(n.text)));

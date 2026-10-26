@@ -254,6 +254,12 @@ export class Actions {
   }
   async setNeedDone(id, done) { await this.s.setDoc('needs', id, { done: !!done, doneBy: done ? (this.me || 'admin') : null, doneAt: done ? this.ctx.now().toISOString() : null }); if (done) this.kick(); }
   async removeNeed(id) { await this.s.delDoc('needs', id); }
+  /** Rimette in lista voci già note (annulla di «Svuota»): `list` = [{id, text, urgent, by, at, done, doneBy, doneAt}]. Una sola scrittura. */
+  async restoreNeeds(list) {
+    this.need(!!this.me || this.admin);
+    const ops = (list || []).filter((x) => x && x.id && x.text).map(({ id, ...data }) => ({ coll: 'needs', id, data, set: true }));
+    if (ops.length) await this.s.write(ops);
+  }
   async clearBought() { const ops = Object.entries(this.s.state.needs).filter(([, n]) => n.done).map(([id]) => ({ coll: 'needs', id, del: true })); if (ops.length) await this.s.write(ops); }
 
   // ---- ultimo che esce ----

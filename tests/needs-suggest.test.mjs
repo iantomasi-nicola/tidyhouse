@@ -1,7 +1,7 @@
 // Spesa: suggerimenti frequenti, partenza casa nuova, incolla di più righe.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normNeed, frequentNeeds, hasNeedHistory, starterNeeds, splitPasted } from '../js/needs-suggest.js';
+import { normNeed, frequentNeeds, hasNeedHistory, distinctNeeds, starterNeeds, splitPasted } from '../js/needs-suggest.js';
 
 const N = (text, at, extra = {}) => ({ text, at, by: 'anna', done: false, ...extra });
 const L = (text, at) => ({ at, by: 'anna', type: 'need', p: { text } });
@@ -68,4 +68,9 @@ test('splitPasted: una riga = una voce, tolti elenchi e doppioni', () => {
   assert.deepEqual(splitPasted('Carta   igienica\nSpugne'), ['Carta igienica', 'Spugne']);
   assert.equal(splitPasted('x'.repeat(100) + '\nb')[0].length, 80);
   assert.deepEqual(splitPasted(''), []);
+});
+
+test('distinctNeeds: voci diverse tra scorte e registro', () => {
+  assert.equal(distinctNeeds({}), 0);
+  assert.equal(distinctNeeds({ needs: { a: N('Latte', 'x'), b: N('latte', 'y') }, log: { l: L('LATTE', 'z'), m: L('Pane', 'z') } }), 2);
 });
