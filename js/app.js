@@ -320,6 +320,12 @@ function parseHash() {
   const parts = raw.split('/').filter(Boolean).map(safeDecode);
   return { path: parts.join('/'), parts, root: parts[0] || '' };
 }
+/** Azione da notifica: la rotta #/do/... (o quella ricordata prima dei gate) si consuma una volta sola, entro 10 minuti. */
+function stashDo(parts) { try { sessionStorage.setItem('cp:do', JSON.stringify({ parts, at: Date.now() })); } catch { /* ignore */ } }
+function takeDo(route) {
+  if (route.root === 'do') { try { sessionStorage.removeItem('cp:do'); } catch { /* ignore */ } return route.parts; }
+  try { const v = JSON.parse(sessionStorage.getItem('cp:do') || 'null'); sessionStorage.removeItem('cp:do'); return v && Date.now() - v.at < 600000 ? v.parts : null; } catch { return null; }
+}
 const SCREENS = { '': 'home', calendar: 'calendar', trips: 'trips', stats: 'stats', more: 'more', settings: 'settings', needs: 'more', rules: 'more', lastout: 'more', tasks: 'more', requests: 'more', activity: 'more', guide: 'more' };
 const TABS = [['', 'home', 'nav.home'], ['calendar', 'calendar', 'nav.calendar'], ['trips', 'plane', 'nav.trips'], ['stats', 'trophy', 'nav.stats'], ['more', 'more', 'nav.more']];
 const SUBS = ['needs', 'rules', 'lastout', 'tasks', 'requests', 'activity', 'guide'];
@@ -415,6 +421,13 @@ async function renderApp(force) {
     const code = normCode(route.parts[1] || '');
     if (code && code !== normCode(S.houseId || '')) { S.stageHint = 'landing'; detach(); history.replaceState(null, '', '#/join/' + code); return startFromHash(); }
     history.replaceState(null, '', '#/'); return renderApp(true);
+  }
+  // azione dalla notifica (#/do/...): ricordata in sessionStorage finché «chi sei»/regole non sono superati; qui l'app è pronta
+  const doParts = takeDo(route);
+  if (doParts) {
+    if (route.root === 'do') history.replaceState(null, '', '#/');   // un refresh non la ripete
+    import('./doaction.js').then((m) => m.runDo(ctx, doParts)).catch((e) => console.error(e));
+    if (route.root === 'do') return renderApp(true);
   }
   if (!shell || !shell.isConnected) { buildShell(); force = true; }
   if (mustDefer(force, lastPath !== route.path)) { S.deferred = true; return; }
@@ -525,6 +538,7 @@ async function startFromHash() {
     const code = normCode(r.parts[1] || '');
     S.stage = 'join'; S.stageParams = { code }; return renderStage();
   }
+  if (r.root === 'do') stashDo(r.parts);   // se prima servono «chi sei»/regole, l'azione viene eseguita dopo
   const last = ls.get('cp:last'); const e = last && regEntry(last);
   if (e) {
     const res = await attach(e.id, e.mode);
