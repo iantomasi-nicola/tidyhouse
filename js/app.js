@@ -11,7 +11,7 @@ import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_H
 registerStrings(coreIt, coreEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 let pushMod = null;
 // all'avvio controlla il browser (permesso + sottoscrizione) PRIMA di decidere se chiedere le notifiche: evita il falso "non attive"
 const pushReady = import('./push.js').then(async (m) => { await Promise.race([m.probe(), new Promise((r) => setTimeout(r, 1500))]); pushMod = m; }).catch(() => {});
@@ -120,6 +120,11 @@ const ctx = {
     return out;
   },
   // ----- operazioni di casa (usate da impostazioni/onboarding) -----
+  /** Nuova versione dell'app scaricata e in attesa. */
+  get updateReady() { return !!S.updateReady; },
+  markUpdateReady() { if (!S.updateReady) { S.updateReady = true; scheduleRender(true); } },
+  /** Applica la nuova versione (attiva il service worker in attesa e ricarica, senza interrompere chi sta scrivendo). */
+  applyUpdate() { if (S.waitingSW) { try { S.waitingSW.postMessage({ type: 'SKIP_WAITING' }); } catch { location.reload(); } } else location.reload(); },
   async unlockAdmin(pin) { if (await verifyPin(this.house, pin)) { markAdmin(S.houseId, this.house); scheduleRender(true); return true; } return false; },
   lockAdmin() { const a = ls.get('cp:admin', {}); delete a[S.houseId]; ls.set('cp:admin', a); scheduleRender(true); },
   setMe(personId) { regUpdate(S.houseId, { me: personId }); if (S.actions) S.actions.touchMember({}).catch(() => {}); evaluate(); },
@@ -546,7 +551,10 @@ async function registerSW() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
   try {
     const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
-    const offer = (w) => { if (!w) return; toast(t('update.available'), 8000); w.postMessage({ type: 'SKIP_WAITING' }); };
+    // nuova versione pronta: NON si applica da sola; il tasto nella Home diventa "Aggiorna" (colore accento) e un toast lo propone
+    const offer = (w) => { if (!w) return; S.waitingSW = w; ctx.markUpdateReady(); toast(t('update.available'), 8000, { action: { label: t('update.apply'), onClick: () => ctx.applyUpdate() } }); };
+    const check = () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); };
+    setInterval(check, 10 * 60 * 1000); document.addEventListener('visibilitychange', check);
     if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
     reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); }); });
     // nuova versione attiva: ricarica appena l'utente non sta scrivendo e non ha uno sheet aperto (mai a metà di un inserimento)

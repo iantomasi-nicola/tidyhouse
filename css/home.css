@@ -198,3 +198,12 @@
 .hm-title { padding-right: 44px; }
 .hm-refresh.spin svg { animation: hm-spin .7s linear infinite; }
 @keyframes hm-spin { to { transform: rotate(360deg); } }
+
+/* nuova versione: il tasto si espande in pillola nel colore accento */
+.hm-refresh.upd { width: auto; min-width: 44px; height: 44px; padding: 0 16px 0 12px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: .9375rem; right: 0; top: 2px; overflow: hidden; white-space: nowrap; animation: hm-expand .45s var(--spring) both; box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 70%, transparent); }
+.hm-refresh.upd:active { transform: scale(.96); }
+.hm-refresh.upd .hm-refresh-label { animation: hm-label .35s .12s var(--ease) both; }
+.hm-head:has(.hm-refresh.upd) .hm-title { padding-right: 130px; }
+@keyframes hm-expand { from { max-width: 44px; padding-right: 12px; } to { max-width: 180px; } }
+@keyframes hm-label { from { opacity: 0; transform: translateX(-6px); } }
+@media (prefers-reduced-motion: reduce) { .hm-refresh.upd, .hm-refresh.upd .hm-refresh-label { animation: none; } }

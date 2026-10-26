@@ -508,11 +508,13 @@ function openWho(ctx) {
 function header(ctx, M) {
   const t = ctx.t;
   const sub = M.row ? t('home.weekOf', { range: fmtWeekRange(M.row.sunday) }) : t('home.beforeStart', { date: fmtDate(shiftDays(M.eh.startSunday, -6), ctx.lang, { dow: true }) });
-  const refresh = h('button', { class: 'hm-refresh icon-btn', type: 'button', 'aria-label': t('home.refresh'), title: t('home.refresh'), 'data-testid': 'home-refresh', onclick: async (e) => {
+  const upd = ctx.updateReady;   // nuova versione pronta: il tasto si espande in "Aggiorna" col colore accento
+  const refresh = h('button', { class: 'hm-refresh' + (upd ? ' upd' : ' icon-btn'), type: 'button', 'aria-label': upd ? t('home.updateAria') : t('home.refresh'), title: upd ? t('home.updateAria') : t('home.refresh'), 'data-testid': 'home-refresh', 'data-update': upd ? '1' : null, onclick: async (e) => {
     const b = e.currentTarget; if (b.disabled) return; b.disabled = true; b.classList.add('spin');
+    if (ctx.updateReady) { ctx.applyUpdate(); return; }
     try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch { /* ignore */ }   // cerca anche una nuova versione dell'app
     setTimeout(() => location.reload(), 250);
-  } }, ctx.icon('refresh'));
+  } }, ctx.icon('refresh'), upd ? h('span', { class: 'hm-refresh-label' }, t('home.updateApply')) : null);
   return h('header', { class: 'hm-head' }, refresh,
     h('h1', { class: 'title hm-title' }, t('home.hello', { name: ctx.meName })),
     h('p', { class: 'hm-sub', 'data-testid': 'week-range' }, sub),
