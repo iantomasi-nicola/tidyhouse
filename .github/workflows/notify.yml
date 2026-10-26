@@ -33,7 +33,8 @@ jobs:
 
       - name: Secret mancanti
         if: env.HAS_SECRETS != 'true'
-        run: echo "::notice::Notifiche non attive: aggiungi i secret FIREBASE_SERVICE_ACCOUNT e VAPID_PRIVATE_KEY (vedi README)."
+        run: |
+          echo "::notice::Notifiche non attive - aggiungi i secret FIREBASE_SERVICE_ACCOUNT e VAPID_PRIVATE_KEY (vedi README)."
 
       - uses: actions/setup-node@v4
         if: env.HAS_SECRETS == 'true'
