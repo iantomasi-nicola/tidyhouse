@@ -155,7 +155,7 @@ await step('amministratore: selettore persona, "Una settimana", viaggio aperto (
   await page.fill('#trip-note', 'Erasmus bis');
   await page.click('.trip-form .btn:not(.soft)'); await sheetGone(page);
   const t = Object.values((await state(page)).trips).find((x) => x.note === 'Erasmus bis');
-  assert.ok(t && t.personId === 'carla' && t.to === null && t.from === '2026-10-30');
+  assert.ok(t && t.personId === 'carla' && t.to === null && t.from === '2026-10-30', JSON.stringify(t));
   assert.match(await page.locator('.trip', { hasText: 'Erasmus bis' }).innerText(), /In corso/);
   noErrors(page);
 });
