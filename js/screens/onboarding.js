@@ -387,7 +387,7 @@ function createStage(boot) {
     labelEl.textContent = t('onb.step', { n: s, total: 4 }) + ' · ' + t('setup.step' + s);
     const kids = s === 1 ? step1() : s === 2 ? step2() : s === 3 ? step3() : step4();
     const err = h('p', { class: 'onb-err', role: 'alert', hidden: !W.err }, W.err);
-    const form = h('form', { class: 'stack onb-form', novalidate: true, onsubmit: (e) => { e.preventDefault(); next(); } }, ...kids, err, h('button', { type: 'submit', class: 'sr', tabindex: '-1' }, t('next')));
+    const form = h('form', { class: 'stack onb-form', novalidate: true, onsubmit: (e) => { e.preventDefault(); next(); } }, ...kids, err, h('button', { type: 'submit', class: 'sr', tabindex: '-1', 'aria-hidden': 'true' }, t('next')));
     const pane = h('div', { class: 'onb-pane fade-up' }, form);
     clear(content); content.append(pane);
     clear(nav);

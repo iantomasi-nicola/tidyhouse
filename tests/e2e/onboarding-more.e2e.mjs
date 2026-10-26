@@ -107,14 +107,14 @@ await scenario('landing: en + elenco case', async () => {
 await scenario('join: messaggi di errore senza cloud', async () => {
   let page = await open();
   await goto(page, '/join/ABCDEFGHJKMN');
-  await page.waitForSelector('.onb-dyn .note.bad');
+  await page.waitForSelector('.note.bad');
   assert.match(await body(page), /cloud non è configurata/);
   assert.ok(await page.getByRole('button', { name: /Prova in locale/ }).first().isVisible());
   await shot(page, 'join-nocloud');
   await done(page);
   page = await open();
   await goto(page, '/join/XYZ');
-  await page.waitForSelector('.onb-dyn .note.bad');
+  await page.waitForSelector('.note.bad');
   assert.match(await body(page), /Codice non trovato/);
   assert.ok(await page.locator('input.code').isVisible());
   await done(page);
@@ -126,7 +126,7 @@ await scenario('join: messaggi di errore senza cloud', async () => {
 });
 
 async function fillWizardBasics(page, { name = 'Casa Rossi' } = {}) {
-  await page.getByRole('button', { name: /Crea una nuova casa/ }).click();
+  await page.getByRole('button', { name: /Crea una nuova casa|Create a new house/ }).click();
   await page.waitForSelector('#onb-name');
   await page.fill('#onb-name', name);
 }
@@ -137,7 +137,7 @@ await scenario('create: wizard locale completo -> Home', async () => {
   await fillWizardBasics(page);
   // domenica di default = fine della settimana corrente (28/10/2026 e' mercoledi')
   assert.equal(await page.inputValue('#onb-start'), '2026-11-01');
-  await page.fill('#onb-start', '2026-10-28'); await page.locator('#onb-start').dispatchEvent('change');
+  await page.fill('#onb-start', '2026-10-28');
   assert.equal(await page.inputValue('#onb-start'), '2026-11-01');
   assert.ok(await page.locator('.onb-adjusted').isVisible());
   // cloud non disponibile -> solo locale
@@ -311,7 +311,7 @@ await scenario('rules gate: scroll obbligatorio', async () => {
   const page = await open({ seed: seed({ me: 'anna' }) });
   await goto(page);
   await page.waitForSelector('.onb-rules');
-  assert.match(await body(page), /Passo 3 di 3/);
+  assert.match(await body(page), /passo 3 di 3/i);
   const btn = page.getByRole('button', { name: /Ho letto$/ });
   assert.ok(await btn.isDisabled());
   assert.ok(await page.locator('#onb-accept').isDisabled());

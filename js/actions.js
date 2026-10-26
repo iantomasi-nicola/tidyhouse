@@ -147,7 +147,8 @@ export class Actions {
   async setHouse(patch) { this.need(this.admin); await this.s.setHouse(patch); }
   async setRoommates(list) {
     this.need(this.admin);
-    const clean = list.map((r) => ({ id: r.id || uid(), name: String(r.name || '').trim(), slot: +r.slot || 1, from: r.from || null, to: r.to || null, color: r.color || null })).filter((r) => r.name);
+    // `to` = uscita CERTA (cambia i turni); `expectedTo` = uscita solo prevista/indicativa (non influisce sul piano); vuoti = "non si sa"
+    const clean = list.map((r) => ({ id: r.id || uid(), name: String(r.name || '').trim(), slot: +r.slot || 1, from: r.from || null, to: r.to || null, ...(!r.to && r.expectedTo ? { expectedTo: r.expectedTo } : {}), ...(r.color ? { color: r.color } : {}) })).filter((r) => r.name);
     await this.s.write({ coll: 'house', data: { roommates: clean } });
     await this.log('roommates', {});
   }
@@ -175,6 +176,13 @@ export class Actions {
     const h = this.house; const today = this.today();
     const rot = h.rotatedAt ? h.rotatedAt.slice(0, 10) : '';
     return (h.roommates || []).filter((r) => r.to && r.to < today && r.to >= (rot || '0000-00-00') && !(h.ignoreLeft || {})[r.id]);
+  }
+
+  /** Persone senza data di uscita certa ma con "uscita prevista" (indicativa) entro `days` giorni o già passata: servono a ricordare di organizzare il cambio. */
+  expectedExits(days = 21) {
+    const today = this.today(); const lim = addDays(today, days);
+    return (this.house.roommates || []).filter((r) => !r.to && r.expectedTo && r.expectedTo <= lim && !(this.house.ignoreLeft || {})[r.id])
+      .map((r) => ({ ...r, overdue: r.expectedTo < today, inDays: dayNum(r.expectedTo) - dayNum(today) }));
   }
 
   // ---- regole da leggere ----

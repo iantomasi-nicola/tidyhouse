@@ -292,3 +292,27 @@ test('persone uscite da avvisare, regole obbligatorie e conferma per versione', 
   const n = await client(hub, newId, { isAdmin: true });
   assert.deepEqual(n.a.leftSinceRotation(), []);
 });
+
+test('uscita non nota: resta in casa finche\' non viene segnata; "uscita prevista" avvisa senza cambiare i turni', async () => {
+  const hub = new MemoryHub(); await mkHouse(hub);
+  const adm = await client(hub, 'H1', { isAdmin: true });
+  const rm = adm.s.state.house.roommates.map((r) => ({ ...r }));
+  rm[2].expectedTo = '2026-11-10';                       // prevista, non certa
+  await adm.a.setRoommates(rm);
+  const out0 = compute(engineHouse(adm.s.state), '2026-10-28', 20);
+  assert.ok(out0.rows.slice(0, 20).every((r) => r.nm.includes(rm[2].id)), 'senza uscita certa resta in tutti i turni');
+  assert.equal(adm.a.expectedExits(21).length, 1);          // 13 giorni dalla data finta del test (2026-10-28)
+  assert.equal(adm.a.expectedExits(5).length, 0);
+  assert.equal(adm.a.leftSinceRotation().length, 0, 'prevista non e\' uscita');
+  // l'uscita viene confermata con la data reale: il piano cambia da lì, lo storico no
+  const rm2 = adm.s.state.house.roommates.map((r) => ({ ...r })); rm2[2].to = '2026-11-12'; rm2[2].expectedTo = '2026-11-10';
+  await adm.a.setRoommates(rm2);
+  assert.equal(adm.s.state.house.roommates[2].expectedTo, undefined, 'expectedTo ripulita quando c\'e\' la data certa');
+  const out1 = compute(engineHouse(adm.s.state), '2026-10-28', 20);
+  assert.ok(out1.rows[4].nm.includes(rm[2].id));
+  assert.ok(!out1.rows[7].nm.includes(rm[2].id));
+  // uscita prevista passata e ancora senza data certa -> da segnalare come scaduta
+  const rm3 = adm.s.state.house.roommates.map((r) => ({ ...r })); rm3[2].to = null; rm3[2].expectedTo = '2026-10-01';
+  await adm.a.setRoommates(rm3);
+  assert.equal(adm.a.expectedExits()[0].overdue, true);
+});
