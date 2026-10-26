@@ -430,7 +430,7 @@ function roommatesSection(ctx) {
         h('button', { class: 'st-dot', type: 'button', style: { background: color }, 'aria-label': t('set.roommates.color'), 'aria-expanded': String(S.rmColor === r._k), onclick: () => { S.rmColor = S.rmColor === r._k ? null : r._k; draw(); } }, (r.name || '?').trim().slice(0, 1).toUpperCase()),
         h('div', { class: 'grow' }, name)),
       h('div', { class: 'st-chips', 'data-testid': 'rm-chips-' + i }, chip(t('set.roommates.status.' + st), kind),
-          !r.to ? chip(t('setX.rm.unknownExit'), '', 'clock') : r.to > today ? chip(t('setX.rm.leavesChip', { date: fmtDate(r.to, ctx.lang, { year: true }) }), 'warn') : null,
+          !r.to ? (r.expectedTo ? null : chip(t('setX.rm.unknownExit'), '', 'clock')) : r.to > today ? chip(t('setX.rm.leavesChip', { date: fmtDate(r.to, ctx.lang, { year: true }) }), 'warn') : null,
           !r.to && r.expectedTo ? chip(t('setX.rm.expectedChip', { date: fmtDate(r.expectedTo, ctx.lang, { year: true }) }), 'warn', 'alert') : null),
       pal,
       h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('set.roommates.slot')), slot),

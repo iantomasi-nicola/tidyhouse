@@ -31,7 +31,7 @@ async function done(page) {
   await page.context().close();
   assert.deepEqual(errs, [], 'errori in console: ' + errs.join(' | '));
 }
-const shot = (page, name) => page.screenshot({ path: SHOT + name + '.png', fullPage: true });
+const shot = async (page, name) => { await page.waitForTimeout(650); return page.screenshot({ path: SHOT + name + '.png', fullPage: true }); };
 const ready = async (page) => { await page.waitForSelector('#app > *', { timeout: 8000 }); await page.waitForTimeout(250); };
 const goto = async (page, hash = '/') => { await page.goto(env.url + '/#' + hash); await ready(page); };
 const body = (page) => page.evaluate(() => document.body.innerText);
@@ -44,6 +44,7 @@ async function noOverflow(page, label) {
 async function noRawKeys(page, label) {
   const txt = await body(page);
   const m = txt.match(/\b(onb|moreX|more|needs|rules|tasks|lastout|req|act|guide|join|setup|inv|data|misc|home|chore)\.[a-zA-Z][\w.]*/);
+  assert.doesNotMatch(txt, /\b(null|undefined|NaN)\b/, 'valori grezzi in ' + label);
   assert.ok(!m, `chiave non tradotta in ${label}: ${m && m[0]}`);
 }
 async function passRules(page) {
@@ -301,7 +302,7 @@ await scenario('who: lista persone, uscite, PIN admin', async () => {
   await shot(page, 'who-pin');
   await page.fill('#onb-adminpin', '1234');
   await page.getByRole('button', { name: /^Sblocca/ }).click();
-  await page.waitForSelector('.note.ok');
+  await page.waitForSelector('.note.ok'); assert.doesNotMatch(await body(page), /null/);
   assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('cp:admin') || '{}').LOCALTEST001));
   assert.ok(await page.locator('.who .chip.acc').count() === 1);
   await shot(page, 'who');

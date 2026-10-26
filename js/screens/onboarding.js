@@ -23,6 +23,7 @@ export function extractCode(v) {
   const m = String(v || '').match(/join\/([^/?#\s]+)/i);
   return normCode(m ? m[1] : v).slice(0, 12);
 }
+const put = (el, ...kids) => el.append(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
 const spinner = (label) => h('div', { class: 'onb-wait', role: 'status' }, h('i', { class: 'onb-spin', 'aria-hidden': 'true' }), h('span', null, label));
 const logo = () => h('div', { class: 'logo' }, icon('broom'));
 const page = (cls, ...kids) => h('div', { class: 'gate onb ' + cls }, h('div', { class: 'panel onb-panel fade-up' }, ...kids));
@@ -67,7 +68,7 @@ function codeForm(boot, { initial = '', label, cta, onGo }) {
 // ---------------------------------------------------------------- LANDING
 function landing(boot) {
   const houses = [...(boot.houses || [])].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
-  const { form } = codeForm(boot, { label: t('join.haveCode') });
+  const { form } = codeForm(boot, { label: t('join.code') });
   const kids = [
     logo(),
     h('div', { class: 'onb-hero' }, h('h1', null, t('app.name')), h('p', { class: 'lead' }, t('join.hello'))),
@@ -155,11 +156,11 @@ function whoStage(boot) {
     const pinForm = h('form', { class: 'card onb-card stack tight', onsubmit: async (e) => {
       e.preventDefault(); if (!pinInp.value) return;
       let ok = false; try { ok = await boot.unlockAdmin(pinInp.value); } catch { ok = false; }
-      if (ok) { unlocked = true; showPin = false; paint(); boot.toast(t('onb.who.unlocked')); } else { setErr(pinErr, t('join.wrongPin')); pinInp.select(); }
+      if (ok) { unlocked = true; showPin = false; paint(); } else { setErr(pinErr, t('join.wrongPin')); pinInp.select(); }
     } }, h('div', { class: 'field' }, h('label', { for: 'onb-adminpin' }, t('join.adminPin')), pinInp), pinErr,
     h('div', { class: 'btn-row' }, h('button', { type: 'button', class: 'btn soft sm', onclick: () => { showPin = false; paint(); } }, t('cancel')), h('button', { type: 'submit', class: 'btn sm' }, icon('unlock'), t('join.unlock'))));
     clear(body);
-    body.append(
+    put(body,
       unlocked ? h('div', { class: 'note ok' }, icon('shield'), t('onb.who.unlocked')) : null,
       h('div', { class: 'who-grid' }, rows),
       h('div', { class: 'onb-more' },
@@ -305,7 +306,7 @@ function createStage(boot) {
           } catch (err) { console.warn('import', err); W.importErr = t('setup.importFail'); }
           W.importing = false; render(W.step);
         } });
-        box.append(h('div', { class: 'onb-cardhead' }, h('div', { class: 'ico g' }, icon('upload')), h('div', null, h('h3', null, t('onb.import.title')), h('p', { class: 'muted small' }, t('setup.importHint')))),
+        put(box, h('div', { class: 'onb-cardhead' }, h('div', { class: 'ico g' }, icon('upload')), h('div', null, h('h3', null, t('onb.import.title')), h('p', { class: 'muted small' }, t('setup.importHint')))),
           h('label', { class: 'btn tonal onb-file', for: 'onb-xlsx' }, icon('upload'), t('setup.import'), file),
           W.importErr ? h('p', { class: 'onb-err', role: 'alert' }, W.importErr) : null);
         return;
@@ -318,7 +319,7 @@ function createStage(boot) {
         else if (w.code === 'startNotSunday') warn.push(t('onb.import.notSunday', { date: fmtDate(w.value, getLang(), { year: true }) }));
         else warn.push(String(w.code || '') + (w.value ? ': ' + w.value : ''));
       }
-      box.append(
+      put(box,
         h('div', { class: 'row' }, h('div', { class: 'ico g onb-ico' }, icon('check')), h('div', { class: 'grow' }, h('h3', null, t('onb.import.preview')), h('p', { class: 'muted small' }, t('setup.importDone', { n: im.roommates.length, w: nWeeks })))),
         h('dl', { class: 'onb-dl' },
           h('dt', null, t('onb.import.people')), h('dd', null, h('div', { class: 'onb-chips' }, im.roommates.map((r, i) => h('span', { class: 'chip', style: { background: 'color-mix(in srgb,' + PALETTE[i % PALETTE.length] + ' 18%, var(--surface))' } }, r.name)))),

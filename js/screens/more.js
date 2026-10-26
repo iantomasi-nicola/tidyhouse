@@ -214,7 +214,7 @@ function openRulesEditor(ctx) {
   const ta = h('textarea', { class: 'input mx-ta', rows: '14', spellcheck: 'true', 'aria-label': t('rules.edit') });
   ta.value = cur != null ? cur : toMarkdown(defaultSections(house));
   const version = (Number(house.rules && house.rules.version) || 1) + 1;
-  const s = ctx.sheet({ title: t('rules.edit'), full: true, body: h('div', { class: 'stack' },
+  const s = ctx.sheet({ title: t('rules.edit'), full: true, body: h('div', { class: 'stack mx-form' },
     h('p', { class: 'muted small' }, t('moreX.rulesMd')), ta,
     h('div', { class: 'note warn' }, icon('alert'), t('moreX.rulesBump')),
     h('div', { class: 'btn-row' },
@@ -319,7 +319,7 @@ function openLastoutEditor(ctx) {
     });
   };
   paint();
-  const s = ctx.sheet({ title: t('lastout.edit'), full: true, body: h('div', { class: 'stack' }, list,
+  const s = ctx.sheet({ title: t('lastout.edit'), full: true, body: h('div', { class: 'stack mx-form' }, list,
     h('button', { type: 'button', class: 'btn tonal block', onclick: () => { rows.push({ id: uid(), text: '' }); paint(); const ins = list.querySelectorAll('input'); ins[ins.length - 1].focus(); } }, icon('plus'), t('lastout.addItem')),
     house.lastoutItems ? h('button', { type: 'button', class: 'btn soft block', onclick: async () => {
       await attempt(ctx, () => ctx.actions.setHouse({ lastoutItems: null })); s.close();
@@ -349,7 +349,7 @@ function openTaskSheet(ctx, task, preset = {}) {
   const textI = h('input', { class: 'input', id: 'mx-task-text', type: 'text', maxlength: '120', value: S.text, placeholder: t('tasks.name'), oninput: (e) => { S.text = e.target.value; } });
   const anchorSel = h('select', { class: 'input', id: 'mx-task-anchor', onchange: (e) => { S.anchor = e.target.value; } },
     anchors.map((a) => h('option', { value: a, selected: a === S.anchor }, `${fmtWeekRange(a)}${a === cur ? ' · ' + t('moreX.thisWeek') : ''}`)));
-  const s = ctx.sheet({ title: task ? t('edit') : t('tasks.add'), full: true, body: h('form', { class: 'stack', onsubmit: (e) => { e.preventDefault(); save(); } },
+  const s = ctx.sheet({ title: task ? t('edit') : t('tasks.add'), full: true, body: h('form', { class: 'stack mx-form', onsubmit: (e) => { e.preventDefault(); save(); } },
     h('div', { class: 'field' }, h('label', { for: 'mx-task-text' }, t('tasks.name')), textI),
     h('div', { class: 'field' }, h('div', { class: 'lbl' }, t('tasks.forChore')), seg(CHORES.map((c) => [c, t('chore.' + c)]), S.chore, (v) => { S.chore = v; })),
     h('div', { class: 'row-between' }, h('div', { class: 'lbl mx-lblb' }, t('tasks.every')), h('div', { class: 'row' }, stepper(S.every, { min: 1, max: 26, onchange: (v) => { S.every = v; } }), h('span', { class: 'muted' }, t('tasks.weeks')))),
@@ -448,10 +448,11 @@ function requestsPage(ctx) {
   const incomingCard = (r) => h('div', { class: 'card stack tight mx-req' },
     h('div', { class: 'row' }, avatar(ctx.name(r.from), ctx.color(r.from)), h('p', { class: 'grow' }, t('req.incoming', { name: ctx.name(r.from), theirs: t('chore.' + r.toChore).toLowerCase(), mine: t('chore.' + r.fromChore).toLowerCase(), week: fmtWeekRange(r.week) }))),
     h('div', { class: 'btn-row' }, h('button', { type: 'button', class: 'btn soft', onclick: () => answer(r, false) }, icon('x'), t('req.decline')), h('button', { type: 'button', class: 'btn', onclick: () => answer(r, true) }, icon('check'), t('req.accept'))));
-  const sentRow = (r, adminView) => h('div', { class: 'li mx-req' }, icon('swap'),
+  const sentRow = (r, adminView) => h('div', { class: 'li mx-req' + (adminView ? ' adm' : '') }, adminView ? null : icon('swap'),
     h('div', { class: 'grow' }, h('div', { class: 't' }, adminView ? line(r) : t('moreX.outgoing', { to: ctx.name(r.to), mine: t('chore.' + r.fromChore).toLowerCase(), theirs: t('chore.' + r.toChore).toLowerCase(), week: fmtWeekRange(r.week) })), h('div', { class: 'd' }, whenLabel(ctx, r.at))),
-    adminView ? h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn sm soft', onclick: () => answer(r, false) }, t('req.decline')), h('button', { type: 'button', class: 'btn sm', onclick: () => answer(r, true) }, t('req.accept'))) : chip('warn', t('req.pending')),
-    h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('req.cancel')}: ${line(r)}`, title: t('req.cancel'), onclick: () => attempt(ctx, () => ctx.actions.cancelSwap(r.id)) }, icon('x')));
+    adminView ? null : chip('warn', t('req.pending')),
+    h('button', { type: 'button', class: 'icon-btn', 'aria-label': `${t('req.cancel')}: ${line(r)}`, title: t('req.cancel'), onclick: () => attempt(ctx, () => ctx.actions.cancelSwap(r.id)) }, icon('x')),
+    adminView ? h('div', { class: 'btn-row mx-req-actions' }, h('button', { type: 'button', class: 'btn sm soft', onclick: () => answer(r, false) }, t('req.decline')), h('button', { type: 'button', class: 'btn sm', onclick: () => answer(r, true) }, t('req.accept'))) : null);
   const kids = [head(t('req.title'), { right: me ? h('button', { type: 'button', class: 'btn sm', onclick: () => askSwap(ctx) }, icon('plus'), t('req.new')) : null })];
   if (incoming.length) kids.push(h('section', { class: 'stack tight' }, h('div', { class: 'eyebrow' }, t('moreX.reqForMe'), chip('bad', String(incoming.length))), incoming.map(incomingCard)));
   if (sent.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqSent')), h('div', { class: 'list' }, sent.map((r) => sentRow(r, false)))));

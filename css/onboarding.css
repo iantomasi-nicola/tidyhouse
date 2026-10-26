@@ -151,3 +151,4 @@ body.onb-lock { overflow: hidden; }
 .onb-card .input, .onb-code .input { background: var(--surface-2); box-shadow: none; }
 .onb-card .input:focus, .onb-code .input:focus { background: var(--surface); }
 .onb-adv .input { background: var(--surface); }
+.onb-adv input[type=date] { padding: 0 10px; font-size: .9375rem; }
