@@ -8,9 +8,9 @@ const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'config.js',
   'css/app.css', 'css/settings.css',
   'js/app.js', 'js/ui.js', 'js/i18n.js', 'js/engine.js', 'js/store.js', 'js/actions.js', 'js/extras.js', 'js/ai.js', 'js/ai-ui.js', 'js/push.js', 'js/kick.js',
-  'js/backupcrypto.js', 'js/xlsx-import.js', 'js/choresheet.js',
+  'js/backupcrypto.js', 'js/xlsx-import.js', 'js/choresheet.js', 'js/doaction.js',
   'js/screens/home.js', 'js/screens/calendar.js', 'js/screens/trips.js', 'js/screens/stats.js', 'js/screens/more.js', 'js/screens/settings.js', 'js/screens/onboarding.js',
-  'js/strings/set.js', 'js/strings/push.js',
+  'js/strings/set.js', 'js/strings/push.js', 'js/strings/doaction.js',
   'vendor/qr.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
   'icons/favicon.svg', 'icons/logo.svg', 'icons/badge-96.png', 'icons/monochrome-512.png',
@@ -84,7 +84,12 @@ self.addEventListener('push', (event) => {
   try { d = event.data ? event.data.json() : {}; } catch { try { d = { body: event.data.text() }; } catch { d = {}; } }
   const icon = new URL('icons/icon-192.png', self.registration.scope).href;
   const badge = new URL('icons/badge-96.png', self.registration.scope).href;
-  const opts = { body: d.body || '', icon, badge, data: { url: d.url || '#/', house: d.house || null } };
+  // azioni dalla notifica («Segna fatto», «Accetta», «Rifiuta»): max 2, al browser va solo {action,title}; gli url restano nel data
+  const acts = (Array.isArray(d.actions) ? d.actions : []).filter((a) => a && typeof a.action === 'string' && a.action && typeof a.title === 'string' && a.title).slice(0, 2);
+  const actionUrls = {};
+  for (const a of acts) if (typeof a.url === 'string' && a.url.startsWith('#/')) actionUrls[a.action] = a.url;
+  const opts = { body: d.body || '', icon, badge, data: { url: d.url || '#/', house: d.house || null, actions: actionUrls } };
+  if (acts.length) opts.actions = acts.map((a) => ({ action: a.action, title: a.title }));
   if (d.tag) { opts.tag = String(d.tag); opts.renotify = true; }
   // iOS richiede che ogni push mostri una notifica: anche se il payload è vuoto o illeggibile
   event.waitUntil(self.registration.showNotification(d.title || 'Tidy House', opts));
@@ -92,7 +97,9 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const raw = (event.notification.data && event.notification.data.url) || '#/';
+  // tocco su un'azione → url di quell'azione; tocco sul corpo (o iOS, senza azioni) → url della notifica
+  const data = event.notification.data || {};
+  const raw = (event.action && data.actions && data.actions[event.action]) || data.url || '#/';
   const scope = self.registration.scope;
   const target = /^https?:/.test(raw) ? raw : scope + (raw.startsWith('#') ? raw : '#/' + raw.replace(/^\/+/, ''));
   event.waitUntil((async () => {
