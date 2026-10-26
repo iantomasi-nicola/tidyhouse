@@ -103,6 +103,20 @@ export const it = {
   'flow.shopping': 'Lista della spesa',
   'flow.shoppingBadge': '{n} da comprare',
   'flow.heroUndoChore': 'Rimetti da fare: {chore}',
+  // compiti condivisi
+  'widget.shared': 'Compiti condivisi',
+  'flow.shared.due': 'Da fare',
+  'flow.shared.in': 'tra {n} giorni',
+  'flow.shared.tomorrow': 'domani',
+  'flow.shared.turn': 'Tocca a {name}',
+  'flow.shared.turnMe': 'Tocca a te',
+  'flow.shared.last': 'Ultimo: {name}, {when}',
+  'flow.shared.never': 'Mai fatto finora',
+  'flow.shared.ago': '{n} giorni fa',
+  'flow.shared.done': 'Fatto',
+  'flow.shared.doneToast': '{text}: fatto, grazie!',
+  'flow.shared.invite': 'Aggiungi compiti condivisi',
+  'flow.shared.inviteHint': 'Per cose come buttare la spazzatura: le fa chi può, a turno e in modo equo.',
 };
 
 export const en = {
@@ -197,4 +211,17 @@ export const en = {
   'flow.shopping': 'Shopping list',
   'flow.shoppingBadge': '{n} to buy',
   'flow.heroUndoChore': 'Put back to "to do": {chore}',
+  'widget.shared': 'Shared tasks',
+  'flow.shared.due': 'To do',
+  'flow.shared.in': 'in {n} days',
+  'flow.shared.tomorrow': 'tomorrow',
+  'flow.shared.turn': '{name}\'s turn',
+  'flow.shared.turnMe': 'Your turn',
+  'flow.shared.last': 'Last: {name}, {when}',
+  'flow.shared.never': 'Never done yet',
+  'flow.shared.ago': '{n} days ago',
+  'flow.shared.done': 'Done',
+  'flow.shared.doneToast': '{text}: done, thanks!',
+  'flow.shared.invite': 'Add shared tasks',
+  'flow.shared.inviteHint': 'For things like taking out the trash: whoever can does them, fairly in turn.',
 };

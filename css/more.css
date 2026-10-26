@@ -158,3 +158,20 @@
 .mxa-dev svg.i { width: 1em; height: 1em; flex: none; }
 .mxa-dev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mxa-time { font-size: .9375rem; font-weight: 600; color: var(--text); flex: none; }
+
+/* compiti condivisi */
+.mx-ct.shared { background: var(--accent); }
+.mx-shared.due { box-shadow: inset 3px 0 0 var(--warn), var(--shadow-1); }
+.mx-turn { gap: 10px; }
+.mx-sharedbtn { min-height: 56px; margin-top: 4px; }
+.mx-recent { display: grid; gap: 6px; margin-top: 6px; }
+.mx-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mx-histrow { display: flex; align-items: center; gap: 10px; font-size: .875rem; color: var(--text-2); min-height: 32px; }
+.mx-histrow .btn.sm { flex: none; }
+.mx-fair .mx-ch-name { margin-bottom: 0; }
+.mx-fairrow { display: grid; grid-template-columns: 26px minmax(0, 6.5em) 1fr auto; gap: 10px; align-items: center; }
+.mx-fairname { font-weight: 600; font-size: .9375rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-fairn { min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* penalità checklist (Classifica) */
+.mx-pen { margin: 0; }

@@ -164,7 +164,8 @@ export function sheet({ title, body, full = false, onClose, actions } = {}) {
     }
   };
   document.addEventListener('keydown', onKey);
-  scrim.addEventListener('click', () => api.close());
+  const openedAt = performance.now();
+  scrim.addEventListener('click', () => { if (performance.now() - openedAt > 450) api.close(); });   // il secondo tocco di un doppio tocco sul pulsante che apre lo sheet non lo richiude
   const api = {
     el, body: bodyEl, setTitle: (s) => { head.firstChild.textContent = s; el.setAttribute('aria-label', s); },
     set(content2) { clear(bodyEl); add(bodyEl, [content2]); },
@@ -208,7 +209,7 @@ export function toast(msg, ms = 2600, opts = {}) {
   while (toastBox.children.length >= 3) toastBox.firstChild.remove();
   const el = h('div', { class: 'toast' }, msg);
   const dismiss = () => { if (!el.isConnected || el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), calm() ? 30 : 260); };
-  if (opts.action) el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { try { opts.action.onClick(); } finally { dismiss(); } } }, opts.action.label));
+  if (opts.action) el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { if (el.__used) return; el.__used = true; try { opts.action.onClick(); } finally { dismiss(); } } }, opts.action.label));
   el.__msg = msg; el.__action = !!opts.action; el.__dismiss = dismiss;
   toastBox.append(el);
   el.__timer = setTimeout(dismiss, opts.action ? Math.max(ms, 6000) : ms);

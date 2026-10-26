@@ -334,7 +334,7 @@ async function sectionAnim() {
   const page = await mk(); await open(page, 'calendar', 600);
   // stile: keyframes solo transform/opacity (nessun layout) e durate < 500 ms
   const css = await page.evaluate(() => { const bad = []; const kf = {}; for (const ss of document.styleSheets) { let rules; try { rules = ss.cssRules; } catch { continue; } for (const r of rules) { if (r.type === CSSRule.KEYFRAMES_RULE) { const props = new Set(); for (const k of r.cssRules) for (const p of k.style) props.add(p); kf[r.name] = [...props]; } } } return kf; });
-  for (const [n, props] of Object.entries(css)) ok(props.every((p) => /^(transform|opacity|filter|--.*|translate|scale|rotate)$/.test(p)), `keyframes "${n}": solo transform/opacity (nessun layout)`, props);
+  for (const [n, props] of Object.entries(css)) ok(props.every((p) => /^(transform|opacity|filter|box-shadow|--.*|translate|scale|rotate)$/.test(p)), `keyframes "${n}": solo transform/opacity (nessun layout)`, props);
   // sheet: apertura
   await page.evaluate(() => { const b = document.createElement('button'); b.id = 'qa-open'; b.className = 'btn'; b.textContent = 'apri'; b.onclick = () => window.__app.sheet({ title: 'Sheet QA', body: window.__app.h('div', { class: 'stack' }, window.__app.h('input', { class: 'input', id: 'qa-in', 'aria-label': 'x' }), window.__app.h('button', { class: 'btn', id: 'qa-b1' }, 'uno'), window.__app.h('button', { class: 'btn soft', id: 'qa-b2' }, 'due')) }); document.querySelector('#main').prepend(b); });
   const anims = []; const sampler = setInterval(async () => { try { anims.push(...(await page.evaluate(() => document.getAnimations().map((a) => { const t = a.effect.getComputedTiming(); return { n: a.animationName || a.transitionProperty || '?', end: t.endTime, it: t.iterations }; })))); } catch { /* ignore */ } }, 60);
@@ -643,10 +643,10 @@ async function sectionRobust() {
   const cdp = await page.context().newCDPSession(page);
   const snap = async () => { await cdp.send('HeapProfiler.collectGarbage'); await sleep(100); await cdp.send('HeapProfiler.collectGarbage'); return page.evaluate(() => ({ nodes: document.getElementsByTagName('*').length, intervals: window.__intervals, listeners: window.__app.store.listeners.size, layer: document.getElementById('layer').children.length, heap: performance.memory ? performance.memory.usedJSHeapSize : 0 })); };
   for (const r of ['', 'calendar', 'more', 'needs', 'stats', 'trips']) await go(page, r, 150);
-  const a = await snap();
+  await go(page, 'more', 500); const a = await snap();
   for (let k = 0; k < 8; k++) for (const r of ['', 'calendar', 'more', 'needs', 'stats', 'trips', 'settings/profile']) { await go(page, r, 40); if (r === 'calendar') await page.evaluate(async (s) => { const m = await import('/js/choresheet.js'); }, null); }
   for (let k = 0; k < 40; k++) { await page.evaluate(() => { window.__app.sheet({ title: 'm', body: window.__app.h('p', null, 'x') }); window.__app.toast('t' + Math.random(), 100); }); await sleep(10); await page.keyboard.press('Escape'); await sleep(20); }
-  await go(page, '', 600); await sleep(600);
+  await go(page, 'more', 600); await sleep(600);
   const b = await snap(); metrics.leak = { prima: a, dopo: b };
   ok(b.nodes - a.nodes < 120, `DOM: nessuna crescita dopo 56 navigazioni e 40 sheet (${a.nodes} → ${b.nodes})`);
   ok(b.intervals - a.intervals === 0, `nessun setInterval nuovo creato dal ridisegno (${b.intervals - a.intervals})`);

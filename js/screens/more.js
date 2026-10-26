@@ -3,12 +3,14 @@
 import { h, icon, loadCss, liRow, empty, avatar, toggle, stepper, seg, confirmDialog, confetti, clear } from '../ui.js';
 import { t, tr, getLang, fmtDate, fmtWeekRange, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, DEFAULT_SETTINGS, addDays } from '../engine.js';
-import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, tasksForWeek, checklistFor, nextDueWeek, weekIndex, weekOfDate, uid } from '../extras.js';
+import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, SHARED_TEMPLATES, sharedStatus, tasksForWeek, checklistFor, nextDueWeek, weekIndex, weekOfDate, uid } from '../extras.js';
 import { it, en } from '../strings/more.js';
 import { it as it2, en as en2 } from '../strings/more2.js';
+import { it as itFlow, en as enFlow } from '../strings/flow.js';   // flow.shared.* (testi condivisi con la Home)
 
 registerStrings(it, en);
 registerStrings(it2, en2);
+registerStrings(itFlow, enFlow);
 
 const REPO = 'https://github.com/iantomasi-nicola/tidyhouse';
 const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -62,6 +64,7 @@ function hub(ctx) {
   const house = ctx.house;
   const needsOpen = Object.values(ctx.state.needs || {}).filter((n) => !n.done).length;
   const inReq = awaitingMe(ctx).length;   // calcolato qui: ctx.badges() non conta le sostituzioni aperte a tutti
+  let sharedDue = 0; try { if (f('shared')) sharedDue = sharedList(ctx).filter((x) => x.due).length; } catch { /* ignore */ }
   const tasksOn = (house.tasks || []).filter((x) => x.enabled !== false).length;
   const badge = (n, cls = 'bad') => (n > 0 ? chip(cls, String(n)) : undefined);
   const row = (o) => liRow(o);
@@ -87,6 +90,7 @@ function hub(ctx) {
       f('requests') ? row({ ic: 'swap', tone: 'p', title: t('more.requests'), desc: inReq ? t('moreY.hub.awaiting', { n: inReq }) : t('moreY.hub.requests'), end: badge(inReq), href: '#/requests' }) : null,
       f('lastout') ? row({ ic: 'plane', tone: 'g', title: t('more.lastout'), desc: t('moreX.d.lastout'), href: '#/lastout' }) : null,
       f('tasks') ? row({ ic: 'list', tone: '', title: t('more.tasks'), desc: tasksOn ? t('moreX.tasksOn', { n: tasksOn }) : t('moreX.d.tasks'), href: '#/tasks' }) : null,
+      f('shared') ? row({ ic: 'refresh', tone: 'g', title: t('shared.title'), desc: sharedDue ? t('shared.dueN', { n: sharedDue }) : t('shared.d.hub'), end: badge(sharedDue, 'warn'), href: '#/more/shared' }) : null,
       f('rules') ? row({ ic: 'book', tone: 'r', title: t('more.rules'), desc: t('moreX.d.rules'), href: '#/rules' }) : null,
       f('activity') ? row({ ic: 'history', tone: '', title: t('more.activity'), desc: t('moreX.d.activity'), href: '#/activity' }) : null,
     ]),
@@ -627,6 +631,115 @@ function tasksPage(ctx) {
   return shell(...kids);
 }
 
+// ================================================================ compiti condivisi (#/more/shared)
+const everyDaysLabel = (n) => (n === 1 ? t('shared.every1') : t('shared.everyN', { n }));
+const timesLabel = (n) => (n === 1 ? t('shared.times1') : t('shared.times', { n }));
+const sharedList = (ctx) => sharedStatus(ctx.calc.eh, ctx.calc.out, ctx.today());
+const sharedHas = (list, key) => { const names = [t(key), tr('it', key), tr('en', key)]; return (list || []).some((x) => names.includes(x.text)); };
+const sharedPayload = (list) => list.map((x) => ({ id: x.id, text: x.text, every: x.every, enabled: x.enabled !== false }));
+
+function openSharedSheet(ctx, task) {
+  const S = { id: task ? task.id : uid(), text: task ? task.text : '', every: task ? Math.max(1, parseInt(task.every, 10) || 1) : 3, enabled: task ? task.enabled !== false : true };
+  let saving = false;
+  const textI = h('input', { class: 'input', id: 'mx-shared-text', type: 'text', maxlength: '60', autocomplete: 'off', enterkeyhint: 'done', placeholder: t('shared.namePh'), oninput: (e) => { S.text = e.target.value; } });
+  textI.value = S.text;
+  const save = async () => {
+    if (saving) return;
+    const text = S.text.trim(); if (!text) { textI.focus(); return; }
+    saving = true;
+    const list = sharedPayload(ctx.house.shared || []); const rec = { id: S.id, text, every: S.every, enabled: S.enabled };
+    const i = list.findIndex((x) => x.id === S.id); if (i >= 0) list[i] = rec; else list.push(rec);
+    const ok = await attempt(ctx, async () => { await ctx.actions.saveShared(list); return true; });
+    saving = false;
+    if (ok) { ctx.toast(t('saved')); s.close(); }
+  };
+  const s = ctx.sheet({ title: task ? t('shared.edit') : t('shared.add'), full: true, body: h('form', { class: 'stack mx-form', onsubmit: (e) => { e.preventDefault(); save(); } },
+    h('div', { class: 'field' }, h('label', { for: 'mx-shared-text' }, t('shared.name')), textI),
+    h('div', { class: 'row-between' }, h('div', { class: 'lbl mx-lblb' }, t('shared.every')), h('div', { class: 'row' }, stepper(S.every, { min: 1, max: 60, onchange: (v) => { S.every = v; } }), h('span', { class: 'muted' }, t('shared.days')))),
+    task ? h('div', { class: 'row-between' }, h('div', { class: 'lbl mx-lblb' }, t('tasks.enabled')), toggle(S.enabled, (v) => { S.enabled = v; }, t('tasks.enabled'))) : null,
+    h('div', { class: 'btn-row' },
+      task ? h('button', { type: 'button', class: 'btn danger', onclick: async () => {
+        if (!(await confirmDialog({ title: t('delete'), text: t('shared.delConfirm'), ok: t('delete'), danger: true }))) return;
+        const ok = await attempt(ctx, async () => { await ctx.actions.saveShared(sharedPayload((ctx.house.shared || []).filter((x) => x.id !== task.id))); await ctx.actions.setHouse({ sharedState: { [task.id]: null } }); return true; });
+        if (ok) s.close();
+      } }, icon('trash'), t('delete')) : null,
+      h('button', { type: 'button', class: 'btn soft', onclick: () => s.close() }, t('cancel')),
+      h('button', { type: 'submit', class: 'btn' }, icon('check'), t('save')))) });
+  setTimeout(() => textI.focus(), 380);
+}
+
+function sharedPage(ctx) {
+  if (!ctx.feature('shared')) return offPage(t('shared.title'));
+  const admin = ctx.isAdmin; const me = ctx.me; const today = ctx.today();
+  const list = sharedList(ctx); const all = ctx.house.shared || [];
+  const busy = new Set();
+  const complete = async (x, btn) => {
+    const id = x.task.id; if (busy.has(id)) return; busy.add(id); btn.disabled = true;
+    const ok = await attempt(ctx, async () => { await ctx.actions.completeShared(id); return true; });
+    if (!ok) { btn.disabled = false; busy.delete(id); return; }
+    ctx.haptic(ctx.prefs.haptics, 14);
+    ctx.toast(t('flow.shared.doneToast', { text: x.task.text }), 7000, { action: { label: t('flow.undo'), onClick: async () => { if (await attempt(ctx, async () => { await ctx.actions.undoShared(id); return true; })) ctx.toast(t('shared.undone')); } } });
+    setTimeout(() => busy.delete(id), 800);
+  };
+  const undoLast = (x) => attempt(ctx, async () => { await ctx.actions.undoShared(x.task.id); ctx.toast(t('shared.undone')); });
+  const histOf = (id) => ((((ctx.house.sharedState || {})[id]) || {}).history) || [];
+
+  const card = (x) => {
+    const id = x.task.id; const mine = !!me && x.suggested === me; const hist = histOf(id); const recent = hist.slice(-5).reverse();
+    const status = x.due ? chip('bad', icon('clock'), t('flow.shared.due')) : chip('', icon('clock'), x.dueIn === 1 ? t('flow.shared.tomorrow') : t('flow.shared.in', { n: x.dueIn }));
+    const btn = h('button', { type: 'button', class: 'btn lg block mx-sharedbtn' + (x.due ? '' : ' tonal'), 'data-testid': 'shared-done-' + id, 'aria-label': `${t('flow.shared.done')}: ${x.task.text}`, onclick: () => complete(x, btn) }, icon('check'), t('flow.shared.done'));
+    const lastBy = hist.length ? hist[hist.length - 1] : null;
+    return h('section', { class: 'card stack tight mx-shared' + (x.due ? ' due' : ''), 'data-shared': id, 'data-testid': 'shared-' + id },
+      h('div', { class: 'row' }, h('i', { class: 'mx-ct lg shared' }, icon('refresh')),
+        h('div', { class: 'grow' }, h('div', { class: 'mx-ch-name' }, x.task.text), h('div', { class: 'small muted' }, everyDaysLabel(x.every))), status),
+      x.suggested ? h('div', { class: 'row mx-turn' + (mine ? ' mine' : ''), 'data-testid': 'shared-turn-' + id }, avatar(ctx.name(x.suggested), ctx.color(x.suggested), 'sm'),
+        mine ? chip('acc', icon('user'), t('flow.shared.turnMe')) : h('span', { class: 'mx-lblb' }, t('flow.shared.turn', { name: ctx.name(x.suggested) }))) : null,
+      btn,
+      recent.length ? h('div', { class: 'mx-recent' }, h('div', { class: 'lbl' }, t('shared.history')),
+        h('ul', { class: 'mx-hist' }, recent.map((e, i) => h('li', { class: 'mx-histrow' },
+          avatar(personName(ctx, e.by), e.by === 'admin' ? '#888' : ctx.color(e.by), 'sm'),
+          h('span', { class: 'grow' }, t('shared.whoLast', { name: personName(ctx, e.by), when: whenLabel(ctx, e.at) })),
+          i === 0 && (admin || e.by === me) ? h('button', { type: 'button', class: 'btn sm soft', 'data-testid': 'shared-undo-' + id, onclick: () => undoLast(x) }, icon('refresh'), t('shared.undoLast')) : null)))) : h('p', { class: 'small muted' }, t('flow.shared.never')));
+  };
+
+  // equità: quante volte ciascuno ha fatto questi compiti (ultime 10 volte di ognuno)
+  const fair = () => {
+    const people = (ctx.house.roommates || []).filter((r) => !(r.to && r.to < today));
+    const tot = Object.fromEntries(people.map((r) => [r.id, 0]));
+    for (const x of list) for (const [pid, n] of Object.entries(x.counts || {})) if (pid in tot) tot[pid] += n;
+    const max = Math.max(1, ...Object.values(tot));
+    if (!Object.values(tot).some(Boolean)) return null;
+    return h('section', { class: 'card stack tight mx-fair', 'data-testid': 'shared-fair' }, h('div', { class: 'mx-ch-name' }, t('shared.fair')), h('p', { class: 'small muted' }, t('shared.fairHint')),
+      people.sort((a, b) => tot[b.id] - tot[a.id] || a.name.localeCompare(b.name)).map((r) => h('div', { class: 'mx-fairrow', 'data-person': r.id },
+        avatar(r.name, ctx.color(r.id), 'sm'), h('span', { class: 'mx-fairname' }, r.name),
+        h('div', { class: 'bar' }, h('i', { style: { width: Math.round((100 * tot[r.id]) / max) + '%', background: ctx.color(r.id) } })),
+        h('span', { class: 'small muted mx-fairn' }, timesLabel(tot[r.id])))));
+  };
+
+  const kids = [head(t('shared.title'), { right: admin ? h('button', { type: 'button', class: 'btn sm', onclick: () => openSharedSheet(ctx, null) }, icon('plus'), t('shared.add')) : null }),
+    h('p', { class: 'muted' }, t('shared.hint'))];
+  if (list.length) list.forEach((x) => kids.push(card(x)));
+  else kids.push(h('div', { class: 'card' }, empty('refresh', t('shared.empty'), t('shared.emptyHint'))));
+  const f = fair(); if (f) kids.push(f);
+  if (admin) {
+    if (all.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('shared.manage')),
+      h('div', { class: 'list' }, all.map((x) => h('div', { class: 'li mx-task' + (x.enabled === false ? ' off' : ''), 'data-shared-row': x.id },
+        h('button', { type: 'button', class: 'mx-taskmain', 'aria-label': `${t('edit')}: ${x.text}`, onclick: () => openSharedSheet(ctx, x) },
+          h('div', { class: 'grow' }, h('div', { class: 't' }, x.text), h('div', { class: 'd' }, `${everyDaysLabel(Math.max(1, parseInt(x.every, 10) || 1))}${x.enabled === false ? ' · ' + t('shared.off') : ''}`))),
+        toggle(x.enabled !== false, (v) => attempt(ctx, () => ctx.actions.saveShared(sharedPayload((ctx.house.shared || []).map((y) => (y.id === x.id ? { ...y, enabled: v } : y))))), `${t('tasks.enabled')}: ${x.text}`))))));
+    const missing = SHARED_TEMPLATES.filter((x) => !sharedHas(all, x.key));
+    if (missing.length) kids.push(h('section', { class: 'stack tight mx-sugg' }, h('div', { class: 'eyebrow' }, t('tasks.templates')),
+      h('button', { type: 'button', class: 'btn tonal block', 'data-testid': 'shared-addall', onclick: () => attempt(ctx, async () => {
+        const cur = sharedPayload(ctx.house.shared || []); let n = 0;
+        for (const x of SHARED_TEMPLATES) if (!sharedHas(cur, x.key)) { cur.push({ id: uid(), text: t(x.key), every: x.every, enabled: true }); n++; }
+        await ctx.actions.saveShared(cur); ctx.toast(t('shared.addedN', { n }));
+      }) }, icon('plus'), t('shared.addAll', { n: missing.length })),
+      h('div', { class: 'mx-tpl' }, missing.map((x) => h('button', { type: 'button', class: 'mx-tplbtn', onclick: () => attempt(ctx, () => ctx.actions.saveShared([...sharedPayload(ctx.house.shared || []), { id: uid(), text: t(x.key), every: x.every, enabled: true }])) },
+        h('i', { class: 'mx-ct shared' }, icon('refresh')), h('span', { class: 'grow' }, t(x.key)), h('span', { class: 'chip' }, everyDaysLabel(x.every)))))));
+  } else kids.push(h('div', { class: 'note' }, icon('lock'), t('shared.readOnly')));
+  return shell(...kids);
+}
+
 // ================================================================ scambi, sostituzioni, offerte e avvisi
 async function askSwap(ctx) {
   const out = ctx.calc.out; const row = out.cur >= 0 ? out.rows[out.cur] : null;
@@ -746,8 +859,8 @@ function requestsPage(ctx) {
 let actLimit = 60;
 // tipo di log -> [icona, tono]. Le frasi sono `act.<tipo>` (nucleo) oppure `moreY.act.<tipo>` per i tipi aggiunti dopo.
 const ACT_ICON = { done: ['check', 'g'], cover: ['swap', 'p'], skipped: ['x', 'r'], reset: ['refresh', ''], away: ['plane', 'o'], back: ['home', 'g'], trip: ['plane', 'o'], plan: ['calendar', ''], swap: ['swap', 'p'], need: ['cart', 'o'], task: ['list', 'g'], settings: ['settings', ''], roommates: ['users', ''], import: ['upload', ''],
-  incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'] };
-const ACT_NEW = new Set(['incomplete', 'volunteer', 'delay', 'agreed']);
+  incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'], shared: ['refresh', 'g'] };
+const ACT_NEW = new Set(['incomplete', 'volunteer', 'delay', 'agreed', 'shared']);
 function actText(ctx, e) {
   const p = e.p || {};
   if (!ACT_ICON[e.type]) return t('act.generic', { name: personName(ctx, e.by), text: p.text || e.type || '' });
@@ -869,6 +982,7 @@ export async function render(ctx, params = {}) {
     case 'rules': return rulesPage(ctx);
     case 'lastout': return lastoutPage(ctx);
     case 'tasks': return tasksPage(ctx);
+    case 'shared': return sharedPage(ctx);
     case 'requests': return requestsPage(ctx);
     case 'activity': return activityPage(ctx);
     case 'guide': return guidePage(ctx);

@@ -64,7 +64,7 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
           if (rq.status === 'pending' && !rq.notified) {
             const targets = rq.kind === 'offer' ? [rq.to] : rq.to ? [rq.to] : house.roommates.map((r) => r.id).filter((x) => x !== rq.from);
             let any = 0;
-            for (const pid of targets) any += await deliver({ type: 'requests', personId: pid, key: `${rq.kind}:${rid}:${pid}`, custom: (l) => ({ title: tr(l, rq.kind === 'offer' ? 'n.offer.title' : 'n.cover.title'), body: tr(l, rq.kind === 'offer' ? 'n.offer.body' : 'n.cover.body', { name: name(rq.from), chore: CH(l, rq.chore) }), url: '#/requests' }) });
+            for (const pid of targets) any += await deliver({ type: 'requests', personId: pid, key: `${rq.kind}:${rid}:${pid}`, custom: (l) => ({ title: tr(l, rq.kind === 'offer' ? 'n.offer.title' : 'n.cover.title'), body: tr(l, rq.kind === 'offer' ? 'n.offer.body' : 'n.cover.body', { name: name(rq.from), chore: CH(l, rq.chore) }) + ' ' + tr(l, rq.terms === 'gift' ? 'n.terms.gift' : 'n.terms.repay'), url: '#/requests' }) });
             await done(any, { notified: true });
           } else if (rq.status !== 'pending' && rq.notifiedAnswer === false) {
             const target = rq.kind === 'offer' ? rq.from : rq.from;   // risposta a chi ha chiesto/offerto

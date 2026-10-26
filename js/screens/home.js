@@ -4,12 +4,12 @@ import { h, icon, avatar, loadCss, confetti, haptic, promptDialog, confirmDialog
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, validateRoommates } from '../engine.js';
 import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote } from '../choresheet.js';
-import { planOf, buildStats, weekDays } from '../extras.js';
+import { planOf, buildStats, weekDays, sharedStatus } from '../extras.js';
 import { it, en } from '../strings/home.js';
 registerStrings(it, en);
 
 const IC = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
-const WEIGHT = { hero: 3.2, alerts: 1.2, week: 3.4, checklist: 2, quick: 1.4, links: 0.7, away: 1, upcoming: 2.4, makeups: 1.6, ranking: 2.2, needs: 1.6 };
+const WEIGHT = { hero: 3.2, alerts: 1.2, week: 3.4, checklist: 2, shared: 1.8, quick: 1.4, links: 0.7, away: 1, upcoming: 2.4, makeups: 1.6, ranking: 2.2, needs: 1.6 };
 const popKeys = new Set();      // turni appena segnati da questo dispositivo: animazione del check
 let lastRender = 0;
 
@@ -355,6 +355,46 @@ function widgetChecklist(ctx, M) {
   return h('section', { class: 'hm-w', 'data-widget': 'checklist' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.checklist')), h('span', { class: 'hm-prog', 'data-testid': 'checklist-progress' }, `${done}/${list.length}`)), h('div', { class: 'list' }, rows));
 }
 
+// ---------------- COMPITI CONDIVISI (es. spazzatura) ----------------
+function sharedWhen(ctx, iso) {
+  const day = String(iso || '').slice(0, 10); if (!day) return '';
+  const n = Math.round((Date.parse(ctx.today() + 'T00:00:00Z') - Date.parse(day + 'T00:00:00Z')) / 86400000);
+  if (n <= 0) return ctx.t('today').toLowerCase();
+  if (n === 1) return ctx.t('yesterday').toLowerCase();
+  return n < 14 ? ctx.t('flow.shared.ago', { n }) : fmtDate(day);
+}
+function widgetShared(ctx, M) {
+  const t = ctx.t;
+  if (!ctx.feature('shared')) return null;
+  const list = sharedStatus(M.eh, M.out, M.today);
+  if (!list.length) {
+    if (!ctx.isAdmin) return null;
+    return h('section', { class: 'hm-w', 'data-widget': 'shared' }, h('div', { class: 'eyebrow' }, h('span', null, t('widget.shared'))),
+      h('a', { class: 'li hm-sharedinvite card', href: '#/more/shared', 'data-testid': 'shared-invite' }, h('div', { class: 'ico' }, icon('plus')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('flow.shared.invite')), h('div', { class: 'd' }, t('flow.shared.inviteHint'))), icon('chevron')));
+  }
+  const nm = (id) => (id === 'admin' || !id ? t('misc.admin') : ctx.name(id));
+  const rows = list.map((x) => {
+    const mine = !!ctx.me && x.suggested === ctx.me;
+    const status = x.due ? chip('bad', t('flow.shared.due'), 'clock') : chip('', x.dueIn === 1 ? t('flow.shared.tomorrow') : t('flow.shared.in', { n: x.dueIn }), 'clock');
+    const done = async (e) => {
+      const b = e.currentTarget; b.disabled = true;
+      try {
+        await ctx.actions.completeShared(x.task.id); haptic(ctx.prefs.haptics, 14);
+        ctx.toast(t('flow.shared.doneToast', { text: x.task.text }), 7000, { action: { label: t('flow.undo'), onClick: async () => { try { await ctx.actions.undoShared(x.task.id); } catch { ctx.toast(t('error')); } } } });
+      } catch { b.disabled = false; ctx.toast(t('error')); }
+    };
+    return h('div', { class: 'li hm-shared' + (x.due ? ' is-due' : '') + (mine ? ' mine' : ''), 'data-shared': x.task.id },
+      h('div', { class: 'tile hm-sharedtile' }, icon('refresh')),
+      h('div', { class: 'grow' },
+        h('div', { class: 't hm-wrap' }, x.task.text),
+        h('div', { class: 'd hm-taskmeta' }, status,
+          x.suggested ? (mine ? chip('acc', t('flow.shared.turnMe'), 'user') : h('span', { class: 'hm-person' }, avatar(ctx.name(x.suggested), ctx.color(x.suggested), 'sm'), h('span', { class: 'hm-ell' }, t('flow.shared.turn', { name: ctx.name(x.suggested) })))) : null),
+        h('div', { class: 'd hm-wrap', 'data-testid': 'shared-last' }, x.last ? t('flow.shared.last', { name: nm(x.last.by), when: sharedWhen(ctx, x.last.at) }) : t('flow.shared.never'))),
+      h('button', { class: 'btn sm hm-shareddone' + (x.due ? '' : ' tonal'), type: 'button', 'data-act': 'shared-done', 'aria-label': `${t('flow.shared.done')}: ${x.task.text}`, onclick: done }, icon('check'), t('flow.shared.done')));
+  });
+  return h('section', { class: 'hm-w', 'data-widget': 'shared' }, h('div', { class: 'eyebrow' }, h('span', null, t('widget.shared'))), h('div', { class: 'list' }, rows));
+}
+
 // ---------------- QUICK ----------------
 function widgetQuick(ctx, M) {
   const t = ctx.t, btns = [];
@@ -456,7 +496,7 @@ function widgetNeeds(ctx) {
   return h('section', { class: 'hm-w', 'data-widget': 'needs' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.needs')), h('a', { href: '#/needs' }, t('home.seeAll'))), h('div', { class: 'list' }, rows));
 }
 
-const WIDGETS = { hero: widgetHero, alerts: widgetAlerts, week: widgetWeek, checklist: widgetChecklist, quick: widgetQuick, links: widgetLinks, away: widgetAway, upcoming: widgetUpcoming, makeups: widgetMakeups, ranking: widgetRanking, needs: widgetNeeds };
+const WIDGETS = { hero: widgetHero, alerts: widgetAlerts, week: widgetWeek, checklist: widgetChecklist, shared: widgetShared, quick: widgetQuick, links: widgetLinks, away: widgetAway, upcoming: widgetUpcoming, makeups: widgetMakeups, ranking: widgetRanking, needs: widgetNeeds };
 
 // ---------------- intestazione ----------------
 function openWho(ctx) {

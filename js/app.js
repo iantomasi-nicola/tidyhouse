@@ -244,7 +244,6 @@ function evaluate() {
   S.stage = 'app'; S.ready = true;
   if (first) { try { recordView('open'); } catch { /* ignore */ } }
   registerDevice();
-  document.getElementById('boot').classList.add('gone');
   renderApp(true);
 }
 const memberLoaded = () => true;
@@ -368,18 +367,27 @@ document.addEventListener('click', (e) => {
 // ---- il focus sopravvive al rerender forzato (stesso campo, valore digitato, posizione del cursore) ----
 const FIELD = 'input,textarea,select,button,a[href],[tabindex]';
 const sigOf = (el) => [el.tagName, el.type || '', el.id, el.getAttribute('data-testid') || '', el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || '', el.getAttribute('name') || '', el.getAttribute('href') || '', /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ? '' : (el.textContent || '').trim().slice(0, 40)].join('|');
+const isTextField = (el) => /^(INPUT|TEXTAREA)$/.test(el.tagName) && !NOT_TEXT.test(el.type);
+const kindOf = (el) => el.tagName + '|' + (el.type || '');
 function captureFocus() {
   const a = document.activeElement;
   if (!a || a === document.body || !mainEl || !mainEl.contains(a)) return null;
-  const sig = sigOf(a); const same = [...mainEl.querySelectorAll(FIELD)].filter((x) => sigOf(x) === sig);
-  const txt = /^(INPUT|TEXTAREA)$/.test(a.tagName) && !NOT_TEXT.test(a.type);
-  let ss = null, se = null, sd = null; try { if (txt) { ss = a.selectionStart; se = a.selectionEnd; sd = a.selectionDirection; } } catch { /* tipi senza selezione */ }
-  return { sig, idx: Math.max(0, same.indexOf(a)), value: a.value, dirty: !!a.__typed, ss, se, sd, st: a.scrollTop };
+  const sig = sigOf(a); const all = [...mainEl.querySelectorAll(FIELD)];
+  const same = all.filter((x) => sigOf(x) === sig), kind = all.filter((x) => kindOf(x) === kindOf(a));
+  let ss = null, se = null, sd = null; try { if (isTextField(a)) { ss = a.selectionStart; se = a.selectionEnd; sd = a.selectionDirection; } } catch { /* tipi senza selezione */ }
+  return { sig, idx: Math.max(0, same.indexOf(a)), kind: kindOf(a), ord: kind.indexOf(a), nKind: kind.length, id: a.id, tid: a.getAttribute('data-testid'), value: a.value, dirty: !!a.__typed, ss, se, sd, st: a.scrollTop };
+}
+/** Ritrova lo stesso campo nel nuovo nodo: per id, data-testid, firma, e (cambio lingua) per posizione tra campi dello stesso tipo. */
+function findAgain(snap) {
+  const all = [...mainEl.querySelectorAll(FIELD)];
+  if (snap.id) { const e = all.find((x) => x.id === snap.id); if (e) return e; }
+  if (snap.tid) { const e = all.find((x) => x.getAttribute('data-testid') === snap.tid); if (e) return e; }
+  const same = all.filter((x) => sigOf(x) === snap.sig); if (same.length) return same[Math.min(snap.idx, same.length - 1)];
+  const kind = all.filter((x) => kindOf(x) === snap.kind); return kind.length === snap.nKind ? kind[snap.ord] : null;
 }
 function restoreFocus(snap) {
   if (!snap) return;
-  const same = [...mainEl.querySelectorAll(FIELD)].filter((x) => sigOf(x) === snap.sig);
-  const el = same[Math.min(snap.idx, same.length - 1)];
+  const el = findAgain(snap);
   if (!el) return;
   if (snap.dirty && 'value' in el && el.type !== 'file' && el.value !== snap.value) el.value = snap.value;
   if (snap.dirty) el.__typed = true;
@@ -392,7 +400,7 @@ async function renderApp(force) {
   const route = parseHash(); S.route = route;
   if (route.root === 'join') { // link d'invito aperto con casa già caricata
     const code = normCode(route.parts[1] || '');
-    if (code && code !== S.houseId) { S.stageHint = 'landing'; detach(); history.replaceState(null, '', '#/join/' + code); return startFromHash(); }
+    if (code && code !== normCode(S.houseId || '')) { S.stageHint = 'landing'; detach(); history.replaceState(null, '', '#/join/' + code); return startFromHash(); }
     history.replaceState(null, '', '#/'); return renderApp(true);
   }
   if (!shell || !shell.isConnected) { buildShell(); force = true; }

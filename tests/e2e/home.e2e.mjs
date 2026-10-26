@@ -237,7 +237,7 @@ const run = async () => {
   });
 
   await test('funzioni spente spariscono', async () => {
-    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { features: { needs: false, trips: false, whatsapp: false, requests: false, tasks: false, ranking: false, planDay: false, selfAway: false }, home: { order: ['hero', 'quick', 'checklist', 'ranking', 'needs', 'week'], hidden: ['alerts', 'links', 'away', 'upcoming', 'makeups'] } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { features: { needs: false, trips: false, whatsapp: false, requests: false, tasks: false, ranking: false, planDay: false, selfAway: false, shared: false }, home: { order: ['hero', 'quick', 'checklist', 'ranking', 'needs', 'week'], hidden: ['alerts', 'links', 'away', 'upcoming', 'makeups'] } } });
     const page = await open({ s });
     assert.deepEqual(await widgets(page), ['hero', 'week'], 'widget visibili');
     assert.equal(await page.locator('.hm-heroaway, [data-testid="plan-tip"]').count(), 0);
@@ -268,7 +268,7 @@ const run = async () => {
   });
 
   await test('layout personalizzato (prefs) + personalizza', async () => {
-    const extra = { 'cp:prefs': { home: { order: ['week', 'links', 'hero', 'upcoming'], hidden: ['hero', 'alerts', 'checklist', 'quick', 'away', 'makeups', 'ranking', 'needs'] }, useHouseHome: false } };
+    const extra = { 'cp:prefs': { home: { order: ['week', 'links', 'hero', 'upcoming'], hidden: ['hero', 'alerts', 'checklist', 'quick', 'away', 'makeups', 'ranking', 'needs', 'shared'] }, useHouseHome: false } };
     const page = await open({ s: mk({ me: 'anna', weeks: doneWeeks(), extra }) });
     assert.deepEqual(await widgets(page), ['week', 'links', 'upcoming']);
     await page.click('[data-act="customize"]');
@@ -340,7 +340,7 @@ const run = async () => {
   });
 
   await test('viewport tablet e desktop: due colonne >= 1180', async () => {
-    const order = ['hero', 'alerts', 'week', 'checklist', 'quick', 'links', 'away', 'upcoming', 'makeups', 'ranking', 'needs'];
+    const order = ['hero', 'alerts', 'week', 'checklist', 'shared', 'quick', 'links', 'away', 'upcoming', 'makeups', 'ranking', 'needs'];
     const s = mk({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { floor: 'skipped', bathroom: 'by:anna', kitchen: 'done' } } }), ...withDario('2026-10-20'), needs: { n1: { text: 'Carta igienica', urgent: true, by: 'bruno', at: '2026-10-27T10:00:00Z', done: false } }, extra: { 'cp:prefs': { home: { order, hidden: [] }, useHouseHome: false } } });
     const tab = await open({ s, viewport: TABLET });
     assert.deepEqual(await tab.$$eval('.hm-grid > .col', (c) => c.map((x) => getComputedStyle(x).display)), ['contents', 'contents']);

@@ -563,6 +563,47 @@ const run = async () => {
     noErrors(p3);
   });
 
+  await test('compiti condivisi: widget con stato, a chi tocca, Fatto + Annulla, invito admin, funzione spenta, editor layout', async () => {
+    const hx = { shared: [{ id: 's1', text: 'Butta la spazzatura', every: 2, enabled: true }], sharedState: { s1: { history: [{ by: 'bruno', at: '2026-10-26T20:00:00.000Z' }] } } };
+    const page = await open({ s: mk({ me: 'anna', admin: false, houseExtra: hx }) });
+    const w = page.locator('[data-widget=shared]');
+    await w.waitFor();
+    const t = await w.innerText();
+    assert.match(t, /Compiti condivisi/); assert.match(t, /Butta la spazzatura/); assert.match(t, /Da fare/); assert.match(t, /Tocca a/);
+    assert.match(await w.locator('[data-testid=shared-last]').innerText(), /Ultimo: Bruno, 2 giorni fa/);
+    const btn = w.locator('[data-act=shared-done]');
+    const box = await btn.boundingBox(); assert.ok(box.height >= 44 && box.width >= 44, 'area >= 44px');
+    await w.scrollIntoViewIfNeeded(); await shot(page, 'shared-390');
+    await noOverflow(page, 'shared');
+    await btn.click();
+    await page.waitForFunction(() => ((window.__app.house.sharedState || {}).s1 || {}).history.length === 2);
+    assert.equal(await page.evaluate(() => window.__app.house.sharedState.s1.history[1].by), 'anna');
+    assert.match(await page.locator('.toast').last().innerText(), /fatto, grazie[\s\S]*Annulla/);
+    await page.waitForFunction(() => /tra 2 giorni/.test(document.querySelector('[data-widget=shared]').innerText));
+    await page.click('.toast .toast-action');
+    await page.waitForFunction(() => window.__app.house.sharedState.s1.history.length === 1);
+    noErrors(page);
+    // nessun compito: l'invito si vede solo all'admin
+    const adm = await open({ s: mk({ me: 'anna', admin: true }) });
+    assert.equal(await adm.getAttribute('[data-testid=shared-invite]', 'href'), '#/more/shared');
+    await adm.locator('[data-widget=shared]').scrollIntoViewIfNeeded(); await shot(adm, 'shared-invite-390');
+    const usr = await open({ s: mk({ me: 'anna', admin: false }) });
+    assert.equal(await usr.locator('[data-widget=shared]').count(), 0);
+    // funzione spenta: sparisce
+    const off = await open({ s: mk({ me: 'anna', houseExtra: { ...hx, features: { shared: false } } }) });
+    assert.equal(await off.locator('[data-widget=shared]').count(), 0);
+    // inglese + dark
+    const en = await open({ s: mk({ me: 'anna', admin: false, houseExtra: hx, extra: { 'cp:prefs': { lang: 'en' } } }), dark: true, lang: 'en-US', viewport: SMALL });
+    assert.match(await text(en, '[data-widget=shared]'), /Shared tasks[\s\S]*To do[\s\S]*Last: Bruno, 2 days ago/);
+    await noOverflow(en, 'shared en 320');
+    await en.locator('[data-widget=shared]').scrollIntoViewIfNeeded(); await shot(en, 'shared-en-dark-320');
+    // l'editor del layout Home elenca il widget
+    await page.evaluate(() => { location.hash = '#/settings/home'; });
+    await page.waitForSelector('[data-testid=w-shared]');
+    assert.match(await page.locator('[data-testid=w-shared]').locator('xpath=ancestor::*[contains(@class,"li")][1]').innerText(), /Compiti condivisi/);
+    noErrors(en);
+  });
+
   await env.close();
   const failed = results.filter((r) => !r[1]);
   console.log(`\n${results.length - failed.length}/${results.length} scenari ok`);

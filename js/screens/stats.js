@@ -1,10 +1,12 @@
 // Schermata "Classifica e statistiche": podio, classifica, KPI della casa, grafici SVG, dettaglio persona.
 import { h, icon, loadCss, avatar, empty, copyText } from '../ui.js';
 import { t, registerStrings, fmtWeekRange } from '../i18n.js';
-import { buildStats, rankingText } from '../extras.js';
+import { buildStats, rankingText, DEFAULT_TASK_PENALTY } from '../extras.js';
 import { CHORES } from '../engine.js';
 import { it, en } from '../strings/stats.js';
+import { it as it2, en as en2 } from '../strings/more2.js';
 registerStrings(it, en);
+registerStrings(it2, en2);   // moreY.pen.* (penalità checklist)
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -25,6 +27,8 @@ const num = (n) => Math.round(n * 100) / 100;
 function rr(x, y, w, hh, [tl, tr, br, bl]) {
   return `M${num(x + tl)} ${num(y)}H${num(x + w - tr)}${tr ? `A${tr} ${tr} 0 0 1 ${num(x + w)} ${num(y + tr)}` : ''}V${num(y + hh - br)}${br ? `A${br} ${br} 0 0 1 ${num(x + w - br)} ${num(y + hh)}` : ''}H${num(x + bl)}${bl ? `A${bl} ${bl} 0 0 1 ${num(x)} ${num(y + hh - bl)}` : ''}V${num(y + tl)}${tl ? `A${tl} ${tl} 0 0 1 ${num(x + tl)} ${num(y)}` : ''}Z`;
 }
+const fmtPts = (ctx, n) => Number(n).toLocaleString(ctx.lang, { maximumFractionDigits: 1 });
+const penPts = (ctx, house) => fmtPts(ctx, house.settings && house.settings.taskPenalty !== undefined ? house.settings.taskPenalty : DEFAULT_TASK_PENALTY);
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 /** Scala "pulita": passo 1/2/5/10… con al massimo 4 intervalli. */
 function niceScale(max) {
@@ -37,7 +41,8 @@ const monthLabel = (m) => { const [y, mo] = m.split('-').map(Number); return `${
 
 // ---------------------------------------------------------------- dati derivati
 function scoreView(ctx, st, mode, showRank) {
-  const people = st.people.map((p) => ({ ...p, score: mode === 'effort' ? p.effort : p.cleanedTotal }));
+  // a punti fatica la penalità checklist (p.penaltyPoints) si sottrae ai punti
+  const people = st.people.map((p) => ({ ...p, score: mode === 'effort' ? Math.max(0, Math.round((p.effort - (p.penaltyPoints || 0)) * 10) / 10) : p.cleanedTotal }));
   const max = Math.max(0, ...people.map((p) => p.score));
   for (const p of people) { p.tr = showRank && p.score > 0 && p.score === max; p.cdm = showRank && p.cdm; }
   people.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
@@ -106,7 +111,7 @@ function rankingCard(ctx, st, view, mode, canSwitch, showStats, showRank) {
         ['turns', 'effort'].map((m) => h('button', { type: 'button', 'data-mode': m, 'aria-pressed': String(mode === m), onclick: () => { modeOverride = m; ctx.rerender(); } }, t(m === 'turns' ? 'stats.byTurns' : 'stats.byEffort')))) : null,
       h('button', { class: 'btn soft sm', type: 'button', id: 'stats-share', onclick: () => openShare(ctx, st, view, showRank) }, icon('share'), t('stats.share'))));
   const card = h('div', { class: 'card rank-card' }, head);
-  if (mode === 'effort') card.append(h('p', { class: 'small muted' }, t('stats.effortHint', { f: st.effort.floor, b: st.effort.bathroom, k: st.effort.kitchen })));
+  if (mode === 'effort') card.append(h('p', { class: 'small muted' }, t('stats.effortHint', { f: st.effort.floor, b: st.effort.bathroom, k: st.effort.kitchen })), h('p', { class: 'small muted mx-pen', 'data-testid': 'pen-rule' }, t('moreY.pen.rule', { pts: penPts(ctx, ctx.house) })));
   if (people.length >= 3 && max > 0) card.append(podium(ctx, people.slice(0, 3), unit));
   const list = h('ol', { class: 'rank-list' });
   for (const p of people) {
@@ -115,7 +120,8 @@ function rankingCard(ctx, st, view, mode, canSwitch, showStats, showRank) {
     const main = h('div', { class: 'rk-main' },
       h('div', { class: 'rk-top' }, avatar(p.name, ctx.color(p.id), 'sm'), h('span', { class: 'rk-name' }, p.name), p.id === ctx.me ? h('span', { class: 'chip acc' }, t('misc.you')) : null,
         p.tr ? h('span', { class: 'chip warn', title: t('stats.tr'), 'aria-label': t('stats.aria.rowTr') }, icon('crown'), 'TR') : null,
-        p.cdm ? h('span', { class: 'chip bad', title: t('stats.cdm'), 'aria-label': t('stats.aria.rowCdm') }, icon('poo'), 'CDM') : null),
+        p.cdm ? h('span', { class: 'chip bad', title: t('stats.cdm'), 'aria-label': t('stats.aria.rowCdm') }, icon('poo'), 'CDM') : null,
+        p.penalties > 0 ? h('span', { class: 'chip warn', 'data-testid': 'pen-chip-' + p.id, title: t('moreY.pen.chipTitle', { n: p.penalties }) }, icon('alert'), t('moreY.pen.chip', { pts: fmtPts(ctx, p.penaltyPoints) })) : null),
       h('div', { class: 'bar rk-bar', 'aria-hidden': 'true' }, h('i', { style: { width: pct + '%', background: ctx.color(p.id) } })),
       h('div', { class: 'rk-sub small muted' }, dots));
     const rowAttrs = { class: 'rank rank-row', 'data-person': p.id, 'aria-label': t('stats.aria.row', { pos: p.pos, name: p.name, score: p.score, unit }) };
@@ -291,7 +297,12 @@ function openPerson(ctx, st, p) {
     tile('ontime', t('stats.onTime'), pct(p.onTimeRate)),
     tile('presence', t('stats.presence'), pct(p.presence), p.weeksActive ? t('stats.weeksHome', { a: p.weeksHome, b: p.weeksActive }) : null),
     tile('covers', t('stats.covers'), p.covers), tile('covered', t('stats.covered'), p.covered), tile('rests', t('stats.openRests'), Math.max(0, p.rests)),
-    tile('streak', t('stats.streak'), p.streak), tile('best', t('stats.bestStreak'), p.bestStreak), tile('skipped', t('stats.skipped'), p.skipped));
+    tile('streak', t('stats.streak'), p.streak), tile('best', t('stats.bestStreak'), p.bestStreak), tile('skipped', t('stats.skipped'), p.skipped),
+    tile('pen', t('moreY.pen.title'), p.penalties || 0, p.penalties > 0 ? `−${fmtPts(ctx, p.penaltyPoints)} ${t('stats.pts')}` : t('moreY.pen.none')),
+    tile('shared', t('moreY.pen.shared'), p.shared || 0));
+  const penNote = h('div', { class: 'stack tight', 'data-testid': 'pen-detail' },
+    p.penalties > 0 ? h('div', { class: 'note warn' }, icon('alert'), t('moreY.pen.line', { n: p.penalties, pts: fmtPts(ctx, p.penaltyPoints) })) : null,
+    h('p', { class: 'small muted' }, t('moreY.pen.rule', { pts: penPts(ctx, ctx.house) })));
   const mkList = h('ul', { class: 'pd-chores' }, CHORES.map((c, i) => {
     const open = Math.max(0, p.makeups[i] || 0);
     return h('li', { class: 'pd-chore', 'data-chore': c },
@@ -299,5 +310,5 @@ function openPerson(ctx, st, p) {
       h('div', { class: 'grow' }, h('div', { class: 'pd-cn' }, choreName(c)), h('div', { class: 'small muted' }, t('stats.cleanedBy') + ': ' + p.cleaned[i])),
       h('span', { class: 'chip ' + (open ? 'warn' : 'ok') }, open ? t('stats.makeupN', { n: open }) : t('stats.noMakeups')));
   }));
-  return ctx.sheet({ title: p.name, body: h('div', { class: 'stack pd' }, head, grid, h('div', { class: 'lbl' }, t('stats.openMakeupsBy')), mkList) });
+  return ctx.sheet({ title: p.name, body: h('div', { class: 'stack pd' }, head, p.penalties > 0 ? h('div', { class: 'pd-chips' }, h('span', { class: 'chip warn' }, icon('alert'), t('moreY.pen.chip', { pts: fmtPts(ctx, p.penaltyPoints) }))) : null, grid, h('div', { class: 'lbl' }, t('stats.openMakeupsBy')), mkList, penNote) });
 }

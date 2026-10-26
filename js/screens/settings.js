@@ -3,7 +3,7 @@
 // features, links, notif-house, invite*, access, data, ai, security. (*invite: codice/link visibili a tutti, rotazione solo admin)
 import { h, icon, loadCss, avatar, stepper, seg, liRow, copyText, download, confirmDialog, deviceInfo } from '../ui.js';
 import { t, registerStrings, fmtDate, fmtWeekRange, LANGS } from '../i18n.js';
-import { DEFAULT_FEATURES, NOTIF_TYPES, HOME_WIDGETS, DEFAULT_HOME, PALETTE, planNotifications, notifCfg, effortOf, localParts, uid, buildStats, historyRows, toCsv, validateHouse } from '../extras.js';
+import { DEFAULT_TASK_PENALTY, DEFAULT_FEATURES, NOTIF_TYPES, HOME_WIDGETS, DEFAULT_HOME, PALETTE, planNotifications, notifCfg, effortOf, localParts, uid, buildStats, historyRows, toCsv, validateHouse } from '../extras.js';
 import { validateRoommates, addDays, DEFAULT_SETTINGS, CHORES } from '../engine.js';
 import { exportBackup, verifyPin, hashPin, newSalt } from '../actions.js';
 import { encryptBackup, decryptBackup } from '../backupcrypto.js';
@@ -361,6 +361,7 @@ function rulesSection(ctx) {
       st('window', t('set.window'), t('setX.rules.windowHint'), 0, 260, 4, (v) => (v === 0 ? t('setX.rules.always') : String(v))),
       st('minNights', t('set.minNights'), t('setX.rules.minNightsHint'), 1, 7),
     ]),
+    group(t('moreY.pen.group'), [stepRow({ title: t('moreY.pen.setting'), desc: t('moreY.pen.settingHint'), value: Number(S_.taskPenalty !== undefined ? S_.taskPenalty : DEFAULT_TASK_PENALTY), min: 0, max: 3, step: 0.5, id: 'step-taskPenalty', fmt: (v) => Number(v).toLocaleString(ctx.lang, { maximumFractionDigits: 1 }), onchange: (v) => setHouse(ctx, { settings: { taskPenalty: v } }) })], t('moreY.pen.settingFoot')),
     h('section', { class: 'card st-card stack' },
       h('div', null, h('div', { class: 't', style: { fontWeight: 700 } }, t('setX.rules.effort')), h('p', { class: 'small muted' }, t('setX.rules.effortHint'))),
       effort),
