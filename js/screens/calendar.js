@@ -4,7 +4,7 @@ import { h, icon, avatar } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong } from '../i18n.js';
 import { CHORES } from '../engine.js';
 import { planOf } from '../extras.js';
-import { CHORE_ICON, openWeekSheet, renderWeekDetail, weekStatus, outcomeOf } from '../choresheet.js';
+import { openWeekSheet, renderWeekDetail, weekStatus, outcomeOf } from '../choresheet.js';
 
 const WIDE = '(min-width: 1180px)';
 const BACK = 6, AHEAD = 12, STEP = 8;

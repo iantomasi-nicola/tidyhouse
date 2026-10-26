@@ -98,3 +98,12 @@ button.cs-pick:active { background: var(--tonal-2); }
   .wk-chore { padding: 8px; }
   .week { padding: 14px; }
 }
+
+/* rifiniture */
+.wd-chores .chore { border-radius: 0; }
+.sheet .btn.soft, .sheet .btn.ghost.sm { background: var(--surface); }
+.sheet .btn.ghost.sm { background: transparent; }
+.sheet .btn.soft:hover { filter: none; background: var(--surface-3); }
+.cal-panel .list, .cal-panel .wd-rest { box-shadow: none; background: var(--surface-2); }
+.cal-panel .li { background: transparent; }
+.cal-panel .wd-rest { border-radius: var(--r-lg); }

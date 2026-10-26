@@ -629,7 +629,7 @@ function notifHouse(ctx) {
 
   return h('div', { class: 'stack' },
     h('p', { class: 'muted' }, t('sched.hint')),
-    group(null, [switchRow({ ic: 'bell', tone: 'r', title: t('sched.master'), checked: cfg.enabled !== false, id: 'sw-notif-master', onchange: (v) => patch('enabled', v).then ? null : null })]),
+    group(null, [switchRow({ ic: 'bell', tone: 'r', title: t('sched.master'), checked: cfg.enabled !== false, id: 'sw-notif-master', onchange: (v) => patch('enabled', v) })]),
     SCHEDULED.map(typeCard),
     group(null, [stepRow({ title: t('sched.catchUp'), desc: t('setX.sched.catchUpHint'), value: Number(cfg.catchUpHours) || 5, min: 1, max: 12, id: 'step-catchUp', fmt: (v) => v + ' h', onchange: (v) => setHouse(ctx, { notif: { catchUpHours: v } }) })]),
     h('div', { class: 'stack tight' }, sectionTitle(t('sched.preview')), h('div', { class: 'list', 'data-testid': 'preview' }, prevRows), foot(t('setX.sched.previewNote'))),
@@ -759,8 +759,196 @@ function accessSection(ctx) {
     h('div', { class: 'kpis' },
       h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-people' }, `${opened}/${people.length}`), h('div', { class: 'k' }, t('acc.people'))),
       h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-devices' }, Object.keys(members).length), h('div', { class: 'k' }, t('acc.devices'))),
-      h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-push' }, withPush), h('div', { class: 'k' }, t('acc.pushCount', { n: withPush }).replace(String(withPush), '').trim() || t('acc.push')))),
+      h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-push' }, withPush), h('div', { class: 'k' }, t('acc.push')))),
     people.length ? people.map(personBlock) : [h('div', { class: 'empty' }, icon('users'), t('acc.noPeople'))],
     orphans.length ? h('div', { class: 'stack tight' }, sectionTitle(t('setX.access.unassigned')), h('div', { class: 'list' }, orphans.map(devRow))) : null,
     h('div', { class: 'stack tight' }, h('div', { class: 'eyebrow' }, h('span', null, t('acc.viewsLog')), views.length ? h('button', { type: 'button', 'data-testid': 'views-clear', onclick: clear }, t('acc.clearViews')) : null), h('div', { class: 'list', 'data-testid': 'views' }, viewRows), foot(t('setX.access.viewsNote', { n: 100 }))));
+}
+
+// ============================================================================
+// DATA (dati e backup)
+// ============================================================================
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+/** Sheet con un campo segreto (passphrase). `run(pass)` può lanciare: l'errore viene mostrato nel sheet. Risolve col risultato o null. */
+function askSecret(ctx, { title, text, ok, run, repeat = false, min = 1 }) {
+  return new Promise((resolve) => {
+    let done = false;
+    const p1 = h('input', { class: 'input', type: 'password', autocomplete: 'off', 'aria-label': t('setX.data.passphrase'), placeholder: t('setX.data.passphrase'), 'data-testid': 'pass-1' });
+    const p2 = repeat ? h('input', { class: 'input', type: 'password', autocomplete: 'off', 'aria-label': t('setX.data.passphrase2'), placeholder: t('setX.data.passphrase2'), 'data-testid': 'pass-2' }) : null;
+    const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', 'data-testid': 'pass-error' });
+    const finish = (v) => { if (done) return; done = true; resolve(v); sh.close(); };
+    const sh = ctx.sheet({ title, onClose: () => { if (!done) { done = true; resolve(null); } }, body: h('form', { class: 'stack', onsubmit: async (e) => {
+      e.preventDefault(); err.textContent = '';
+      if (p1.value.length < min) { err.textContent = t('setX.sec.short', { n: min }); return; }
+      if (p2 && p1.value !== p2.value) { err.textContent = t('setX.sec.mismatch'); return; }
+      try { finish(await run(p1.value)); } catch (ex) { err.textContent = ex && ex.message === 'wrong-passphrase' ? t('setX.data.wrongPass') : t('error'); }
+    } }, text ? h('p', { class: 'muted' }, text) : null, p1, p2, err, h('div', { class: 'btn-row' }, btn(t('cancel'), () => finish(null)), btn(ok || t('ok'), null, { cls: '', type: 'submit', id: 'pass-ok' }))) });
+    setTimeout(() => p1.focus(), 420);
+  });
+}
+
+const KEEP_FIELDS = ['adminHash', 'adminSalt', 'vapidPublic', 'serverRun', 'prevIds', 'rotatedAt', 'ignoreLeft'];
+/** Costruisce la casa da importare mantenendo PIN, chiavi push e storico dei codici di quella attuale. */
+function importedHouse(cur, incoming) {
+  const hs = { ...incoming, id: cur.id };
+  for (const k of KEEP_FIELDS) { if (cur[k] !== undefined) hs[k] = cur[k]; else delete hs[k]; }
+  const ids = new Set((hs.roommates || []).map((r) => r.id));
+  let admins = (incoming.adminIds || []).filter((id) => ids.has(id));
+  if (!admins.length) admins = (cur.adminIds || []).filter((id) => ids.has(id));
+  if (!admins.length && hs.roommates && hs.roommates.length) admins = [hs.roommates[0].id];
+  hs.adminIds = admins;
+  return hs;
+}
+function remapWeeks(weeks, map) {
+  const m = (id) => map[id] || id; const out = {};
+  for (const [k, w] of Object.entries(weeks || {})) {
+    const x = { ...w };
+    if (x.awayMap) x.awayMap = Object.fromEntries(Object.entries(x.awayMap).map(([id, v]) => [m(id), v]));
+    if (x.result) x.result = Object.fromEntries(Object.entries(x.result).map(([c, v]) => [c, /^(by|skipped):/.test(v) ? v.replace(/:(.+)$/, (_, id) => ':' + m(id)) : v]));
+    if (x.swap) x.swap = Object.fromEntries(Object.entries(x.swap).map(([c, id]) => [c, m(id)]));
+    out[k] = x;
+  }
+  return out;
+}
+
+function confirmImport(ctx, { lines, warnings = [], build }) {
+  const sh = ctx.sheet({ title: t('data.import'), body: h('div', { class: 'stack' },
+    h('div', { class: 'list', 'data-testid': 'import-summary' }, lines.map(([k, v]) => h('div', { class: 'li' }, h('div', { class: 'grow t' }, k), h('div', { class: 'end', style: { color: 'var(--text)', fontWeight: 600 } }, v)))),
+    warnings.length ? note('warn', 'alert', h('div', null, warnings.map((w) => h('div', null, w)))) : null,
+    note('bad', 'alert', t('data.importReplace')),
+    h('p', { class: 'small muted' }, t('setX.data.keepPin')),
+    h('div', { class: 'btn-row' }, btn(t('cancel'), () => sh.close(), { id: 'import-cancel' }), btn(t('data.import').split(' ')[0], async () => {
+      sh.close();
+      try { ctx.toast(t('data.importing')); await ctx.importBackup(build()); ctx.toast(t('data.imported')); ctx.rerender(); } catch (e) { console.warn(e); ctx.toast(t('error')); }
+    }, { cls: 'danger', ic: 'upload', id: 'import-confirm' }))) });
+}
+
+async function importXlsx(ctx, u8) {
+  let imp;
+  try { const [{ default: XLSX }, { parseWorkbook }] = await Promise.all([import('../../vendor/xlsx.js'), import('../xlsx-import.js')]); imp = parseWorkbook(XLSX, u8); }
+  catch (e) { console.warn(e); ctx.toast(t('setX.data.badSheet')); return; }
+  const cur = ctx.house; const byName = Object.fromEntries((cur.roommates || []).map((r) => [r.name.trim().toLowerCase(), r]));
+  const map = {}; const roommates = imp.roommates.map((r) => { const old = byName[r.name.trim().toLowerCase()]; if (old) { map[r.id] = old.id; return { ...r, id: old.id, color: old.color || null }; } return r; });
+  const warnings = imp.warnings.map((w) => t('setX.data.warn.' + w.code, { v: w.value }));
+  confirmImport(ctx, {
+    lines: [[t('set.roommates'), roommates.map((r) => r.name).join(', ')], [t('set.firstSunday'), fmtDate(imp.startSunday, ctx.lang, { year: true })], [t('misc.week'), String(Object.keys(imp.weeks).length)]], warnings,
+    build: () => ({ app: 'casa-pulita', version: 1, data: { house: importedHouse(cur, { ...cur, roommates, startSunday: imp.startSunday, settings: { ...(cur.settings || {}), ...(imp.settings || {}) }, adminIds: cur.adminIds }), weeks: remapWeeks(imp.weeks, map) } }),
+  });
+}
+
+async function importFile(ctx, file) {
+  try {
+    const u8 = new Uint8Array(await file.arrayBuffer());
+    if ((u8[0] === 0x50 && u8[1] === 0x4b) || /\.xlsx?$/i.test(file.name)) return await importXlsx(ctx, u8);
+    let obj; try { obj = JSON.parse(new TextDecoder().decode(u8)); } catch { ctx.toast(t('setX.data.badFile')); return; }
+    if (obj && obj.app === 'casa-pulita-enc') {
+      const enc = obj;
+      obj = await askSecret(ctx, { title: t('setX.data.passTitle'), text: t('setX.data.passText'), ok: t('setX.data.decrypt'), run: (p) => decryptBackup(enc, p) });
+      if (!obj) return;
+    }
+    if (!obj || obj.app !== 'casa-pulita' || !obj.data || validateHouse(obj.data.house).length) { ctx.toast(t('setX.data.badFile')); return; }
+    const d = obj.data; const cur = ctx.house;
+    confirmImport(ctx, {
+      lines: [[t('set.houseName'), d.house.name || '—'], [t('set.roommates'), (d.house.roommates || []).map((r) => r.name).join(', ')], [t('misc.week'), String(Object.keys(d.weeks || {}).length)], [t('nav.trips'), String(Object.keys(d.trips || {}).length)], ...(obj.exportedAt ? [[t('setX.data.exportedAt'), fmtDate(String(obj.exportedAt).slice(0, 10), ctx.lang, { year: true })]] : [])],
+      build: () => ({ app: 'casa-pulita', version: obj.version || 1, data: { ...d, house: importedHouse(cur, d.house) } }),
+    });
+  } catch (e) { console.warn(e); ctx.toast(t('error')); }
+}
+
+function dataSection(ctx) {
+  const hs = ctx.house; const base = `tidyhouse-${fileSlug(hs.name)}-${ctx.today()}`;
+  const eh = () => ctx.calc.eh, out = () => ctx.calc.out;
+  const guard = (fn) => async () => { try { await fn(); } catch (e) { fail(ctx, e); } };
+  const exp = [
+    liRow({ ic: 'download', tone: 'g', title: t('data.exportJson'), onclick: guard(() => { download(`${base}.json`, JSON.stringify(exportBackup(ctx.state), null, 2), 'application/json'); ctx.toast(t('data.exported')); }) }),
+    liRow({ ic: 'lock', tone: 'g', title: t('setX.data.exportEnc'), desc: t('setX.data.exportEncHint'), onclick: guard(async () => {
+      const blob = await askSecret(ctx, { title: t('setX.data.exportEnc'), text: t('setX.data.exportEncText'), ok: t('setX.data.encrypt'), repeat: true, min: 6, run: async (p) => JSON.stringify(await encryptBackup(exportBackup(ctx.state), p)) });
+      if (blob) { download(`${base}.enc.json`, blob, 'application/json'); ctx.toast(t('data.exported')); }
+    }) }),
+    liRow({ ic: 'history', tone: 'g', title: t('data.exportCsv'), onclick: guard(() => { download(`${base}.csv`, toCsv(historyRows(eh(), out(), ctx.lang, ctx.state.weeks || {})), 'text/csv;charset=utf-8'); ctx.toast(t('data.exported')); }) }),
+    liRow({ ic: 'chart', tone: 'g', title: t('data.exportXlsx'), onclick: guard(async () => {
+      const [{ default: XLSX }, { buildWorkbook }] = await Promise.all([import('../../vendor/xlsx.js'), import('../xlsx-import.js')]);
+      let stats = null; try { stats = buildStats(eh(), out()); } catch { stats = null; }
+      const wb = buildWorkbook(XLSX, eh(), out(), stats, ctx.lang, ctx.state.weeks || {});
+      download(`${base}.xlsx`, new Blob([XLSX.write(wb, { type: 'array', bookType: 'xlsx' })], { type: XLSX_MIME })); ctx.toast(t('data.exported'));
+    }) }),
+    liRow({ ic: 'print', tone: 'g', title: t('data.print'), onclick: () => window.print() }),
+  ];
+  const fileIn = h('input', { type: 'file', class: 'sr', accept: '.json,.xlsx,application/json,' + XLSX_MIME, 'data-testid': 'import-file', onchange: (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) importFile(ctx, f); } });
+  const imp = h('label', { class: 'li st-import', 'data-testid': 'import-label' }, h('div', { class: 'ico o' }, icon('upload')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('data.import')), h('div', { class: 'd' }, t('data.importHint'))), h('div', { class: 'end' }, icon('chevron')), fileIn);
+  const mode = card(
+    h('div', { class: 'row' }, h('div', { class: 'ico ' + (ctx.cloud ? 'g' : 'o') }, icon(ctx.cloud ? 'globe' : 'device')), h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 650 }, 'data-testid': 'data-mode' }, ctx.cloud ? t('data.mode.cloud') : t('data.mode.local')))),
+    ctx.mode === 'local' && ctx.cloudAvailable ? btn(t('data.migrate'), () => migrate(ctx), { ic: 'upload', cls: '', id: 'data-migrate' }) : null,
+    ctx.mode === 'local' && !ctx.cloudAvailable ? h('p', { class: 'small muted' }, t('inv.local')) : null);
+  const resetSheet = () => {
+    const inp = h('input', { class: 'input', autocomplete: 'off', placeholder: hs.name || '', 'aria-label': t('data.resetConfirm'), 'data-testid': 'reset-name' });
+    const go = btn(t('data.reset'), async () => { sh.close(); try { await ctx.deleteHouse(); } catch (e) { fail(ctx, e); } }, { cls: 'danger', ic: 'trash', id: 'reset-confirm', disabled: true });
+    inp.addEventListener('input', () => { go.disabled = inp.value.trim().toLowerCase() !== String(hs.name || '').trim().toLowerCase() || !inp.value.trim(); });
+    const sh = ctx.sheet({ title: t('data.reset'), body: h('div', { class: 'stack' }, note('bad', 'alert', t('setX.data.resetWarn')), h('label', { class: 'field' }, h('span', { class: 'lbl' }, `${t('data.resetConfirm')}: ${hs.name || ''}`), inp), h('div', { class: 'btn-row' }, btn(t('cancel'), () => sh.close()), go)) });
+    setTimeout(() => inp.focus(), 420);
+  };
+  return h('div', { class: 'stack' },
+    mode,
+    group(t('setX.data.export'), exp),
+    group(t('setX.data.import'), [imp], t('setX.data.importFoot')),
+    group(t('data.autoBackup'), [liRow({ ic: 'refresh', tone: '', title: t('data.autoBackup'), desc: t('setX.data.autoBackupText') })]),
+    group(t('setX.data.danger'), [
+      h('button', { class: 'li', type: 'button', 'data-testid': 'data-leave', onclick: async () => { if (await confirmDialog({ title: t('setX.data.leave'), text: t('setX.data.leaveHint'), ok: t('setX.data.leave'), danger: true })) ctx.leaveHouse(); } }, h('div', { class: 'ico o' }, icon('x')), h('div', { class: 'grow t' }, t('setX.data.leave'))),
+      h('button', { class: 'li', type: 'button', 'data-testid': 'data-reset', onclick: resetSheet }, h('div', { class: 'ico r' }, icon('trash')), h('div', { class: 'grow t', style: { color: 'var(--bad)' } }, t('data.reset'))),
+    ]));
+}
+
+// ============================================================================
+// AI
+// ============================================================================
+function aiSection(ctx) {
+  const cfg = readAiConfig(); const prov = PROVIDERS[cfg.provider] ? cfg.provider : 'anthropic';
+  const upd = (patch) => { const cur = readAiConfig(); if (!writeAiConfig({ ...cur, provider: PROVIDERS[cur.provider] ? cur.provider : 'anthropic', ...patch })) ctx.toast(t('error')); else saved(ctx); };
+  const keyIn = h('input', { class: 'input', type: 'password', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: cfg.key ? '••••••••••••' : 'API key', 'aria-label': t('ai.key'), 'data-testid': 'ai-key' });
+  keyIn.addEventListener('change', () => { const v = keyIn.value.trim(); if (!v) return; upd({ key: v }); keyIn.value = ''; ctx.rerender(); });
+  const testBtn = btn(t('ai.test'), async () => {
+    const c = readAiConfig(); if (!c.key) { ctx.toast(t('ai.noKey')); return; }
+    testBtn.disabled = true;
+    try { await callAi({ provider: c.provider || prov, model: c.model || undefined, key: c.key, system: 'Reply with the single word OK.', user: 'ping' }); ctx.toast(t('ai.test.ok')); }
+    catch (e) { ctx.toast(`${t('ai.err')}${e && e.message ? ': ' + e.message : ''}`.slice(0, 140)); }
+    finally { testBtn.disabled = false; }
+  }, { ic: 'check', cls: 'tonal', id: 'ai-test' });
+  const enabled = !!(ctx.house.ai && ctx.house.ai.enabled);
+  return h('div', { class: 'stack' },
+    h('p', { class: 'muted' }, t('ai.hint')),
+    card(h('div', { class: 't', style: { fontWeight: 700 } }, t('ai.what')), h('p', { class: 'small muted' }, t('ai.whatText'))),
+    group(null, [switchRow({ ic: 'sparkles', tone: 'p', title: t('ai.enable'), checked: enabled, id: 'sw-ai', onchange: (v) => setHouse(ctx, { ai: { enabled: v } }) })]),
+    group(t('ai.provider'), [
+      selectRow({ title: t('ai.provider'), value: prov, id: 'ai-provider', options: Object.entries(PROVIDERS).map(([k, p]) => [k, p.label]), onchange: (v) => { upd({ provider: v, model: '' }); ctx.rerender(); } }),
+      textRow({ title: t('ai.model'), value: cfg.model || '', placeholder: PROVIDERS[prov].model, id: 'ai-model', onchange: (v) => upd({ model: v.trim() }) }),
+      h('label', { class: 'li st-text' }, h('div', { class: 'grow' }, h('div', { class: 't' }, t('ai.key')), h('div', { class: 'd' }, cfg.key ? t('ai.keyLocal') : t('setX.ai.noKeyYet'))), keyIn),
+    ], t('setX.ai.keyFoot')),
+    h('div', { class: 'btn-row' }, testBtn, btn(t('ai.remove'), () => { const c = readAiConfig(); delete c.key; writeAiConfig(c); saved(ctx); ctx.rerender(); }, { ic: 'trash', id: 'ai-remove', disabled: !cfg.key })),
+    h('p', { class: 'small muted' }, t('ai.disclosure')),
+    btn(t('ai.parse'), () => openAiImportSheet(ctx), { cls: '', ic: 'sparkles', id: 'ai-import' }));
+}
+
+// ============================================================================
+// SECURITY
+// ============================================================================
+function securitySection(ctx) {
+  const cur = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'off', placeholder: t('join.adminPin'), 'aria-label': t('join.adminPin'), 'data-testid': 'pin-old' });
+  const n1 = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: t('sec.newPin'), 'aria-label': t('sec.newPin'), 'data-testid': 'pin-new' });
+  const n2 = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: t('setX.sec.repeat'), 'aria-label': t('setX.sec.repeat'), 'data-testid': 'pin-new2' });
+  const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', 'data-testid': 'pin-error' });
+  const form = h('form', { class: 'stack tight', onsubmit: async (e) => {
+    e.preventDefault(); err.textContent = '';
+    try {
+      if (!(await verifyPin(ctx.house, cur.value))) { err.textContent = t('join.wrongPin'); cur.select(); return; }
+      if (n1.value.length < 4) { err.textContent = t('setX.sec.short', { n: 4 }); return; }
+      if (n1.value !== n2.value) { err.textContent = t('setX.sec.mismatch'); return; }
+      const salt = newSalt(); const hash = await hashPin(n1.value, salt);
+      if (await save(ctx, () => ctx.actions.setHouse({ adminSalt: salt, adminHash: hash }), t('sec.pinChanged'))) { cur.value = n1.value = n2.value = ''; }
+    } catch (ex) { fail(ctx, ex); }
+  } }, h('div', { class: 't', style: { fontWeight: 700 } }, t('sec.changePin')), cur, n1, n2, err, btn(t('sec.changePin'), null, { cls: '', type: 'submit', id: 'pin-save' }));
+  return h('div', { class: 'stack' },
+    card(h('div', { class: 'row' }, h('div', { class: 'ico g' }, icon('unlock')), h('div', { class: 'grow t', style: { fontWeight: 650 } }, t('sec.unlocked')))),
+    card(form),
+    group(null, [h('button', { class: 'li', type: 'button', 'data-testid': 'sec-lock', onclick: () => { ctx.lockAdmin(); ctx.toast(t('sec.locked')); ctx.nav('settings'); } }, h('div', { class: 'ico r' }, icon('lock')), h('div', { class: 'grow t' }, t('sec.lock')))]),
+    foot(t('sec.note')));
 }
