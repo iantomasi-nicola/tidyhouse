@@ -12,7 +12,7 @@ import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_H
 registerStrings(coreIt, coreEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 let pushMod = null;
 // all'avvio controlla il browser (permesso + sottoscrizione) PRIMA di decidere se chiedere le notifiche: evita il falso "non attive"
 const pushReady = import('./push.js').then(async (m) => { await Promise.race([m.probe(), new Promise((r) => setTimeout(r, 1500))]); pushMod = m; }).catch(() => {});
