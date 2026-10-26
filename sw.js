@@ -1,6 +1,6 @@
 // Service worker di Tidy House: funzionamento offline + notifiche push.
 // Per pubblicare una nuova versione dell'app basta cambiare VERSION: il nuovo worker rifà la cache da zero.
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const CACHE = `tidyhouse-${VERSION}`;
 
 // File dell'app shell. I mancanti vengono ignorati; tutto il resto viene messo in cache la prima volta che serve.
@@ -13,6 +13,7 @@ const SHELL = [
   'js/strings/set.js', 'js/strings/push.js',
   'vendor/qr.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
+  'icons/favicon.svg', 'icons/logo.svg', 'icons/badge-96.png', 'icons/monochrome-512.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -82,7 +83,8 @@ self.addEventListener('push', (event) => {
   let d = {};
   try { d = event.data ? event.data.json() : {}; } catch { try { d = { body: event.data.text() }; } catch { d = {}; } }
   const icon = new URL('icons/icon-192.png', self.registration.scope).href;
-  const opts = { body: d.body || '', icon, badge: icon, data: { url: d.url || '#/', house: d.house || null } };
+  const badge = new URL('icons/badge-96.png', self.registration.scope).href;
+  const opts = { body: d.body || '', icon, badge, data: { url: d.url || '#/', house: d.house || null } };
   if (d.tag) { opts.tag = String(d.tag); opts.renotify = true; }
   // iOS richiede che ogni push mostri una notifica: anche se il payload è vuoto o illeggibile
   event.waitUntil(self.registration.showNotification(d.title || 'Tidy House', opts));

@@ -25,7 +25,11 @@ export function extractCode(v) {
 }
 const put = (el, ...kids) => el.append(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
 const spinner = (label) => h('div', { class: 'onb-wait', role: 'status' }, h('i', { class: 'onb-spin', 'aria-hidden': 'true' }), h('span', null, label));
-const logo = () => h('div', { class: 'logo' }, icon('housecheck'));
+// Marchio Tidy House (icons/logo-mark.svg): tetto + casa con spunta in negativo; segue il colore del riquadro .logo (currentColor)
+const MARK = '<svg class="mark" viewBox="78 48.5 356 356" aria-hidden="true" focusable="false">'
+  + '<path fill="currentColor" fill-opacity=".8" d="M100 242A22 22 0 0 0 131.11 242L246.04 127.07A14.08 14.08 0 0 1 265.96 127.07L380.89 242A22 22 0 0 0 412 242L412 242A22 22 0 0 0 412 210.89L265.96 64.84A14.08 14.08 0 0 0 246.04 64.84L100 210.89A22 22 0 0 0 100 242Z"/>'
+  + '<path fill="currentColor" fill-rule="evenodd" d="M247.51 148.23A12 12 0 0 1 264.49 148.23L360.49 244.23A12 12 0 0 1 364 252.71L364 370A28 28 0 0 1 336 398L176 398A28 28 0 0 1 148 370L148 252.71A12 12 0 0 1 151.51 244.23ZM198 322A18 18 0 0 0 198 347.46L232.57 382.02A7.92 7.92 0 0 0 243.9 381.89L322.59 299.45A18 18 0 0 0 322 274L322 274A18 18 0 0 0 296.55 274.59L243.3 330.38A7.92 7.92 0 0 1 231.97 330.51L223.46 322A18 18 0 0 0 198 322Z"/></svg>';
+const logo = () => h('div', { class: 'logo', html: MARK });
 const page = (cls, ...kids) => h('div', { class: 'gate onb ' + cls }, h('div', { class: 'panel onb-panel fade-up' }, ...kids));
 const errBox = () => h('p', { class: 'onb-err', role: 'alert', hidden: true });
 function setErr(el, msg) { el.textContent = msg || ''; el.hidden = !msg; }
