@@ -139,11 +139,15 @@ export function sheet({ title, body, full = false, onClose, actions } = {}) {
 export const closeAllSheets = () => [...sheetStack].forEach((s) => s.close());
 
 let toastBox;
-export function toast(msg, ms = 2600) {
+/** Notifica temporanea. opts.action = { label, onClick } mostra un pulsante (es. "Annulla"). Restituisce una funzione per chiuderla. */
+export function toast(msg, ms = 2600, opts = {}) {
   if (!toastBox || !toastBox.isConnected) { toastBox = h('div', { class: 'toasts', 'aria-live': 'polite' }); layer().append(toastBox); }
   const el = h('div', { class: 'toast' }, msg);
+  const dismiss = () => { if (!el.isConnected || el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), 260); };
+  if (opts.action) el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { try { opts.action.onClick(); } finally { dismiss(); } } }, opts.action.label));
   toastBox.append(el);
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 260); }, ms);
+  setTimeout(dismiss, opts.action ? Math.max(ms, 6000) : ms);
+  return dismiss;
 }
 
 export function confirmDialog({ title, text, ok = t('ok'), danger = false, cancel = t('cancel') }) {

@@ -318,3 +318,6 @@ button.week:active { transform: scale(.985); }
 .drag { cursor: grab; touch-action: none; }
 .chip-btn { cursor: pointer; }
 .sticky-actions { position: sticky; bottom: calc(var(--nav-h) + var(--safe-b) + 24px); }
+
+.toast-action { margin-left: 6px; padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: .875rem; color: color-mix(in srgb, var(--accent) 70%, var(--bg)); background: color-mix(in srgb, var(--bg) 14%, transparent); }
+.toast-action:active { transform: scale(.95); }
