@@ -279,6 +279,14 @@ export class Actions {
     await this.s.write({ coll: 'house', data: { roommates: clean } });
     await this.log('roommates', {});
   }
+  /** Prova dal server a tutte le persone con notifiche attive (una richiesta per persona: arriva a tutti i suoi dispositivi). Ritorna quante. */
+  async testAll() {
+    this.need(this.admin);
+    const people = new Set(Object.values(this.s.state.members || {}).filter((m) => m && m.personId && m.push && m.push.endpoint).map((m) => m.personId));
+    const at = this.ctx.now().toISOString();
+    for (const to of people) await this.s.setDoc('requests', 'tst' + uid(), { kind: 'test', to, from: this.me || 'admin', status: 'info', at });
+    return people.size;
+  }
   async nudge(personId, text) {
     this.need(this.admin || !!this.me);
     const id = uid(); await this.s.setDoc('requests', 'n' + id, { kind: 'nudge', to: personId, from: this.me || 'admin', text: text || '', status: 'pending', at: this.ctx.now().toISOString() });

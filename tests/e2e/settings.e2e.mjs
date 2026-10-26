@@ -313,6 +313,19 @@ await test('notifiche attive: diagnosi registrazione sul server e prove sempre d
   await shot(page, 'notifications-diag-390'); noErrors(page);
 });
 
+await test('admin: prova di notifica a tutti (una richiesta per persona con push)', async (mk) => {
+  const page = await mk({ seedOpts: { members: { ...members } } }); await go(page, 'notif-house');
+  assert.match(await page.locator(`${tid('test-all')} .st-foot`).innerText(), /1 person/);
+  await page.click(tid('push-test-all'));
+  await until(page, () => Object.values(window.__app.state.requests).filter((r) => r.kind === 'test').length === 1);
+  const q = Object.values((await state(page)).requests).find((r) => r.kind === 'test');
+  assert.equal(q.to, 'bruno'); assert.ok(!q.device, 'a tutti i suoi dispositivi'); await toast(page, /1 persone|1 people|per 1/i);
+  // non-admin: nessun pulsante
+  const p2 = await mk({ seedOpts: { admin: false, me: 'bruno' }, hash: '/settings/notifications' });
+  assert.equal(await p2.locator(tid('push-test-all')).count(), 0);
+  noErrors(page);
+});
+
 await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => {
   const page = await mk({ viewport: { width: 390, height: 844 } }); await go(page, 'notif-house');
   await page.selectOption(tid('dow-satDuty'), '5'); await until(page, () => window.__app.house.notif.satDuty.dow === 5);

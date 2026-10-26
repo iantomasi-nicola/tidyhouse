@@ -270,6 +270,15 @@ function homeEditor(ctx) {
 // NOTIFICATIONS (personali)
 // ============================================================================
 const NT_FEATURE = { friAbsence: 'trips', planDay: 'planDay', requests: 'requests', needs: 'needs' };
+/** Admin: prova dal server a tutti i coinquilini con notifiche attive. */
+function testAllBlock(ctx) {
+  const n = new Set(Object.values(ctx.state.members || {}).filter((m) => m && m.personId && m.push && m.push.endpoint).map((m) => m.personId)).size;
+  return h('div', { class: 'stack tight', 'data-testid': 'test-all' },
+    btn(t('setX.notif.testAll'), async () => {
+      try { const k = await ctx.actions.testAll(); ctx.toast(k ? t('setX.notif.testAllSent', { n: k }) : t('setX.notif.testAllNone'), 6000); } catch (e) { fail(ctx, e); }
+    }, { cls: 'tonal', ic: 'bell', id: 'push-test-all' }),
+    foot(n ? t('setX.notif.testAllHint', { n }) : t('setX.notif.testAllNone')));
+}
 function notifications(ctx) {
   const st = push.status(ctx); const s = st.state;
   const sbox = h('div', { class: 'stack tight' });
@@ -325,6 +334,7 @@ function notifications(ctx) {
     card(sbox),
     cfg.enabled === false ? note('warn', 'alert', t('setX.notif.masterOff')) : null,
     group(t('set.notif.mine'), rows, t('setX.notif.foot')),
+    ctx.isAdmin ? testAllBlock(ctx) : null,
     ctx.isAdmin ? group(null, [liRow({ ic: 'clock', tone: 'r', title: t('sched.title'), desc: t('sched.hint').split('.')[0] + '.', href: '#/settings/notif-house' })]) : null);
 }
 
@@ -663,6 +673,7 @@ function notifHouse(ctx) {
 
   return h('div', { class: 'stack' },
     h('p', { class: 'muted' }, t('sched.hint')),
+    testAllBlock(ctx),
     group(null, [switchRow({ ic: 'bell', tone: 'r', title: t('sched.master'), checked: cfg.enabled !== false, id: 'sw-notif-master', onchange: (v) => patch('enabled', v) })]),
     SCHEDULED.map(typeCard),
     group(null, [stepRow({ title: t('sched.catchUp'), desc: t('setX.sched.catchUpHint'), value: Number(cfg.catchUpHours) || 5, min: 1, max: 12, id: 'step-catchUp', fmt: (v) => v + ' h', onchange: (v) => setHouse(ctx, { notif: { catchUpHours: v } }) })]),

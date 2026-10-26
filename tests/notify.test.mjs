@@ -132,3 +132,19 @@ test('server notifiche: prova dal server arriva solo al dispositivo che l\'ha ch
   const n = got.length; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title]), now: new Date('2026-10-30T11:00:00Z'), vapidPublic: 'PUB' });
   assert.equal(got.filter((g) => /prova/i.test(g[1])).length, 1, 'nessun duplicato');
 });
+
+test('server notifiche: prova a tutti (una richiesta per persona), chiusa dopo il tentativo, prove vecchie ignorate', async () => {
+  const now = new Date('2026-10-28T10:00:00Z');
+  const at = (h) => new Date(now - h * 3600000).toISOString();
+  const db = fakeDb({
+    members: { ...members(), dA2: { personId: 'A', push: { endpoint: 'eA2' } }, dX: { personId: 'B' } },
+    requests: { t1: { kind: 'test', to: 'A', status: 'info', at: at(1) }, t2: { kind: 'test', to: 'B', status: 'info', at: at(1) }, t3: { kind: 'test', to: 'C', status: 'info', at: at(30) }, t4: { kind: 'test', to: 'ZZ', status: 'info', at: at(1) } },
+  });
+  const got = []; const send = async (s, p) => got.push([s.endpoint, p.title]);
+  const r = await runNotify({ db, send, now, vapidPublic: 'PUB' });
+  const eps = got.filter((g) => /prova|test/i.test(g[1])).map((g) => g[0]).sort();
+  assert.deepEqual(eps, ['eA', 'eA2', 'eB'], 'A su entrambi i dispositivi, B su quello con push; C (prova vecchia) e ZZ (nessun dispositivo) no');
+  for (const id of ['t1', 't2', 't3', 't4']) assert.equal(db.houses.H1.requests[id].notified, true, id + ' chiusa');
+  const again = []; await runNotify({ db, send: async (s, p) => again.push(p.title), now: new Date(now.getTime() + 3600000), vapidPublic: 'PUB' });
+  assert.ok(!again.some((x) => /prova|test/i.test(x)), 'nessuna ripetizione');
+});
