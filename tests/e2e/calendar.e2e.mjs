@@ -79,7 +79,7 @@ await scenario('vai a oggi riporta alla settimana corrente', async () => {
 await scenario('segna fatto dal dettaglio turno (stato nel motore)', async () => {
   const page = await mk();
   await openWeek(page);
-  assert.match(await topSheet(page).innerText(), /Pavimenti[\s\S]*Bagno[\s\S]*Cucina/);
+  assert.match(await topSheet(page).innerText(), /Pavimenti[\s\S]*Bagno[\s\S]*Cucina/i);
   await page.locator('#layer .sheet [data-chore=floor]').click();
   await page.waitForTimeout(500);
   assert.equal(await sheetCount(page), 2, 'foglio turno sopra il foglio settimana');
@@ -134,7 +134,7 @@ await scenario('ha pulito un altro: lista, sostituto suggerito, stato nel motore
   assert.equal(r.res[1].id, other); assert.equal(r.cleaner[1], other);
   assert.equal((await wkDoc(page)).result.bathroom, 'by:' + other);
   await page.waitForFunction(() => !document.querySelector('#layer .sheet'), null, { timeout: 3000 });
-  assert.match(await page.locator('.week.cur').innerText(), /Bagno[\s\S]*Bruno/);
+  assert.match(await page.locator('.week.cur').innerText(), /Bagno[\s\S]*Bruno/i);
   noErrors(page, 'cover');
   await page.close();
 });
@@ -479,7 +479,7 @@ await scenario('inglese', async () => {
   const page = await mk({ lang: 'en-US', houseExtra: { lang: 'en' } });
   assert.equal(await page.locator('.cal .title').innerText(), 'Weeks');
   assert.match(await page.locator('.week.cur').innerText(), /In progress/);
-  assert.match(await page.locator('.week.cur').innerText(), /Floor/);
+  assert.match(await page.locator('.week.cur').innerText(), /Floor/i);
   assert.ok(await page.locator('[data-act=today]').innerText().then((t) => /Go to today/.test(t)));
   await openWeek(page);
   assert.match(await topSheet(page).innerText(), /Week 5/);
@@ -508,7 +508,7 @@ await scenario('scuro e viewport (390x844, 820x1180, 1440x900)', async () => {
       assert.equal(await page.locator('.cal-panel').count(), wide ? 1 : 0, 'pannello desktop ' + tag);
       if (wide) {
         assert.ok(await page.locator('.cal-panel').isVisible());
-        assert.match(await page.locator('.cal-panel').innerText(), /Pavimenti[\s\S]*Bagno[\s\S]*Cucina/);
+        assert.match(await page.locator('.cal-panel').innerText(), /Pavimenti[\s\S]*Bagno[\s\S]*Cucina/i);
         await page.locator('.week[data-sunday="2026-11-08"]').click();
         await page.waitForFunction(() => document.querySelector('.cal-panel .wd-title')?.textContent.includes('2–8 nov'));
         assert.equal(await sheetCount(page), 0, 'su desktop il click non apre un foglio');

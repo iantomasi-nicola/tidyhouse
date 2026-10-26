@@ -14,6 +14,7 @@ const MOBILE = { width: 390, height: 844 }, TABLET = { width: 820, height: 1180 
 const ALL_DONE = { result: { floor: 'done', bathroom: 'done', kitchen: 'done' } };
 const doneWeeks = (extra = {}) => ({ '2026-10-04': ALL_DONE, '2026-10-11': ALL_DONE, '2026-10-18': ALL_DONE, [PREV]: ALL_DONE, ...extra });
 const DARIO = { id: 'dario', name: 'Dario', slot: 4, from: null, to: null };
+const mk = (o = {}) => seed({ ...o, houseExtra: { requireRules: false, ...(o.houseExtra || {}) } });
 const withDario = (to = null) => ({ houseExtra: { roommates: [...seed()['cp:h:LOCALTEST001'].house.roommates, { ...DARIO, to }] } });
 
 /** Piano calcolato dal motore sui dati seed (per scegliere gli scenari senza fragilita'). */
@@ -41,7 +42,7 @@ const run = async () => {
   env = await start();
 
   await test('turno da fare: hero, settimana, segna fatto', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks() });
+    const s = mk({ me: 'anna', weeks: doneWeeks() });
     const row = curRow(s); const me = 'anna'; const c = row.assigned.indexOf(me);
     assert.ok(c >= 0, 'anna ha un turno');
     const page = await open({ s });
@@ -63,7 +64,7 @@ const run = async () => {
   });
 
   await test('piu turni: elenco compatto + suggerimento giorno', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: [{ id: 'anna', name: 'Anna', slot: 1 }, { id: 'bruno', name: 'Bruno', slot: 2, to: null, from: '2026-12-01' }, { id: 'carla', name: 'Carla', slot: 3, from: '2026-12-01' }] } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: [{ id: 'anna', name: 'Anna', slot: 1 }, { id: 'bruno', name: 'Bruno', slot: 2, to: null, from: '2026-12-01' }, { id: 'carla', name: 'Carla', slot: 3, from: '2026-12-01' }] } });
     const row = curRow(s);
     assert.equal(row.assigned.filter((a) => a === 'anna').length, 3, 'casa con una persona: fa tutto');
     const page = await open({ s });
@@ -76,7 +77,7 @@ const run = async () => {
   });
 
   await test('apri turno: click su riga e "Scegli il giorno" non rompono la Home', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks() });
+    const s = mk({ me: 'anna', weeks: doneWeeks() });
     const page = await open({ s });
     page.__errors = [];
     await page.click('.hm-chore >> nth=0'); await page.waitForTimeout(600);
@@ -90,11 +91,11 @@ const run = async () => {
   await test('riposo', async () => {
     const roommates = [...seed()['cp:h:LOCALTEST001'].house.roommates, DARIO];
     // Dario ha pulito per Anna: guadagna un riposo da spendere con 4 persone a casa
-    const s = seed({ me: 'dario', weeks: doneWeeks({ '2026-10-04': { result: { floor: 'by:dario', bathroom: 'done', kitchen: 'done' } }, '2026-10-11': { result: { floor: 'done', bathroom: 'done', kitchen: 'done' } } }), houseExtra: { roommates } });
+    const s = mk({ me: 'dario', weeks: doneWeeks({ '2026-10-04': { result: { floor: 'by:dario', bathroom: 'done', kitchen: 'done' } }, '2026-10-11': { result: { floor: 'done', bathroom: 'done', kitchen: 'done' } } }), houseExtra: { roommates } });
     const rows = plan(s).rows; const row = rows[plan(s).cur];
     const rester = row.rest[0];
     assert.ok(rester, 'qualcuno riposa (' + JSON.stringify(row.assigned) + ')');
-    const s2 = seed({ me: rester, weeks: s['cp:h:LOCALTEST001'].weeks, houseExtra: { roommates } });
+    const s2 = mk({ me: rester, weeks: s['cp:h:LOCALTEST001'].weeks, houseExtra: { roommates } });
     const page = await open({ s: s2 });
     await page.waitForSelector('[data-testid="hero-rest"]');
     assert.match(await text(page, '[data-testid="hero-rest"] .big'), /riposi/);
@@ -104,7 +105,7 @@ const run = async () => {
   });
 
   await test('assente (segnato a mano): torna "Ci sono"', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks({ [CUR]: { awayMap: { anna: true } } }) });
+    const s = mk({ me: 'anna', weeks: doneWeeks({ [CUR]: { awayMap: { anna: true } } }) });
     const page = await open({ s });
     await page.waitForSelector('[data-testid="hero-away"]');
     assert.match(await text(page, '[data-testid="hero-away"] .big'), /assente/);
@@ -117,7 +118,7 @@ const run = async () => {
   });
 
   await test('assente per viaggio: nessun pulsante "Ci sono"', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks(), trips: { t1: { personId: 'anna', from: '2026-10-26', to: null, by: 'anna', at: '2026-10-20T10:00:00Z' } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), trips: { t1: { personId: 'anna', from: '2026-10-26', to: null, by: 'anna', at: '2026-10-20T10:00:00Z' } } });
     const page = await open({ s });
     await page.waitForSelector('[data-testid="hero-away"]');
     assert.equal(await page.locator('[data-testid="hero-away"] .btn').count(), 0);
@@ -126,7 +127,7 @@ const run = async () => {
   });
 
   await test('"Questa settimana sono via": conferma e annulla', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks() });
+    const s = mk({ me: 'anna', weeks: doneWeeks() });
     const page = await open({ s });
     await page.click('.hm-heroaway');
     await page.waitForSelector('.sheet.on');
@@ -140,7 +141,7 @@ const run = async () => {
   });
 
   await test('in ritardo (rosso) + avviso settimana scorsa per altri', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { bathroom: 'done' } } }) });
+    const s = mk({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { bathroom: 'done' } } }) });
     const prev = plan(s).rows[plan(s).cur - 1];
     assert.equal(prev.assigned[0], 'anna', 'anna aveva Pavimenti la scorsa settimana');
     const page = await open({ s });
@@ -159,7 +160,7 @@ const run = async () => {
   });
 
   await test('admin: persona uscita, ignora', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks(), ...withDario('2026-10-20') });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), ...withDario('2026-10-20') });
     const page = await open({ s });
     await page.waitForSelector('[data-testid="alert-left"]');
     assert.match(await text(page, '[data-testid="alert-left"]'), /Dario è uscito: genera un nuovo codice/);
@@ -171,7 +172,7 @@ const run = async () => {
   });
 
   await test('non admin: niente avvisi admin', async () => {
-    const s = seed({ me: 'bruno', admin: false, weeks: doneWeeks(), ...withDario('2026-10-20') });
+    const s = mk({ me: 'bruno', admin: false, weeks: doneWeeks(), ...withDario('2026-10-20') });
     const page = await open({ s });
     assert.equal(await page.locator('[data-testid="alert-left"]').count(), 0);
     noErrors(page);
@@ -179,13 +180,13 @@ const run = async () => {
 
   await test('avviso posti duplicati (admin)', async () => {
     const rm = seed()['cp:h:LOCALTEST001'].house.roommates.map((r) => (r.id === 'carla' ? { ...r, slot: 2 } : r));
-    const page = await open({ s: seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: rm } }) });
+    const page = await open({ s: mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: rm } }) });
     assert.ok(await page.locator('[data-testid="alert-slotDup"]').count());
     noErrors(page);
   });
 
   await test('checklist: spunta compito e progresso', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks() });
+    const s = mk({ me: 'anna', weeks: doneWeeks() });
     const page = await open({ s, viewport: TABLET });
     const n = await page.locator('.hm-task').count();
     assert.ok(n >= 1, 'compiti presenti (admin vede tutti)');
@@ -199,7 +200,7 @@ const run = async () => {
   });
 
   await test('azioni rapide: aggiungi alla spesa, WhatsApp/assenza non rompono', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { home: { order: ['hero', 'quick', 'needs', 'week'], hidden: [] } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { home: { order: ['hero', 'quick', 'needs', 'week'], hidden: [] } } });
     const page = await open({ s });
     await page.click('[data-q="need"]');
     await page.waitForSelector('.sheet.on input');
@@ -215,7 +216,7 @@ const run = async () => {
   });
 
   await test('funzioni spente spariscono', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { features: { needs: false, trips: false, whatsapp: false, requests: false, tasks: false, ranking: false, planDay: false, selfAway: false }, home: { order: ['hero', 'quick', 'checklist', 'ranking', 'needs', 'week'], hidden: [] } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { features: { needs: false, trips: false, whatsapp: false, requests: false, tasks: false, ranking: false, planDay: false, selfAway: false }, home: { order: ['hero', 'quick', 'checklist', 'ranking', 'needs', 'week'], hidden: [] } } });
     const page = await open({ s });
     assert.deepEqual(await widgets(page), ['week']);
     assert.equal(await page.locator('.hm-heroaway, [data-testid="plan-tip"]').count(), 0);
@@ -224,17 +225,17 @@ const run = async () => {
 
   await test('link rapidi: solo http(s) validi, nuova scheda', async () => {
     const links = { tricount: { url: 'https://tricount.com/abc', show: true }, whatsapp: { url: 'javascript:alert(1)', show: true }, custom: [{ id: 'c1', label: 'Wi-Fi', url: 'http://example.com/wifi', show: true }, { id: 'c2', label: 'Nascosto', url: 'https://x.it', show: false }] };
-    const page = await open({ s: seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { links } }) });
+    const page = await open({ s: mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { links } }) });
     assert.equal(await page.locator('.hm-link').count(), 2);
     assert.equal(await page.getAttribute('.hm-link >> nth=0', 'target'), '_blank');
     assert.match(await page.getAttribute('.hm-link >> nth=0', 'rel'), /noopener/);
     await shot(page, 'links-390');
-    const none = await open({ s: seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { links: { tricount: { url: '', show: true }, whatsapp: { url: '', show: false }, custom: [] } } }) });
+    const none = await open({ s: mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { links: { tricount: { url: '', show: true }, whatsapp: { url: '', show: false }, custom: [] } } }) });
     assert.equal(await none.locator('[data-widget="links"]').count(), 0);
   });
 
   await test('prossime settimane, recuperi e classifica', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { floor: 'skipped', bathroom: 'by:anna', kitchen: 'done' } } }), houseExtra: { home: { order: ['hero', 'week', 'upcoming', 'makeups', 'ranking', 'away', 'links'], hidden: [] } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { floor: 'skipped', bathroom: 'by:anna', kitchen: 'done' } } }), houseExtra: { home: { order: ['hero', 'week', 'upcoming', 'makeups', 'ranking', 'away', 'links'], hidden: [] } } });
     const page = await open({ s });
     assert.equal(await page.locator('.hm-up').count(), 3);
     assert.ok(await page.locator('[data-widget="makeups"] .hm-table tbody tr').count() >= 1);
@@ -247,7 +248,7 @@ const run = async () => {
 
   await test('layout personalizzato (prefs) + personalizza', async () => {
     const extra = { 'cp:prefs': { home: { order: ['week', 'links', 'hero', 'upcoming'], hidden: ['hero', 'alerts', 'checklist', 'quick', 'away', 'makeups', 'ranking', 'needs'] }, useHouseHome: false } };
-    const page = await open({ s: seed({ me: 'anna', weeks: doneWeeks(), extra }) });
+    const page = await open({ s: mk({ me: 'anna', weeks: doneWeeks(), extra }) });
     assert.deepEqual(await widgets(page), ['week', 'links', 'upcoming']);
     await page.click('[data-act="customize"]');
     await page.waitForFunction(() => location.hash.startsWith('#/settings'));
@@ -255,7 +256,7 @@ const run = async () => {
   });
 
   await test('cambia persona', async () => {
-    const page = await open({ s: seed({ me: 'anna', weeks: doneWeeks() }) });
+    const page = await open({ s: mk({ me: 'anna', weeks: doneWeeks() }) });
     await page.click('.hm-switch');
     await page.waitForSelector('[data-testid="who-sheet"] .who');
     assert.equal(await page.locator('[data-testid="who-sheet"] .who').count(), 3);
@@ -266,7 +267,7 @@ const run = async () => {
   });
 
   await test('prima dell inizio del piano', async () => {
-    const s = seed({ me: 'anna', weeks: {} });
+    const s = mk({ me: 'anna', weeks: {} });
     const page = await open({ s, now: '2026-09-23T10:00:00' });
     await page.waitForSelector('[data-testid="hero-before"]');
     assert.match(await text(page, '[data-testid="hero-before"] .big'), /Il piano parte il/);
@@ -277,7 +278,7 @@ const run = async () => {
 
   await test('persona non in elenco questa settimana', async () => {
     const rm = [...seed()['cp:h:LOCALTEST001'].house.roommates, { id: 'eve', name: 'Eve', slot: 4, from: '2026-12-01', to: null }];
-    const page = await open({ s: seed({ me: 'eve', admin: false, weeks: doneWeeks(), houseExtra: { roommates: rm } }) });
+    const page = await open({ s: mk({ me: 'eve', admin: false, weeks: doneWeeks(), houseExtra: { roommates: rm } }) });
     await page.waitForSelector('[data-testid="hero-noroster"]');
     await shot(page, 'noroster-390');
     noErrors(page);
@@ -285,7 +286,7 @@ const run = async () => {
 
   await test('admin fuori turno (casa a 4: chi riposa o non ha turni)', async () => {
     const rm = [...seed()['cp:h:LOCALTEST001'].house.roommates, DARIO];
-    const s = seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: rm } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: rm } });
     const row = curRow(s);
     assert.ok(row.rest.length || row.assigned.includes('anna') || true);
     const page = await open({ s });
@@ -297,7 +298,7 @@ const run = async () => {
   await test('nomi lunghi: niente overflow', async () => {
     const rm = [{ id: 'anna', name: 'Anna-Maria Bartolomea Ferdinanda De Santis', slot: 1 }, { id: 'bruno', name: 'Massimiliano Bartolomeo Cavalcanti', slot: 2 }, { id: 'carla', name: 'Carla', slot: 3 }];
     const links = { tricount: { url: 'https://tricount.com/abc', show: true }, whatsapp: { url: 'https://chat.whatsapp.com/xyz', show: true }, custom: [{ id: 'c', label: 'Un link con un nome davvero molto molto lungo da tagliare', url: 'https://example.com', show: true }] };
-    const s = seed({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: rm, links, home: { order: ['hero', 'week', 'upcoming', 'links', 'ranking', 'quick'], hidden: [] } }, needs: { n1: { text: 'Detersivo per i piatti al limone extra lungo che non finisce mai di scrivere', urgent: true, by: 'bruno', at: '2026-10-27T10:00:00Z', done: false } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { roommates: rm, links, home: { order: ['hero', 'week', 'upcoming', 'links', 'ranking', 'quick'], hidden: [] } }, needs: { n1: { text: 'Detersivo per i piatti al limone extra lungo che non finisce mai di scrivere', urgent: true, by: 'bruno', at: '2026-10-27T10:00:00Z', done: false } } });
     for (const lang of ['it-IT', 'en-US']) {
       const page = await open({ s, lang });
       await noOverflow(page);
@@ -308,18 +309,18 @@ const run = async () => {
 
   await test('inglese + dark', async () => {
     const extra = { 'cp:prefs': { lang: 'en' } };
-    const page = await open({ s: seed({ me: 'anna', weeks: doneWeeks(), extra }), dark: true, lang: 'en-US' });
+    const page = await open({ s: mk({ me: 'anna', weeks: doneWeeks(), extra }), dark: true, lang: 'en-US' });
     assert.match(await text(page, '.hm-title'), /Hi Anna/);
     assert.match(await text(page, '.hm-hero'), /Mark done|All done/);
     await shot(page, 'en-dark-390');
-    const hero = await open({ s: seed({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { bathroom: 'done' } } }), extra }), dark: true, lang: 'en-US' });
+    const hero = await open({ s: mk({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { bathroom: 'done' } } }), extra }), dark: true, lang: 'en-US' });
     await shot(hero, 'en-dark-late-390');
     noErrors(page);
   });
 
   await test('viewport tablet e desktop: due colonne >= 1180', async () => {
     const order = ['hero', 'alerts', 'week', 'checklist', 'quick', 'links', 'away', 'upcoming', 'makeups', 'ranking', 'needs'];
-    const s = seed({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { floor: 'skipped', bathroom: 'by:anna', kitchen: 'done' } } }), ...withDario('2026-10-20'), needs: { n1: { text: 'Carta igienica', urgent: true, by: 'bruno', at: '2026-10-27T10:00:00Z', done: false } }, extra: { 'cp:prefs': { home: { order, hidden: [] }, useHouseHome: false } } });
+    const s = mk({ me: 'anna', weeks: doneWeeks({ [PREV]: { result: { floor: 'skipped', bathroom: 'by:anna', kitchen: 'done' } } }), ...withDario('2026-10-20'), needs: { n1: { text: 'Carta igienica', urgent: true, by: 'bruno', at: '2026-10-27T10:00:00Z', done: false } }, extra: { 'cp:prefs': { home: { order, hidden: [] }, useHouseHome: false } } });
     const tab = await open({ s, viewport: TABLET });
     assert.deepEqual(await tab.$$eval('.hm-grid > .col', (c) => c.map((x) => getComputedStyle(x).display)), ['contents', 'contents']);
     // ordine scelto rispettato in colonna singola
@@ -346,7 +347,7 @@ const run = async () => {
   });
 
   await test('casa vuota (nessuno a casa): niente crash', async () => {
-    const s = seed({ me: 'anna', weeks: doneWeeks({ [CUR]: { everyone: true } }) });
+    const s = mk({ me: 'anna', weeks: doneWeeks({ [CUR]: { everyone: true } }) });
     const page = await open({ s });
     await shot(page, 'everyone-away-390');
     assert.ok(await page.locator('.hm-hero').count());

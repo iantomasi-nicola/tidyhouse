@@ -58,8 +58,8 @@ function hub(ctx) {
   const me = ctx.me ? ctx.meName : null;
   const profile = h('section', { class: 'card mx-me' },
     avatar(me || '?', ctx.me ? ctx.color(ctx.me) : '#888', 'lg'),
-    h('div', { class: 'grow' }, h('div', { class: 'mx-me-name' }, me || t('misc.person')), h('div', { class: 'muted small' }, house.name || 'Tidy House')),
-    h('div', { class: 'mx-me-chips' }, ctx.isAdmin ? chip('acc', icon('shield'), t('misc.admin')) : null, chip('', icon(ctx.cloud ? 'users' : 'device'), ctx.cloud ? t('moreX.cloud') : t('misc.localOnly'))));
+    h('div', { class: 'grow' }, h('div', { class: 'mx-me-name' }, me || t('misc.person')), h('div', { class: 'muted small' }, house.name || 'Tidy House'),
+      h('div', { class: 'mx-me-chips' }, ctx.isAdmin ? chip('acc', icon('shield'), t('misc.admin')) : null, chip('', icon(ctx.cloud ? 'users' : 'device'), ctx.cloud ? t('moreX.cloud') : t('misc.localOnly')))));
 
   const ai = ctx.isAdmin && house.ai && house.ai.enabled
     ? h('button', { type: 'button', class: 'btn tonal block mx-ai', onclick: async () => {
@@ -340,7 +340,7 @@ function openTaskSheet(ctx, task, preset = {}) {
   const house = ctx.house;
   const cur = weekOfDate(house, ctx.today());
   const S = { id: task ? task.id : uid(), chore: (task && task.chore) || preset.chore || 'floor', text: (task && task.text) || preset.text || '', every: (task && parseInt(task.every, 10)) || preset.every || 1,
-    anchor: task && task.anchor ? (addDays(task.anchor, 0)) : cur, enabled: task ? task.enabled !== false : true };
+    anchor: task && task.anchor ? task.anchor : cur, enabled: task ? task.enabled !== false : true };
   // anchor è una data qualsiasi: la porto alla domenica della sua settimana
   S.anchor = weekOfDate(house, S.anchor);
   const first = house.startSunday > cur ? house.startSunday : cur;
@@ -530,6 +530,10 @@ function guidePage(ctx) {
 }
 
 // ================================================================ informazioni
+function extLink(ic, title, desc, href) {
+  return h('a', { class: 'li', href, target: '_blank', rel: 'noopener' }, h('div', { class: 'ico' }, icon(ic)),
+    h('div', { class: 'grow' }, h('div', { class: 't' }, title), h('div', { class: 'd' }, desc)), h('div', { class: 'end' }, icon('chevron')));
+}
 function aboutPage(ctx) {
   const house = ctx.house;
   return shell(head(t('more.about')),
@@ -537,8 +541,8 @@ function aboutPage(ctx) {
       chip('', t('misc.version', { v: ctx.VERSION || '' }))),
     h('div', { class: 'list' },
       liRow({ ic: 'home2', title: house.name || t('app.name'), desc: ctx.cloudStatusLabel ? ctx.cloudStatusLabel() : '' }),
-      liRow({ ic: 'link', title: t('moreX.repo'), desc: REPO.replace('https://', ''), href: REPO, end: undefined }),
-      liRow({ ic: 'book', title: t('moreX.readme'), desc: t('moreX.readmeDesc'), href: REPO + '#readme' })),
+      extLink('link', t('moreX.repo'), REPO.replace('https://', ''), REPO),
+      extLink('book', t('moreX.readme'), t('moreX.readmeDesc'), REPO + '#readme')),
     h('p', { class: 'muted small center' }, t('moreX.credits')));
 }
 

@@ -1,0 +1,99 @@
+/* Altro: hub e sotto-pagine. */
+.mx { display: grid; gap: 16px; align-content: start; }
+.mx > .title { margin-bottom: 2px; }
+.mx-head { display: flex; align-items: center; gap: 6px; margin: 4px 0 2px; min-height: 48px; }
+.mx-head .title { margin: 0; font-size: 1.75rem; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mx-back { width: 44px; height: 44px; margin-left: -10px; flex: none; color: var(--accent-ink); }
+.mx-right { flex: none; }
+.mx-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.mx-me { display: flex; align-items: center; gap: 14px; }
+.mx-me-name { font-size: 1.25rem; font-weight: 750; letter-spacing: -.02em; }
+.mx-me-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mx-ai { min-height: 52px; }
+.mx-ver { margin-top: 4px; }
+.mx .eyebrow .chip { height: 22px; }
+.mx-lblb { font-size: .9375rem; font-weight: 600; }
+
+/* scorte */
+.mx-needform { padding: 16px; }
+.mx-addrow { display: flex; gap: 8px; }
+.mx-addrow .input { flex: 1; min-width: 0; }
+.mx-addrow .btn { padding: 0 18px; flex: none; }
+@media (max-width: 440px) { .mx-hide-s { display: none; } .mx-addrow .btn { padding: 0 16px; } }
+.mx-need .checkcircle { width: 30px; height: 30px; position: relative; cursor: pointer; }
+.mx-need .checkcircle::after { content: ""; position: absolute; inset: -9px; }
+.mx-need.urgent { box-shadow: inset 3px 0 0 var(--bad); }
+.mx-need.done .t { text-decoration: line-through; color: var(--text-2); }
+.mx-need .t, .mx-lo .t { overflow-wrap: anywhere; }
+.mx-urg { margin-left: 8px; height: 22px; vertical-align: 1px; }
+.mx-done { opacity: .85; }
+.eyebrow button { min-height: 32px; padding: 0 4px; }
+
+/* regole */
+.rules-body { display: grid; gap: 12px; }
+.rules-body .rules-sec { padding: 16px 18px; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-1); }
+.rules-body h3 { font-size: 1rem; font-weight: 750; letter-spacing: -.01em; margin: 0 0 6px; }
+.rules-body p, .rules-body li { color: var(--text-2); font-size: .9375rem; line-height: 1.5; margin: 0; }
+.rules-body p + p, .rules-body p + ul, .rules-body ul + p { margin-top: 8px; }
+.rules-body ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.rules-body strong { color: var(--text); font-weight: 700; }
+.rules-scroll .rules-body .rules-sec { box-shadow: none; }
+.mx-ta { min-height: 42dvh; font-size: .9375rem; line-height: 1.5; font-family: inherit; }
+
+/* ultimo che esce */
+.mx-lastout { display: grid; gap: 14px; }
+.mx-progress { display: grid; gap: 12px; transition: background .4s var(--ease); }
+.mx-progress .bar { height: 12px; }
+.mx-progress.all { background: linear-gradient(155deg, #34c77b, #1f9d8a); color: #fff; box-shadow: 0 20px 40px -18px rgba(31,157,138,.6); }
+.mx-progress.all .bar { background: rgba(255,255,255,.3); }
+.mx-progress.all .bar > i { background: #fff; }
+.mx-progress.all .muted { color: rgba(255,255,255,.88); }
+.mx-allok { font-size: 1.5rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.15; }
+.mx-lo { cursor: pointer; }
+.mx-lo .checkcircle { width: 30px; height: 30px; }
+.mx-lo.on .t { color: var(--text-2); }
+.mx-edrow { display: grid; grid-template-columns: 1fr auto auto auto; gap: 2px; align-items: center; }
+.mx-edrow .icon-btn { width: 40px; height: 40px; }
+.mx-edrow .icon-btn[disabled] { opacity: .3; pointer-events: none; }
+
+/* checklist ricorrenti */
+.mx-task { align-items: flex-start; }
+.mx-task.off { opacity: .6; }
+.mx-taskmain { flex: 1; min-width: 0; text-align: left; display: flex; padding: 0; border-radius: 10px; }
+.mx-taskmain .t { overflow-wrap: anywhere; }
+.mx-task > .switch { margin-top: 4px; }
+.mx-st { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.mx-st .chip { height: auto; min-height: 26px; padding: 3px 10px; white-space: normal; }
+.mx-chore { display: inline-flex; align-items: center; gap: 8px; }
+.mx-ct { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #fff; flex: none; font-style: normal; }
+.mx-ct svg.i { width: 16px; height: 16px; }
+.mx-ct.floor { background: var(--c-floor); } .mx-ct.bathroom { background: var(--c-bathroom); } .mx-ct.kitchen { background: var(--c-kitchen); }
+.mx-tpl { display: grid; gap: 8px; }
+.mx-tplbtn { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 52px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); text-align: left; transition: transform .2s var(--spring); }
+.mx-tplbtn:active { transform: scale(.985); }
+.mx-tplbtn .chip { flex: none; }
+
+/* scambi, registro */
+.mx-req .grow .t { overflow-wrap: anywhere; }
+.mx-req > svg.i { color: var(--text-3); }
+.mx-time { font-size: .8125rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* guida */
+.mx-guide { padding: 0; overflow: hidden; }
+.mx-guide > summary { display: flex; align-items: center; gap: 12px; padding: 16px 18px; min-height: 60px; cursor: pointer; list-style: none; font-weight: 650; }
+.mx-guide > summary::-webkit-details-marker { display: none; }
+.mx-guide > summary > svg.i:last-child { color: var(--text-3); transition: transform .25s var(--ease); }
+.mx-guide[open] > summary > svg.i:last-child { transform: rotate(180deg); }
+.mx-guide > summary .ico { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: var(--tonal); color: var(--accent-ink); flex: none; }
+.mx-guide > summary:focus-visible { outline-offset: -3px; }
+.mx-steps { list-style: none; margin: 0; padding: 0 18px 14px; display: grid; gap: 12px; counter-reset: s; }
+.mx-steps li { display: flex; gap: 12px; align-items: flex-start; counter-increment: s; color: var(--text); }
+.mx-steps li::before { content: counter(s); width: 24px; height: 24px; border-radius: 50%; background: var(--tonal-2); color: var(--accent-ink); font-size: .8125rem; font-weight: 700; display: grid; place-items: center; flex: none; margin-top: 1px; }
+.mx-guide .note { margin: 0 18px 18px; }
+
+/* informazioni */
+.mx-about { padding: 28px 20px; }
+.mx-logo { width: 76px; height: 76px; border-radius: 23px; background: linear-gradient(160deg, #0a84ff, #30b0a0); box-shadow: 0 18px 36px -14px rgba(10,132,255,.6); display: grid; place-items: center; color: #fff; margin: 0 auto; }
+.mx-logo svg.i { width: 40px; height: 40px; stroke-width: 1.6; }
+.mx-about h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.03em; }
+.mx-about .chip { justify-self: center; }

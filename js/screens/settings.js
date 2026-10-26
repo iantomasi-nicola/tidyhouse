@@ -374,7 +374,7 @@ function rmInit(ctx) {
 }
 function rmIssues(list, today) {
   const rows = list.map((r) => ({ ...normRm(r) }));
-  const issues = new Set(validateRoommates(rows.filter((r) => r.name || true), today));
+  const issues = new Set(validateRoommates(rows, today));
   for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) {
     const a = rows[i], b = rows[j];
     if (!a.name || !b.name || a.slot !== b.slot) continue;
@@ -506,7 +506,7 @@ function linksSection(ctx) {
     const cur = L[key] || {};
     return group(title, [
       textRow({ title: desc, value: cur.url || '', placeholder: 'https://', type: 'url', inputmode: 'url', id: 'link-' + key, onchange: (v, inp) => urlSave({ url: cur.url, patch: (u) => ({ links: { [key]: { url: u } } }) }, v, inp) }),
-      switchRow({ ic, title: t('set.showOnHome'), checked: cur.show !== false && (cur.show === true || key === 'tricount'), id: 'link-show-' + key, onchange: (v) => setHouse(ctx, { links: { [key]: { show: v } } }) }),
+      switchRow({ ic, title: t('set.showOnHome'), checked: cur.show === undefined ? key === 'tricount' : !!cur.show, id: 'link-show-' + key, onchange: (v) => setHouse(ctx, { links: { [key]: { show: v } } }) }),
     ]);
   };
   const custom = L.custom || [];
@@ -534,4 +534,233 @@ function linksSection(ctx) {
     block('whatsapp', 'whatsapp', t('set.whatsappGroup'), t('set.whatsappGroup')),
     h('div', { class: 'stack tight' }, sectionTitle(t('set.customLink')), customRows.length ? h('div', { class: 'list' }, customRows) : null, btn(t('set.addLink'), addSheet, { ic: 'plus', id: 'link-add' })),
     foot(t('setX.links.httpsHint')));
+}
+
+// ============================================================================
+// NOTIF-HOUSE (programma notifiche della casa)
+// ============================================================================
+const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const SCHEDULED = [
+  { k: 'friAbsence', dow: true, time: true }, { k: 'satDuty', dow: true, time: true }, { k: 'sunMark', dow: true, time: true },
+  { k: 'late', late: true }, { k: 'monNew', dow: true, time: true }, { k: 'planDay', time: true }, { k: 'adminDigest', dow: true, time: true },
+  { k: 'requests' }, { k: 'needs' }, { k: 'nudges' },
+];
+const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+/** Simula il server (un controllo all'ora) per i prossimi giorni, assumendo che nessuno segni nulla da adesso in poi. */
+export function previewNotifications(ctx, days = 7) {
+  const eh = ctx.calc.eh; const tz = eh.tz || 'Europe/Rome';
+  const start = new Date(ctx.now().getTime()); start.setMinutes(0, 0, 0); start.setTime(start.getTime() + 3600000);
+  const sent = new Set(); const groups = new Map();
+  for (let i = 0; i < days * 24; i++) {
+    const now = new Date(start.getTime() + i * 3600000);
+    let res = []; try { res = planNotifications({ house: eh, weeks: eh.weeks, now, sent }); } catch { res = []; }
+    if (!res.length) continue;
+    const lp = localParts(now, tz);
+    for (const n of res) {
+      sent.add(n.key);
+      const type = n.type === 'planDayLate' ? 'planDay' : n.type;
+      const key = `${lp.date}|${lp.minutes}|${type}`;
+      if (!groups.has(key)) groups.set(key, { date: lp.date, time: hhmm(lp.minutes), type, names: [], dow: lp.dow });
+      const g = groups.get(key); const nm = ctx.name(n.personId); if (nm && !g.names.includes(nm)) g.names.push(nm);
+    }
+  }
+  return [...groups.values()];
+}
+
+function notifHouse(ctx) {
+  const hs = ctx.house; const cfg = notifCfg(hs);
+  const patch = (k, p) => setHouse(ctx, { notif: { [k]: p } });
+  const dowSel = (k, c) => { const sel = h('select', { class: 'input', 'aria-label': t('sched.day'), 'data-testid': `dow-${k}` }, DOW_ORDER.map((d) => { const o = h('option', { value: String(d) }, t('sched.dow.' + d)); if (d === Number(c.dow)) o.selected = true; return o; })); sel.addEventListener('change', () => patch(k, { dow: Number(sel.value) })); return sel; };
+  const timeIn = (k, c, label = t('sched.time')) => { const el = h('input', { class: 'input', type: 'time', value: c.time || '09:00', 'aria-label': label, 'data-testid': `time-${k}` }); el.addEventListener('change', () => { if (el.value) patch(k, { time: el.value }); else el.value = c.time || '09:00'; }); return el; };
+
+  const typeCard = (d) => {
+    const k = d.k; const c = cfg[k];
+    const head = h('label', { class: 'st-sw st-typehead' }, h('div', { class: 'grow' }, h('div', { class: 't' }, t('notifType.' + k)), h('div', { class: 'd' }, k === 'late' ? t('notifType.late.desc', { n: c.max }) : ['friAbsence', 'satDuty', 'sunMark', 'monNew', 'planDay', 'adminDigest'].includes(k) ? t('notifType.' + k + '.desc') : t('setX.nt.' + k + '.desc'))),
+      h('span', { class: 'switch' }, h('input', { type: 'checkbox', role: 'switch', 'aria-label': t('notifType.' + k), 'data-testid': 'on-' + k, checked: c.on !== false, onchange: (e) => patch(k, { on: e.target.checked }) }), h('i')));
+    head.querySelector('input').checked = c.on !== false;
+    let body = null;
+    if (c.on !== false) {
+      if (d.late) {
+        const times = (c.times || []).slice(0, 6);
+        const upd = (arr) => patch(k, { times: [...arr].sort() });
+        body = h('div', { class: 'stack tight' },
+          h('div', { class: 'lbl' }, t('sched.times')),
+          ...times.map((tm, i) => h('div', { class: 'st-timerow' + (i >= (c.max || 3) ? ' is-off' : ''), 'data-testid': `late-time-${i}` },
+            h('input', { class: 'input', type: 'time', value: tm, 'aria-label': t('sched.time'), 'data-testid': `late-t-${i}`, onchange: (e) => { if (e.target.value) { const a = [...times]; a[i] = e.target.value; upd(a); } } }),
+            i >= (c.max || 3) ? chip(t('setX.sched.unused'), 'warn') : null,
+            h('button', { class: 'icon-btn st-del', type: 'button', 'aria-label': t('delete'), 'data-testid': `late-del-${i}`, disabled: times.length <= 1, onclick: () => upd(times.filter((_, j) => j !== i)) }, icon('x')))),
+          times.length < 6 ? btn(t('setX.sched.addTime'), () => upd([...times, '18:00']), { ic: 'plus', id: 'late-add', cls: 'soft sm' }) : null,
+          stepRow({ title: t('sched.max'), value: Number(c.max) || 3, min: 1, max: 6, id: 'step-late-max', onchange: (v) => patch(k, { max: v }) }),
+          stepRow({ title: t('sched.days'), value: Number(c.days) || 4, min: 1, max: 7, id: 'step-late-days', onchange: (v) => patch(k, { days: v }) }));
+      } else if (d.dow || d.time) {
+        body = h('div', { class: 'st-sched' }, d.dow ? h('label', { class: 'field' }, h('span', { class: 'lbl' }, t('sched.day')), dowSel(k, c)) : null, d.time ? h('label', { class: 'field' }, h('span', { class: 'lbl' }, t('sched.time')), timeIn(k, c)) : null);
+      }
+    }
+    return h('section', { class: 'card st-card stack tight', 'data-testid': 'ncard-' + k }, head, body);
+  };
+
+  // anteprima
+  const prev = previewNotifications(ctx).slice(0, 40);
+  const prevRows = prev.length ? prev.map((g) => liRow({ title: t('notifType.' + g.type), desc: g.names.join(', '), end: h('span', { class: 'st-when' }, `${t('dow.' + g.dow)} ${fmtDate(g.date, ctx.lang)} · ${g.time}`) })) : [h('div', { class: 'li muted', 'data-testid': 'preview-empty' }, t('setX.sched.noPreview'))];
+
+  // chiavi push
+  const fresh = S.fresh;
+  const keyBlock = card(
+    h('div', { class: 'row' }, h('div', { class: 'ico ' + (hs.vapidPublic ? 'g' : 'o') }, icon('lock')), h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 650 }, 'data-testid': 'vapid-state' }, hs.vapidPublic ? t('sched.pushKeys.ready') : t('sched.pushKeys.missing')))),
+    hs.vapidPublic ? h('div', { class: 'stack tight' }, h('div', { class: 'lbl' }, t('sched.pushKeys.public')), mono(hs.vapidPublic, 'vapid-public'), btn(t('copy'), async () => { ctx.toast(await copyText(hs.vapidPublic) ? t('copied') : t('error')); }, { ic: 'copy', cls: 'soft sm', id: 'vapid-copy-pub' })) : null,
+    fresh ? h('div', { class: 'stack tight st-fresh', 'data-testid': 'vapid-fresh' }, note('warn', 'alert', t('sched.pushKeys.warn')), h('div', { class: 'lbl' }, t('sched.pushKeys.private')), mono(fresh.privateKey, 'vapid-private'),
+      h('div', { class: 'btn-row' }, btn(t('copy'), async () => { ctx.toast(await copyText(fresh.privateKey) ? t('copied') : t('error')); }, { ic: 'copy', cls: 'tonal', id: 'vapid-copy-priv' }), btn(t('setX.sched.hideKey'), () => { S.fresh = null; ctx.rerender(); }, { id: 'vapid-hide' }))) : null,
+    btn(t('sched.pushKeys.generate'), async () => {
+      if (hs.vapidPublic && !(await confirmDialog({ title: t('sched.pushKeys.generate'), text: t('setX.sched.regenWarn'), ok: t('sched.pushKeys.generate'), danger: true }))) return;
+      try { const k = await push.generateVapid(); await ctx.actions.setHouse({ vapidPublic: k.publicKey }); S.fresh = k; saved(ctx, t('sched.pushKeys.ready')); ctx.rerender(); } catch (e) { fail(ctx, e); }
+    }, { ic: 'refresh', id: 'vapid-generate', cls: hs.vapidPublic ? 'soft' : '' }));
+
+  const run = hs.serverRun;
+  const stale = run && ctx.now().getTime() - new Date(run).getTime() > 3 * 3600000;
+  const serverBlock = card(
+    h('div', { class: 'row' }, h('div', { class: 'ico ' + (run && !stale ? 'g' : 'o') }, icon('clock')), h('div', { class: 'grow' }, h('div', { class: 't', 'data-testid': 'server-run', style: { fontWeight: 650 } }, run ? t('sched.lastRun', { when: rel(ctx, run) }) : t('sched.noRun')), stale ? h('div', { class: 'small muted' }, t('setX.sched.stale')) : null)),
+    h('ol', { class: 'st-steps small' },
+      h('li', null, t('setX.sched.step1')),
+      h('li', null, h('code', null, 'VAPID_PRIVATE_KEY'), ' — ', t('setX.sched.step2')),
+      h('li', null, h('code', null, 'FIREBASE_SERVICE_ACCOUNT'), ' — ', t('setX.sched.step3')),
+      h('li', null, h('code', null, 'VAPID_SUBJECT'), ', ', h('code', null, 'BACKUP_PASSPHRASE'), ' — ', t('setX.sched.step4'))),
+    h('a', { class: 'btn soft', href: README, target: '_blank', rel: 'noopener', 'data-testid': 'readme-link' }, icon('book'), t('setX.sched.readme')));
+
+  return h('div', { class: 'stack' },
+    h('p', { class: 'muted' }, t('sched.hint')),
+    group(null, [switchRow({ ic: 'bell', tone: 'r', title: t('sched.master'), checked: cfg.enabled !== false, id: 'sw-notif-master', onchange: (v) => patch('enabled', v).then ? null : null })]),
+    SCHEDULED.map(typeCard),
+    group(null, [stepRow({ title: t('sched.catchUp'), desc: t('setX.sched.catchUpHint'), value: Number(cfg.catchUpHours) || 5, min: 1, max: 12, id: 'step-catchUp', fmt: (v) => v + ' h', onchange: (v) => setHouse(ctx, { notif: { catchUpHours: v } }) })]),
+    h('div', { class: 'stack tight' }, sectionTitle(t('sched.preview')), h('div', { class: 'list', 'data-testid': 'preview' }, prevRows), foot(t('setX.sched.previewNote'))),
+    h('div', { class: 'stack tight' }, sectionTitle(t('sched.pushKeys')), keyBlock),
+    h('div', { class: 'stack tight' }, sectionTitle(t('setX.sched.server')), serverBlock));
+}
+
+// ============================================================================
+// INVITE (codice, link, QR, nuovo codice)
+// ============================================================================
+function waLink(msg) { return 'https://wa.me/?text=' + encodeURIComponent(msg); }
+async function qrNode(link) {
+  try {
+    const { default: qrcode } = await import('../../vendor/qr.js');
+    const q = qrcode(0, 'M'); q.addData(link); q.make();
+    return h('div', { class: 'qr', 'data-testid': 'invite-qr', role: 'img', 'aria-label': t('inv.qr'), html: q.createSvgTag({ cellSize: 4, margin: 0 }) });
+  } catch (e) { console.warn(e); return null; }
+}
+const inviteMsg = (ctx, extra = '') => t('inv.msg', { house: ctx.house.name || '', link: ctx.joinLink(), code: ctx.code(), url: ctx.baseUrl() }) + extra;
+
+async function inviteSection(ctx) {
+  const link = ctx.joinLink(); const msg = inviteMsg(ctx);
+  const qr = await qrNode(link);
+  const share = typeof navigator !== 'undefined' && navigator.share ? btn(t('share'), () => navigator.share({ title: ctx.house.name || t('app.name'), text: msg }).catch(() => {}), { ic: 'share', id: 'invite-share' }) : null;
+  const top = card(
+    ctx.mode === 'local' ? note('warn', 'info', h('div', { 'data-testid': 'invite-local' }, t('inv.local'))) : null,
+    ctx.mode === 'local' && ctx.cloudAvailable ? btn(t('data.migrate'), () => migrate(ctx), { ic: 'upload', cls: '', id: 'invite-migrate' }) : null,
+    h('div', { class: 'lbl' }, t('inv.code')),
+    h('div', { class: 'codebox', 'data-testid': 'invite-code' }, ctx.code()),
+    h('div', { class: 'lbl' }, t('inv.link')),
+    mono(link, 'invite-link'),
+    h('div', { class: 'btn-row' },
+      btn(t('inv.copyLink'), async () => { ctx.toast(await copyText(link) ? t('copied') : t('error')); }, { ic: 'copy', id: 'invite-copy' }),
+      h('a', { class: 'btn soft', href: waLink(msg), target: '_blank', rel: 'noopener', 'data-testid': 'invite-wa' }, icon('whatsapp'), t('inv.shareWa')),
+      share),
+    qr ? h('div', { class: 'center' }, qr) : null,
+    h('p', { class: 'small muted' }, t('inv.hint')));
+  return h('div', { class: 'stack' }, top, ctx.isAdmin ? rotateBlock(ctx) : null);
+}
+
+function rotateBlock(ctx) {
+  const today = ctx.today(); const people = ctx.house.roommates || [];
+  if (!S.rot) S.rot = { sel: new Set(people.filter((r) => r.to && r.to <= today).map((r) => r.id)), busy: false, result: null };
+  const R = S.rot;
+  const rows = people.map((p) => {
+    const inp = h('input', { type: 'checkbox', 'aria-label': p.name, 'data-testid': 'rot-' + p.id }); inp.checked = R.sel.has(p.id);
+    inp.addEventListener('change', () => { if (inp.checked) R.sel.add(p.id); else R.sel.delete(p.id); });
+    return h('label', { class: 'check st-rotrow' }, inp, avatar(p.name, ctx.color(p.id), 'sm'), h('div', { class: 'grow' }, h('div', { style: { fontWeight: 600 } }, p.name), p.to && p.to <= today ? h('div', { class: 'small muted' }, `${t('set.roommates.status.out')} · ${fmtDate(p.to, ctx.lang, { year: true })}`) : null));
+  });
+  const go = btn(R.busy ? t('setX.rot.working') : t('setX.rot.go'), async () => {
+    if (R.busy) return;
+    if (!(await confirmDialog({ title: t('setX.rot.go'), text: t('setX.rot.confirm'), ok: t('setX.rot.go'), danger: true }))) return;
+    R.busy = true; ctx.rerender();
+    try {
+      await ctx.rotateCode({ leavingPersonIds: [...R.sel] });
+      S.rot = { sel: new Set(), busy: false, result: { code: ctx.code(), link: ctx.joinLink(), name: ctx.house.name || '', at: ctx.now().toISOString() } };
+      ctx.toast(t('setX.rot.done'));
+    } catch (e) {
+      R.busy = false; console.warn(e);
+      ctx.toast(e && e.message === 'clone-failed' ? t('setX.rot.fail') : e && e.message === 'permission' ? t('err.permission') : t('error'));
+    }
+    ctx.rerender();
+  }, { cls: 'danger', ic: 'refresh', id: 'rot-go', disabled: R.busy });
+  const res = R.result ? card(note('ok', 'check', h('div', { 'data-testid': 'rot-result' }, t('setX.rot.sendNew'))),
+    mono(R.result.code, 'rot-new-code'), mono(R.result.link, 'rot-new-link'),
+    h('div', { class: 'btn-row' },
+      btn(t('inv.copyLink'), async () => { ctx.toast(await copyText(R.result.link) ? t('copied') : t('error')); }, { ic: 'copy', id: 'rot-copy' }),
+      h('a', { class: 'btn', href: waLink(t('setX.rot.msg', { house: R.result.name, link: R.result.link, code: R.result.code, url: ctx.baseUrl() })), target: '_blank', rel: 'noopener', 'data-testid': 'rot-wa' }, icon('whatsapp'), t('inv.shareWa')))) : null;
+  return h('div', { class: 'stack' },
+    sectionTitle(t('setX.rot.title')),
+    card(h('p', { class: 'muted' }, t('setX.rot.explain')), h('ul', { class: 'st-bullets small muted' }, ['setX.rot.b1', 'setX.rot.b2', 'setX.rot.b3'].map((k) => h('li', null, t(k)))),
+      h('div', { class: 'lbl' }, t('setX.rot.who')), h('div', { class: 'stack tight' }, rows), go),
+    res);
+}
+async function migrate(ctx) {
+  if (!(await confirmDialog({ title: t('data.migrate'), text: t('setX.data.migrateHint'), ok: t('data.migrate') }))) return;
+  try { ctx.toast(t('data.importing')); await ctx.migrateToCloud(); ctx.toast(t('data.migrated')); ctx.nav('settings/' + (curSub || 'data')); } catch (e) { fail(ctx, e); }
+}
+
+// ============================================================================
+// ACCESS (accessi e dispositivi)
+// ============================================================================
+const DEV_IC = { device: 'device', tablet: 'tablet', desktop: 'desktop' };
+function accessSection(ctx) {
+  const members = ctx.state.members || {}; const people = ctx.house.roommates || [];
+  const devsOf = (pid) => Object.entries(members).filter(([, m]) => m && m.personId === pid).sort((a, b) => String(b[1].lastSeen || '').localeCompare(String(a[1].lastSeen || '')));
+  const known = new Set(people.map((p) => p.id));
+  const orphans = Object.entries(members).filter(([, m]) => m && (!m.personId || !known.has(m.personId)));
+  const withPush = Object.values(members).filter((m) => m && m.push && m.push.endpoint).length;
+  const opened = people.filter((p) => devsOf(p.id).length).length;
+  const ver = ctx.actions.rulesVersion(); const needRules = ctx.actions.rulesRequired();
+
+  const removeDev = async (id, m) => { if (await confirmDialog({ title: t('acc.remove'), text: m.name || (m.device || {}).label || id, ok: t('acc.remove'), danger: true })) save(ctx, () => ctx.store.delDoc('members', id)); };
+  const devRow = ([id, m]) => {
+    const d = m.device || {}; const mine = id === ctx.deviceId;
+    return h('div', { class: 'li st-dev', 'data-testid': 'dev-' + id },
+      h('div', { class: 'ico' }, icon(DEV_IC[d.kind] || 'device')),
+      h('div', { class: 'grow' },
+        h('div', { class: 't' }, m.name || d.label || id.slice(0, 6), mine ? [' ', chip(t('setX.access.thisDevice'), 'acc')] : null),
+        h('div', { class: 'd' }, [d.label, m.version ? 'v' + m.version : '', m.lang ? String(m.lang).toUpperCase() : ''].filter(Boolean).join(' · ')),
+        h('div', { class: 'd' }, `${t('acc.openedLast', { when: rel(ctx, m.lastSeen) })}`),
+        h('div', { class: 'st-chips' },
+          m.push && m.push.endpoint ? chip(t('acc.pushOn'), 'ok', 'bell') : chip(t('acc.pushOff'), '', 'bellOff'),
+          m.standalone ? chip(t('setX.access.installed'), '', 'home') : null,
+          m.isAdmin ? chip(t('acc.admin'), 'acc', 'shield') : null,
+          needRules ? (m.rulesAck && m.rulesAck.version === ver ? chip(t('setX.access.rulesOk'), 'ok', 'check') : chip(t('setX.access.rulesNo'), 'warn')) : null)),
+      mine ? null : h('button', { class: 'icon-btn st-del', type: 'button', 'aria-label': t('acc.remove'), 'data-testid': 'dev-del-' + id, onclick: () => removeDev(id, m) }, icon('trash')));
+  };
+  const personBlock = (p) => {
+    const devs = devsOf(p.id);
+    const nudge = btn(t('acc.nudge'), () => save(ctx, () => ctx.actions.nudge(p.id), t('acc.nudgeSent')), { ic: 'bell', cls: 'tonal sm', id: 'nudge-' + p.id });
+    return h('div', { class: 'stack tight st-person-acc' + (devs.length ? '' : ' never'), 'data-testid': 'acc-' + p.id },
+      h('div', { class: 'list' },
+        h('div', { class: 'li' }, avatar(p.name, ctx.color(p.id)), h('div', { class: 'grow' }, h('div', { class: 't' }, p.name), h('div', { class: 'd' }, devs.length ? t('setX.access.devCount', { n: devs.length }) : t('acc.neverOpened'))), devs.length ? null : nudge),
+        devs.map(devRow)));
+  };
+  const views = Object.entries(ctx.state.views || {}).sort((a, b) => String(b[1].at || '').localeCompare(String(a[1].at || ''))).slice(0, 100);
+  const devName = (id) => { const m = members[id]; return m ? (m.name || (m.device || {}).label || '') : ''; };
+  const viewRows = views.length ? views.map(([id, v]) => liRow({ title: `${ctx.name(v.personId) || t('misc.person')} · ${t('acc.screen.' + v.screen) === 'acc.screen.' + v.screen ? v.screen : t('acc.screen.' + v.screen)}`, desc: devName(v.device), end: h('span', { class: 'st-when' }, rel(ctx, v.at)) })) : [h('div', { class: 'li muted', 'data-testid': 'views-empty' }, t('acc.noViews'))];
+  const clear = async () => {
+    if (!(await confirmDialog({ title: t('acc.clearViews'), text: t('setX.access.clearWarn'), ok: t('acc.clearViews'), danger: true }))) return;
+    const ids = Object.keys(ctx.state.views || {});
+    save(ctx, async () => { for (let i = 0; i < ids.length; i += 400) await ctx.store.write(ids.slice(i, i + 400).map((id) => ({ coll: 'views', id, del: true }))); });
+  };
+  return h('div', { class: 'stack' },
+    h('p', { class: 'muted' }, t('acc.hint')),
+    h('div', { class: 'kpis' },
+      h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-people' }, `${opened}/${people.length}`), h('div', { class: 'k' }, t('acc.people'))),
+      h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-devices' }, Object.keys(members).length), h('div', { class: 'k' }, t('acc.devices'))),
+      h('div', { class: 'kpi' }, h('div', { class: 'v', 'data-testid': 'kpi-push' }, withPush), h('div', { class: 'k' }, t('acc.pushCount', { n: withPush }).replace(String(withPush), '').trim() || t('acc.push')))),
+    people.length ? people.map(personBlock) : [h('div', { class: 'empty' }, icon('users'), t('acc.noPeople'))],
+    orphans.length ? h('div', { class: 'stack tight' }, sectionTitle(t('setX.access.unassigned')), h('div', { class: 'list' }, orphans.map(devRow))) : null,
+    h('div', { class: 'stack tight' }, h('div', { class: 'eyebrow' }, h('span', null, t('acc.viewsLog')), views.length ? h('button', { type: 'button', 'data-testid': 'views-clear', onclick: clear }, t('acc.clearViews')) : null), h('div', { class: 'list', 'data-testid': 'views' }, viewRows), foot(t('setX.access.viewsNote', { n: 100 }))));
 }

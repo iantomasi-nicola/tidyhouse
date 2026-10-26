@@ -116,7 +116,7 @@ await step('utente normale (Bruno): niente selettore persona, elimina solo i pro
   // confronto con il motore
   const hypo = [...Object.values(TRIPS), { personId: 'bruno', from: '2026-10-30', to: '2026-11-02' }];
   const rows = await page.locator('.pv-week').evaluateAll((els) => els.map((e) => [e.dataset.week, e.dataset.away]));
-  assert.deepEqual(rows.map((r) => r[0]), ['2026-11-01', '2026-11-08']);
+  assert.deepEqual(rows.map((r) => r[0]), ['2026-11-01'], 'ven-lun nella stessa settimana lun-dom');
   for (const [w, a] of rows) assert.equal(a === '1', awayFromTrips(hypo, 'bruno', w, 3), 'settimana ' + w);
   await shot(page, 'trips-sheet-390-user', false);
   await page.click('.trip-form .btn:not(.soft)');
@@ -149,13 +149,13 @@ await step('amministratore: selettore persona, "Una settimana", viaggio aperto (
   assert.equal(await page.locator('#trip-to').isVisible(), false);
   assert.match(await text(page, '.pv-head'), /Fino a nuovo avviso/);
   assert.equal(await page.locator('.pv-week').count(), 8);
-  const hypo = [...Object.values(TRIPS), { personId: 'carla', from: TODAY, to: null }];
+  const hypo = [...Object.values(TRIPS), { personId: 'carla', from: '2026-10-30', to: null }];
   const rows = await page.locator('.pv-week').evaluateAll((els) => els.map((e) => [e.dataset.week, e.dataset.away]));
   for (const [w, a] of rows) assert.equal(a === '1', awayFromTrips(hypo, 'carla', w, 3), 'settimana ' + w);
   await page.fill('#trip-note', 'Erasmus bis');
   await page.click('.trip-form .btn:not(.soft)'); await sheetGone(page);
   const t = Object.values((await state(page)).trips).find((x) => x.note === 'Erasmus bis');
-  assert.ok(t && t.personId === 'carla' && t.to === null && t.from === TODAY);
+  assert.ok(t && t.personId === 'carla' && t.to === null && t.from === '2026-10-30');
   assert.match(await page.locator('.trip', { hasText: 'Erasmus bis' }).innerText(), /In corso/);
   noErrors(page);
 });
@@ -362,7 +362,7 @@ await step('funzioni: ranking spento (niente TR/CDM), stats spento (solo classif
 await step('nessuna settimana chiusa: stato vuoto', async () => {
   const page = await mk({ hash: '#/stats', houseExtra: { startSunday: '2026-11-01' } });
   assert.match(await text(page, '.empty'), /Ancora nessuna settimana chiusa/);
-  assert.equal(await page.locator('.rank-row, svg').count() - await page.locator('.empty svg').count(), 0);
+  assert.equal(await page.locator('.rank-row, svg[data-chart], .kpis').count(), 0);
   noErrors(page);
 });
 
