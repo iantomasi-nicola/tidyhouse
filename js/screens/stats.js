@@ -26,10 +26,11 @@ function rr(x, y, w, hh, [tl, tr, br, bl]) {
   return `M${num(x + tl)} ${num(y)}H${num(x + w - tr)}${tr ? `A${tr} ${tr} 0 0 1 ${num(x + w)} ${num(y + tr)}` : ''}V${num(y + hh - br)}${br ? `A${br} ${br} 0 0 1 ${num(x + w - br)} ${num(y + hh)}` : ''}H${num(x + bl)}${bl ? `A${bl} ${bl} 0 0 1 ${num(x)} ${num(y + hh - bl)}` : ''}V${num(y + tl)}${tl ? `A${tl} ${tl} 0 0 1 ${num(x + tl)} ${num(y)}` : ''}Z`;
 }
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
-function niceTop(max) {
-  if (max <= 0) return 4;
-  for (const step of [1, 2, 5, 10, 20, 50, 100, 200, 500]) if (max / step <= 4) return Math.ceil(max / step) * step;
-  return Math.ceil(max / 1000) * 1000;
+/** Scala "pulita": passo 1/2/5/10… con al massimo 4 intervalli. */
+function niceScale(max) {
+  if (max <= 0) return { top: 4, step: 1 };
+  for (const step of [1, 2, 5, 10, 20, 50, 100, 200, 500]) if (max / step <= 4) return { top: Math.ceil(max / step) * step, step };
+  return { top: Math.ceil(max / 1000) * 1000, step: 250 };
 }
 const choreName = (c) => t('chore.' + c);
 const monthLabel = (m) => { const [y, mo] = m.split('-').map(Number); return `${t('monl.' + (mo - 1))} ${y}`; };
@@ -177,7 +178,7 @@ function dataTable(headers, rows) {
   return h('details', { class: 'chart-data' }, h('summary', null, t('stats.table')),
     h('div', { class: 'tbl-wrap' }, h('table', null, h('thead', null, h('tr', null, headers.map((x) => h('th', { scope: 'col' }, x)))), h('tbody', null, rows.map((r) => h('tr', null, r.map((c, i) => h(i === 0 ? 'th' : 'td', i === 0 ? { scope: 'row' } : null, c))))))));
 }
-const legendItem = (cls, label) => h('span', { class: 'lg' }, h('i', { class: 'sw ' + cls }), label);
+const legendItem = (cls, label) => h('span', { class: 'lgd' }, h('i', { class: 'sw ' + cls }), label);
 
 function chartsSection(ctx, st, view, out) {
   return h('section', { class: 'stats-sec', 'aria-labelledby': 'charts-h' },
@@ -219,13 +220,12 @@ function monthlyChart(st) {
   const W = 360, H = 180, L = 30, R = 6, T = 18, B = 24;
   const pw = W - L - R, ph = H - T - B;
   const totals = months.map((m) => m.done + m.skipped);
-  const top = niceTop(Math.max(0, ...totals));
+  const { top, step } = niceScale(Math.max(0, ...totals));
   const y = (v) => T + ph - (v / top) * ph;
   const slot = pw / Math.max(1, months.length);
   const bw = Math.min(24, slot * 0.62);
   const desc = months.map((m) => t('stats.chartMonth', { month: monthLabel(m.month), done: m.done, skipped: m.skipped })).join('. ');
   const svg = S('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('stats.aria.monthly', { list: desc }), 'data-chart': 'monthly' });
-  const step = top / (top >= 4 ? 4 : top);
   for (let v = 0; v <= top + 0.001; v += step) {
     svg.append(S('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), class: 'grid' }), S('text', { x: L - 6, y: y(v), dy: '.35em', 'text-anchor': 'end', class: 'ax-tick' }, Math.round(v)));
   }
@@ -273,7 +273,7 @@ function sparkChart(ctx, st, view, out) {
     list.append(h('li', { class: 'spark-row' }, avatar(p.name, col, 'sm'), h('span', { class: 'sp-name' }, p.name), svg, h('span', { class: 'sp-sum small muted' }, rows.length ? summary : t('stats.sparkNone'))));
   }
   return h('div', { class: 'card chart-card', 'data-card': 'spark' }, h('h3', { class: 'chart-title' }, t('stats.timeline')),
-    h('div', { class: 'legend' }, h('span', { class: 'lg' }, h('i', { class: 'sw dot-skip-sw' }), t('stats.skipDot'))), list,
+    h('div', { class: 'legend' }, h('span', { class: 'lgd' }, h('i', { class: 'sw dot-skip-sw' }), t('stats.skipDot'))), list,
     h('p', { class: 'small muted' }, t('stats.sparkHint', { n: rows.length })));
 }
 const fmtWeek = (s) => fmtWeekRange(s);

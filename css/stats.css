@@ -62,7 +62,7 @@ button.rank-row:active { background: var(--surface-2); }
 .chart-card { display: grid; gap: 12px; padding: 18px; }
 .chart-title { font-size: 1.0625rem; font-weight: 750; letter-spacing: -.01em; margin: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .8125rem; color: var(--text-2); font-weight: 600; }
-.lg { display: inline-flex; align-items: center; gap: 6px; }
+.lgd { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .sw.seg-floor, .seg-floor { fill: var(--c-floor); background: var(--c-floor); }
 .sw.seg-bathroom, .seg-bathroom { fill: var(--c-bathroom); background: var(--c-bathroom); }
@@ -72,11 +72,11 @@ button.rank-row:active { background: var(--surface-2); }
 .sw.dot-skip-sw { background: var(--bad); border-radius: 50%; }
 .chart-card svg.chart { width: 100%; height: auto; overflow: visible; }
 .chart-card .chart text { font-size: 11px; fill: var(--text-2); font-family: inherit; font-variant-numeric: tabular-nums; }
-.chart .ax-name { fill: var(--text); font-weight: 600; }
-.chart .ax-tick { font-size: 10px; fill: var(--text-3); }
-.chart .val-txt { fill: var(--text); font-weight: 700; }
-.chart .val-txt.sm { font-size: 10px; }
-.chart .seg-txt { fill: rgba(0, 0, 0, .78); font-weight: 700; font-size: 10px; }
+.chart-card .chart .ax-name { fill: var(--text); font-weight: 600; }
+.chart-card .chart .ax-tick { font-size: 10px; fill: var(--text-3); }
+.chart-card .chart .val-txt { fill: var(--text); font-weight: 700; }
+.chart-card .chart .val-txt.sm { font-size: 10px; }
+.chart-card .chart .seg-txt { fill: rgba(0, 0, 0, .78); font-weight: 700; font-size: 10px; }
 .chart .grid { stroke: var(--hair); stroke-width: 1; }
 .chart .dot-skip { fill: var(--bad); stroke: var(--surface); stroke-width: 2; }
 .chart .dot-end { stroke: var(--surface); stroke-width: 2; }
