@@ -380,7 +380,8 @@ const WIDGETS = { hero: widgetHero, alerts: widgetAlerts, week: widgetWeek, chec
 function openWho(ctx) {
   const today = ctx.today();
   const people = (ctx.house.roommates || []).filter((r) => r.name && (!r.to || r.to >= today));
-  ctx.sheet({ title: ctx.t('join.who'), body: (api) => h('div', { class: 'who-grid', 'data-testid': 'who-sheet' }, people.map((r) => h('button', { class: 'who', type: 'button', 'aria-pressed': String(r.id === ctx.me), 'data-person': r.id, onclick: () => { api.close(); if (r.id !== ctx.me) ctx.setMe(r.id); } }, avatar(r.name, ctx.color(r.id)), h('span', { class: 'grow hm-ell' }, r.name)))) });
+  let api = null; // (ui.sheet non permette body(api): si usa la variabile di chiusura)
+  api = ctx.sheet({ title: ctx.t('join.who'), body: h('div', { class: 'who-grid', 'data-testid': 'who-sheet' }, people.map((r) => h('button', { class: 'who', type: 'button', 'aria-pressed': String(r.id === ctx.me), 'data-person': r.id, onclick: () => { api.close(); if (r.id !== ctx.me) ctx.setMe(r.id); } }, avatar(r.name, ctx.color(r.id)), h('span', { class: 'grow hm-ell' }, r.name)))) });
 }
 function header(ctx, M) {
   const t = ctx.t;

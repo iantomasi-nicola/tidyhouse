@@ -408,8 +408,9 @@ function roommatesSection(ctx) {
   const refresh = () => {
     const issues = rmIssues(rmList(), today);
     warnBox.replaceChildren(...issues.map((k) => note(k === 'slotRange' ? 'bad' : 'warn', 'alert', t('set.roommates.' + k))));
-    const d = rmDirty(); saveBtn.disabled = !d; cancelBtn.hidden = !d;
+    const d = rmDirty(); saveBtn.disabled = !d; cancelBtn.hidden = !d; bar.hidden = !d;
   };
+  const bar = h('div', { class: 'st-savebar', 'data-testid': 'rm-bar' }, cancelBtn, saveBtn);
   const list = h('div', { class: 'stack', 'data-testid': 'rm-list' });
   const draw = () => { list.replaceChildren(...S.rm.map((r, i) => personCard(r, i))); refresh(); };
 
@@ -474,7 +475,7 @@ function roommatesSection(ctx) {
     h('p', { class: 'muted' }, t('set.roommates.hint')),
     hint, list, warnBox,
     h('div', { class: 'btn-row' }, btn(t('set.roommates.add'), () => { S.rm.push({ _k: 'n' + uid(), name: '', slot: nextSlot(), from: null, to: null, color: null }); draw(); setTimeout(() => { const el = list.querySelector(`[data-testid="rm-name-${S.rm.length - 1}"]`); if (el) el.focus(); }, 30); }, { ic: 'plus', id: 'rm-add' })),
-    h('div', { class: 'st-savebar' }, cancelBtn, saveBtn));
+    bar);
   function nextSlot() { const used = new Set(S.rm.filter((r) => !r.to || r.to >= today).map((r) => Number(r.slot))); for (let s = 1; s <= 4; s++) if (!used.has(s)) return s; return 1; }
 }
 
@@ -601,7 +602,7 @@ function notifHouse(ctx) {
   };
 
   // anteprima
-  const prev = previewNotifications(ctx).slice(0, 40);
+  const prev = previewNotifications(ctx).slice(0, 30);
   const prevRows = prev.length ? prev.map((g) => liRow({ title: t('notifType.' + g.type), desc: g.names.join(', '), end: h('span', { class: 'st-when' }, `${t('dow.' + g.dow)} ${fmtDate(g.date, ctx.lang)} · ${g.time}`) })) : [h('div', { class: 'li muted', 'data-testid': 'preview-empty' }, t('setX.sched.noPreview'))];
 
   // chiavi push

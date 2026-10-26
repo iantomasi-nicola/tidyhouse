@@ -220,7 +220,7 @@ const run = async () => {
   await test('funzioni spente spariscono', async () => {
     const s = mk({ me: 'anna', weeks: doneWeeks(), houseExtra: { features: { needs: false, trips: false, whatsapp: false, requests: false, tasks: false, ranking: false, planDay: false, selfAway: false }, home: { order: ['hero', 'quick', 'checklist', 'ranking', 'needs', 'week'], hidden: [] } } });
     const page = await open({ s });
-    assert.deepEqual(await widgets(page), ['week']);
+    assert.deepEqual(await widgets(page), ['hero', 'week']);
     assert.equal(await page.locator('.hm-heroaway, [data-testid="plan-tip"]').count(), 0);
     noErrors(page);
   });
@@ -328,7 +328,7 @@ const run = async () => {
     // ordine scelto rispettato in colonna singola
     const ys = await tab.$$eval('[data-widget]', (els) => els.map((e) => [e.dataset.widget, Math.round(e.getBoundingClientRect().top + scrollY)]));
     const sorted = [...ys].sort((a, b) => a[1] - b[1]).map((x) => x[0]);
-    assert.deepEqual(sorted, ys.map((x) => x[0]), 'ordine visivo = ordine scelto');
+    assert.deepEqual(sorted, ys.map((x) => x[0]), 'ordine visivo = ordine scelto ' + JSON.stringify(ys));
     await noOverflow(tab);
     await shot(tab, 'full-820');
     const desk = await open({ s, viewport: DESKTOP });

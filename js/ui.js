@@ -110,8 +110,6 @@ let sheetStack = [];
 export function sheet({ title, body, full = false, onClose, actions } = {}) {
   const scrim = h('div', { class: 'scrim' });
   const bodyEl = h('div', { class: 'body' });
-  const content = typeof body === 'function' ? body(api) : body;
-  add(bodyEl, [content]);
   const head = h('header', null, h('h2', null, title || ''), h('button', { class: 'icon-btn', 'aria-label': t('close'), onclick: () => api.close() }, icon('x')));
   const el = h('div', { class: 'sheet' + (full ? ' full' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title || '' }, h('div', { class: 'grab' }), head, bodyEl);
   const wrap = h('div', { style: { position: 'absolute', inset: 0, pointerEvents: 'none' } }, scrim, el);
@@ -134,6 +132,7 @@ export function sheet({ title, body, full = false, onClose, actions } = {}) {
     },
   };
   sheetStack.push(api);
+  add(bodyEl, [typeof body === 'function' ? body(api) : body]);
   return api;
 }
 export const closeAllSheets = () => [...sheetStack].forEach((s) => s.close());
