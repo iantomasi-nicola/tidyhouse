@@ -25,8 +25,8 @@ const README = 'https://github.com/iantomasi-nicola/tidyhouse#readme';
 // Stato effimero (sopravvive ai rerender; si azzera cambiando sezione)
 // ============================================================================
 let curSub = null;
-const S = { rm: null, rmBase: '', rmColor: null, fresh: null, rot: null, homeBusy: false };
-function resetDrafts() { S.rm = null; S.rmBase = ''; S.rmColor = null; S.fresh = null; S.rot = null; }
+const S = { rm: null, rmBase: '', rmColor: null, fresh: null, rot: null, homeBusy: false, open: {} };
+function resetDrafts() { S.rm = null; S.rmBase = ''; S.rmColor = null; S.fresh = null; S.rot = null; S.open = {}; }
 
 // ============================================================================
 // Helper UI
@@ -84,6 +84,17 @@ const btn = (label, onclick, { cls = 'soft', ic, id, disabled, type = 'button' }
 const chip = (label, kind = '', ic) => h('span', { class: 'chip ' + kind }, ic ? icon(ic) : null, label);
 const mono = (text, id) => h('div', { class: 'st-mono', 'data-testid': id, tabindex: 0 }, text);
 const sectionTitle = (text) => h('div', { class: 'eyebrow' }, text);
+/**
+ * Sezione richiudibile (<details>). `open` è lo stato iniziale; se l'utente la apre/chiude lo ricordiamo
+ * tra un rerender e l'altro (S.open), finché non cambia sezione.
+ */
+function fold(key, title, kids, { open = false, id, sub } = {}) {
+  const d = h('details', { class: 'st-fold', 'data-testid': id || 'fold-' + key, open: key in S.open ? S.open[key] : open },
+    h('summary', null, h('div', { class: 'grow' }, h('div', { class: 't' }, title), sub ? h('div', { class: 'st-fold-sub' }, sub) : null), icon('chevron')),
+    h('div', { class: 'st-fold-body' }, kids));
+  d.querySelector('summary').addEventListener('click', () => setTimeout(() => { S.open[key] = d.open; }));
+  return d;
+}
 
 /** Tempo relativo localizzato ("2 ore fa"). */
 function rel(ctx, iso) {
@@ -271,6 +282,14 @@ function homeEditor(ctx) {
 // NOTIFICATIONS (personali)
 // ============================================================================
 const NT_FEATURE = { friAbsence: 'trips', planDay: 'planDay', requests: 'requests', needs: 'needs' };
+/** Le dieci notifiche personali raggruppate in cinque righe (le chiavi sono quelle di NOTIF_TYPES). */
+const NT_GROUPS = [
+  { k: 'shifts', keys: ['satDuty', 'sunMark', 'late', 'planDay', 'monNew'] },
+  { k: 'absence', keys: ['friAbsence'] },
+  { k: 'requests', keys: ['requests', 'nudges'] },
+  { k: 'needs', keys: ['needs'] },
+  { k: 'admin', keys: ['adminDigest'], admin: true },
+];
 /** Admin: prova dal server a tutti i coinquilini con notifiche attive. */
 function testAllBlock(ctx) {
   const n = new Set(Object.values(ctx.state.members || {}).filter((m) => m && m.personId && m.push && m.push.endpoint).map((m) => m.personId)).size;
@@ -295,47 +314,56 @@ function notifications(ctx) {
   };
   const buttons = [];
   if (s === 'off') buttons.push(btn(t('set.notif.enable'), () => run(push.enable, t('push.enabled')), { cls: '', ic: 'bell', id: 'push-enable' }));
-  // le prove (e la diagnosi) restano sempre disponibili finché le notifiche sono attive su questo dispositivo
   const active = s === 'on';
-  if (active) buttons.push(btn(t('set.notif.test'), () => run(push.localTest, t('set.notif.testSent')), { cls: 'tonal', ic: 'bell', id: 'push-test' }),
-    btn(t('setX.notif.testServer'), async () => { try { await ctx.store.setDoc('requests', 'test' + Date.now().toString(36), { kind: 'test', to: ctx.me, device: ctx.deviceId, status: 'info', at: new Date().toISOString() }); ctx.toast(t('setX.notif.testServerSent'), 6000); } catch { ctx.toast(t('error')); } }, { cls: 'soft', ic: 'refresh', id: 'push-test-server' }), btn(t('set.notif.disable'), () => run(push.disable, t('push.disabled')), { cls: 'soft', ic: 'bellOff', id: 'push-disable' }));
+  // stato di registrazione sul server: se il dispositivo risulta «attivo» ma non registrato, la diagnostica si apre da sola
+  const mine = (ctx.state.members || {})[ctx.deviceId] || {};
+  const reg = !!(mine.push && mine.push.endpoint);
   sbox.append(
     h('div', { class: 'row' }, h('div', { class: 'ico ' + (s === 'on' ? 'g' : s === 'denied' ? 'r' : '') }, icon(s === 'on' ? 'bell' : 'bellOff')),
       h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 650 }, 'data-testid': 'push-state', 'data-state': s }, statusText))),
-    buttons.length ? h('div', { class: 'btn-row' }, buttons) : null);
+    ...(buttons.length ? [h('div', { class: 'btn-row' }, buttons)] : []));
+  // diagnostica e prove (richiudibile): le prove restano disponibili finché le notifiche sono attive su questo dispositivo
+  const diagKids = [];
   if (active) {
     // diagnosi «attive ma non arrivano»: il server invia solo ai dispositivi con la sottoscrizione salvata nel cloud
-    const mine = (ctx.state.members || {})[ctx.deviceId] || {};
-    const reg = !!(mine.push && mine.push.endpoint);
     let host = ''; try { host = reg ? new URL(mine.push.endpoint).host : ''; } catch { /* ignore */ }
     const srun = ctx.house.serverRun; const stale = !srun || ctx.now().getTime() - new Date(srun).getTime() > 3 * 3600000;
     const pending = Object.values(ctx.state.requests || {}).filter((q) => q.kind === 'test' && q.device === ctx.deviceId && !q.notified).length;
     const dg = (ok, title, desc, id) => h('div', { class: 'row', 'data-testid': id, 'data-ok': ok ? '1' : '0' }, h('div', { class: 'ico ' + (ok ? 'g' : 'o') }, icon(ok ? 'check' : 'alert')), h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 600 } }, title), desc ? h('div', { class: 'small muted' }, desc) : null));
-    sbox.append(h('div', { class: 'stack tight', 'data-testid': 'push-diag' },
+    diagKids.push(h('div', { class: 'stack tight', 'data-testid': 'push-diag' },
       dg(reg, reg ? t('setX.notif.diag.saved') : t('setX.notif.diag.notSaved'), reg ? host : t('setX.notif.diag.notSavedHint'), 'diag-saved'),
       dg(!stale, srun ? t('sched.lastRun', { when: rel(ctx, srun) }) : t('sched.noRun'), stale ? t('setX.notif.diag.serverHint') : null, 'diag-server'),
       pending ? dg(true, t('setX.notif.diag.pending'), t('setX.notif.diag.pendingHint'), 'diag-pending') : null,
       btn(t('setX.notif.diag.repair'), () => run(push.enable, t('push.enabled')), { cls: 'soft sm', ic: 'refresh', id: 'push-repair' })));
+    diagKids.push(h('div', { class: 'btn-row' },
+      btn(t('set.notif.test'), () => run(push.localTest, t('set.notif.testSent')), { cls: 'tonal', ic: 'bell', id: 'push-test' }),
+      btn(t('setX.notif.testServer'), async () => { try { await ctx.store.setDoc('requests', 'test' + Date.now().toString(36), { kind: 'test', to: ctx.me, device: ctx.deviceId, status: 'info', at: new Date().toISOString() }); ctx.toast(t('setX.notif.testServerSent'), 6000); } catch { ctx.toast(t('error')); } }, { cls: 'soft', ic: 'refresh', id: 'push-test-server' }),
+      btn(t('set.notif.disable'), () => run(push.disable, t('push.disabled')), { cls: 'soft', ic: 'bellOff', id: 'push-disable' })));
   }
+  if (ctx.isAdmin) diagKids.push(testAllBlock(ctx));
   if (s === 'ios-install') sbox.append(h('ol', { class: 'st-steps' }, ['guide.ios1', 'guide.ios2', 'guide.ios3', 'guide.ios4'].map((k) => h('li', null, t(k)))));
-  if (s === 'denied') sbox.append(h('p', { class: 'small muted' }, t('setX.notif.deniedHelp')));
+  if (s === 'denied') sbox.append(h('ol', { class: 'st-steps', 'data-testid': 'push-denied-steps' }, push.deniedSteps().map((k) => h('li', null, t(k)))),
+    btn(t('push.gate.recheck'), () => ctx.rerender(), { cls: 'soft sm', ic: 'refresh', id: 'push-recheck' }));
 
   const m = (ctx.state.members || {})[ctx.deviceId] || {}; const mp = m.prefs || {}; const pp = ctx.prefs.notif || {};
   const cfg = notifCfg(ctx.house);
   const val = (k) => (k in mp ? mp[k] : k in pp ? pp[k] : true) !== false;
   const offBy = (k) => cfg.enabled === false || (cfg[k] && cfg[k].on === false) || (NT_FEATURE[k] && !ctx.feature(NT_FEATURE[k]));
-  const types = NOTIF_TYPES.filter((k) => k !== 'adminDigest' || ctx.isAdmin);
-  const rows = types.map((k) => {
-    const hasDesc = ['friAbsence', 'satDuty', 'sunMark', 'late', 'monNew', 'planDay', 'adminDigest'].includes(k);
-    const desc = hasDesc ? t('notifType.' + k + '.desc', { n: cfg.late.max }) : t('setX.nt.' + k + '.desc');
-    return switchRow({ title: t('notifType.' + k), desc: offBy(k) ? h('span', null, desc, ' ', chip(t('setX.notif.offByAdmin'), 'warn')) : desc, checked: val(k), id: 'nt-' + k,
-      onchange: (v) => save(ctx, async () => { ctx.savePrefs({ notif: { ...(ctx.prefs.notif || {}), [k]: v } }); await ctx.actions.touchMember({ prefs: { [k]: v } }); }) });
+  // poche righe invece di dieci: l'interruttore di un gruppo scrive le preferenze di tutte le sue chiavi
+  const rows = NT_GROUPS.filter((g) => !g.admin || ctx.isAdmin).map((g) => {
+    const desc = t('setX.ntg.' + g.k + '.desc');
+    return switchRow({ title: t('setX.ntg.' + g.k), desc: g.keys.every(offBy) ? h('span', null, desc, ' ', chip(t('setX.notif.offByAdmin'), 'warn')) : desc,
+      checked: g.keys.every(val), id: 'nt-group-' + g.k,   // acceso se nessuna chiave del gruppo è spenta
+      onchange: (v) => save(ctx, async () => {
+        const p = Object.fromEntries(g.keys.map((k) => [k, v]));
+        ctx.savePrefs({ notif: { ...(ctx.prefs.notif || {}), ...p } }); await ctx.actions.touchMember({ prefs: p });
+      }) });
   });
   return h('div', { class: 'stack' },
     card(sbox),
     cfg.enabled === false ? note('warn', 'alert', t('setX.notif.masterOff')) : null,
     group(t('set.notif.mine'), rows, t('setX.notif.foot')),
-    ctx.isAdmin ? testAllBlock(ctx) : null,
+    diagKids.length ? fold('diag', t('setX.notif.diagTitle'), diagKids, { open: active && !reg, id: 'nt-diag', sub: active && !reg ? t('setX.notif.diag.notSaved') : null }) : null,
     ctx.isAdmin ? group(null, [liRow({ ic: 'clock', tone: 'r', title: t('sched.title'), desc: t('sched.hint').split('.')[0] + '.', href: '#/settings/notif-house' })]) : null);
 }
 
@@ -619,7 +647,6 @@ function kickBlock(ctx) {
   const tok = h('input', { class: 'input', type: 'password', autocomplete: 'off', spellcheck: 'false', placeholder: 'github_pat_…', 'aria-label': t('setX.kick.token'), 'data-testid': 'kick-token' });
   const status = h('div', { class: 'small', 'aria-live': 'polite', 'data-testid': 'kick-status' });
   return h('div', { class: 'stack tight', 'data-testid': 'kick' },
-    sectionTitle(t('setX.kick.title')),
     card(
       h('div', { class: 'row' }, h('div', { class: 'ico ' + (on ? 'g' : 'o') }, icon('bell')), h('div', { class: 'grow' }, h('div', { class: 't', style: { fontWeight: 650 }, 'data-testid': 'kick-state', 'data-on': on ? '1' : '0' }, on ? t('setX.kick.on') : t('setX.kick.off')), h('div', { class: 'small muted' }, on ? t('setX.kick.onHint') : t('setX.kick.offHint')))),
       on ? null : h('ol', { class: 'st-steps small' }, ['setX.kick.s1', 'setX.kick.s2', 'setX.kick.s3', 'setX.kick.s4'].map((k) => h('li', null, t(k, { repo: repo || 'utente/repo' })))),
@@ -637,6 +664,30 @@ function kickBlock(ctx) {
         btn(t('setX.kick.remove'), () => setHouse(ctx, { kick: null }), { cls: 'soft', ic: 'trash', id: 'kick-remove' })) : null,
       status,
       foot(t('setX.kick.foot'))));
+}
+/** Chiave pubblica VAPID valida (65 byte non compressi, base64url senza padding = 87 caratteri) oppure null. */
+export function validVapidPublic(v) {
+  const s = String(v || '').trim().replace(/=+$/, '');
+  if (!/^[A-Za-z0-9_-]{87}$/.test(s)) return null;
+  try { const u = push.b64uToU8(s); return u.length === 65 && u[0] === 4 ? s : null; } catch { return null; }
+}
+/** Usa una chiave pubblica già esistente (stesso server notifiche per più case dello stesso progetto Firebase). */
+function useKeyForm(ctx) {
+  const hs = ctx.house;
+  const input = h('input', { class: 'input', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: t('setX.sched.useKeyPh'), 'aria-label': t('setX.sched.useKey'), 'data-testid': 'vapid-existing' });
+  const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', 'data-testid': 'vapid-existing-err' });
+  return h('form', { class: 'stack tight', 'data-testid': 'vapid-use', onsubmit: async (e) => {
+    e.preventDefault(); err.textContent = '';
+    const v = validVapidPublic(input.value);
+    if (!v) { err.textContent = t('setX.sched.keyInvalid'); return; }
+    if (v === hs.vapidPublic) { input.value = ''; return; }
+    if (hs.vapidPublic && !(await confirmDialog({ title: t('setX.sched.useKey'), text: t('setX.sched.useKeyWarn'), ok: t('setX.sched.useKeySave'), danger: true }))) return;
+    S.open.keys = true;   // la sezione resta aperta dopo il salvataggio
+    if (await setHouse(ctx, { vapidPublic: v }, t('setX.sched.keyUsed'))) { S.fresh = null; input.value = ''; }
+  } },
+  h('div', { class: 'lbl' }, t('setX.sched.useKey')),
+  h('p', { class: 'small muted' }, t('setX.sched.useKeyHelp'), ' ', t('setX.sched.useKeyHelp2')),
+  input, err, btn(t('setX.sched.useKeySave'), null, { cls: 'soft', type: 'submit', id: 'vapid-existing-save' }));
 }
 function notifHouse(ctx) {
   const hs = ctx.house; const cfg = notifCfg(hs);
@@ -684,7 +735,9 @@ function notifHouse(ctx) {
     btn(t('sched.pushKeys.generate'), async () => {
       if (hs.vapidPublic && !(await confirmDialog({ title: t('sched.pushKeys.generate'), text: t('setX.sched.regenWarn'), ok: t('sched.pushKeys.generate'), danger: true }))) return;
       try { const k = await push.generateVapid(); await ctx.actions.setHouse({ vapidPublic: k.publicKey }); S.fresh = k; saved(ctx, t('sched.pushKeys.ready')); ctx.rerender(); } catch (e) { fail(ctx, e); }
-    }, { ic: 'refresh', id: 'vapid-generate', cls: hs.vapidPublic ? 'soft' : '' }));
+    }, { ic: 'refresh', id: 'vapid-generate', cls: hs.vapidPublic ? 'soft' : '' }),
+    hs.vapidPublic ? h('p', { class: 'small muted', 'data-testid': 'vapid-gen-have' }, t('setX.sched.genHave')) : null,
+    useKeyForm(ctx));
 
   const run = hs.serverRun;
   const stale = run && ctx.now().getTime() - new Date(run).getTime() > 3 * 3600000;
@@ -703,10 +756,11 @@ function notifHouse(ctx) {
     group(null, [switchRow({ ic: 'bell', tone: 'r', title: t('sched.master'), checked: cfg.enabled !== false, id: 'sw-notif-master', onchange: (v) => patch('enabled', v) })]),
     SCHEDULED.map(typeCard),
     group(null, [stepRow({ title: t('sched.catchUp'), desc: t('setX.sched.catchUpHint'), value: Number(cfg.catchUpHours) || 5, min: 1, max: 12, id: 'step-catchUp', fmt: (v) => v + ' h', onchange: (v) => setHouse(ctx, { notif: { catchUpHours: v } }) })]),
-    h('div', { class: 'stack tight' }, sectionTitle(t('sched.preview')), h('div', { class: 'list', 'data-testid': 'preview' }, prevRows), foot(t('setX.sched.previewNote'))),
-    h('div', { class: 'stack tight' }, sectionTitle(t('sched.pushKeys')), keyBlock),
-    kickBlock(ctx),
-    h('div', { class: 'stack tight' }, sectionTitle(t('setX.sched.server')), serverBlock));
+    // sezioni di contorno richiudibili; le chiavi si aprono da sole finché mancano
+    fold('preview', t('sched.preview'), [h('div', { class: 'list', 'data-testid': 'preview' }, prevRows), foot(t('setX.sched.previewNote'))], { id: 'fold-preview' }),
+    fold('keys', t('sched.pushKeys'), [keyBlock], { id: 'fold-keys', open: !hs.vapidPublic || !!S.fresh, sub: hs.vapidPublic ? t('setX.sched.keyState.ready') : t('setX.sched.keyState.missing') }),
+    fold('kick', t('setX.kick.title'), [kickBlock(ctx)], { id: 'fold-kick', sub: hasKick(hs) ? t('setX.kick.on') : t('setX.kick.off') }),
+    fold('server', t('setX.sched.server'), [serverBlock], { id: 'fold-server', sub: hs.serverRun ? t('sched.lastRun', { when: rel(ctx, hs.serverRun) }) : t('sched.noRun') }));
 }
 
 // ============================================================================
