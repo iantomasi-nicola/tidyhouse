@@ -305,6 +305,18 @@ await scenario('hub: la scheda con il mio nome apre il profilo (cambio «chi sei
   await done(p);
 });
 
+await scenario('tastiera: i campi di testo delle impostazioni hanno enterkeyhint e maiuscole giuste', async () => {
+  const p = await open({ seed: S() });
+  for (const r of ['house', 'links', 'roommates', 'profile']) {
+    await goto(p, '/settings/' + r);
+    const bad = await p.evaluate(() => [...document.querySelectorAll('#app input.input[type=text], #app input.input[type=url], #app input.input:not([type])')].filter((i) => !i.getAttribute('enterkeyhint')).map((i) => i.getAttribute('data-testid') || i.getAttribute('aria-label')));
+    assert.deepEqual(bad, [], r + ': campi senza enterkeyhint');
+  }
+  await goto(p, '/settings/roommates');
+  assert.equal(await p.locator(tid('rm-name-0')).getAttribute('autocapitalize'), 'words');
+  await done(p);
+});
+
 // ============================================================ chiusura
 console.log(`\n${ran - failed}/${ran} scenari ok`);
 await env.close();

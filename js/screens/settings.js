@@ -80,7 +80,7 @@ function stepRow({ title, desc, value, min, max, step = 1, fmt, onchange, id }) 
     stepper(value, { min, max, step, fmt, onchange }));
 }
 function textRow({ title, desc, value, placeholder, onchange, type = 'text', id, inputmode, autocomplete = 'off', maxlength }) {
-  const inp = h('input', { class: 'input', type, value: value ?? '', placeholder, 'data-testid': id, inputmode, autocomplete, autocapitalize: type === 'text' ? 'sentences' : 'off', spellcheck: 'false', maxlength, 'aria-label': title });
+  const inp = h('input', { class: 'input', type, value: value ?? '', placeholder, 'data-testid': id, inputmode, autocomplete, autocapitalize: type === 'text' ? 'sentences' : 'off', spellcheck: 'false', enterkeyhint: 'done', maxlength, 'aria-label': title });
   inp.addEventListener('change', () => onchange(inp.value, inp));
   return h('label', { class: 'li st-text' }, h('div', { class: 'grow' }, h('div', { class: 't' }, title), desc ? h('div', { class: 'd' }, desc) : null), inp);
 }
@@ -546,7 +546,7 @@ function roommatesSection(ctx) {
   function personCard(r, i) {
     const [st, kind] = statusOf(r);
     const color = r.color || PALETTE[i % PALETTE.length];
-    const name = h('input', { class: 'input', value: r.name || '', placeholder: t('set.roommates.name'), 'aria-label': t('set.roommates.name'), 'data-testid': 'rm-name-' + i, maxlength: 30, autocomplete: 'off' });
+    const name = h('input', { class: 'input', value: r.name || '', placeholder: t('set.roommates.name'), 'aria-label': t('set.roommates.name'), 'data-testid': 'rm-name-' + i, maxlength: 30, autocomplete: 'off', autocapitalize: 'words', enterkeyhint: 'done' });
     name.addEventListener('input', () => { r.name = name.value; refresh(); });
     const dateIn = (key, label, testid) => { const el = h('input', { class: 'input', type: 'date', value: r[key] || '', 'aria-label': label, 'data-testid': testid }); el.addEventListener('change', () => { r[key] = el.value || null; if (key === 'to' && r.to) r.expectedTo = null; draw(); }); return h('label', { class: 'field' }, h('span', { class: 'lbl' }, label), el); };
     const pal = S.rmColor === r._k ? h('div', { class: 'swatches st-pal' }, PALETTE.map((c) => h('button', { type: 'button', style: { background: c }, 'aria-label': c, 'aria-pressed': String(c === r.color), onclick: () => { r.color = c; S.rmColor = null; draw(); } })),
@@ -651,7 +651,7 @@ function linksSection(ctx) {
     h('div', { class: 'st-custom-head' },
       h('input', { class: 'input', value: c.label || '', placeholder: t('set.linkLabel'), 'aria-label': t('set.linkLabel'), 'data-testid': 'custom-label-' + i, maxlength: 30, onchange: (e) => { const arr = custom.map((x) => ({ ...x })); arr[i].label = e.target.value.trim().slice(0, 30); setCustom(arr); } }),
       h('button', { class: 'icon-btn st-del', type: 'button', 'aria-label': t('delete'), 'data-testid': 'custom-del-' + i, onclick: () => { setCustom(custom.filter((_, j) => j !== i)); } }, icon('trash'))),
-    h('input', { class: 'input', type: 'url', inputmode: 'url', value: c.url || '', placeholder: 'https://', 'aria-label': t('set.linkUrl'), 'data-testid': 'custom-url-' + i, onchange: (e) => { const u = normUrl(e.target.value); if (!u) { ctx.toast(t('setX.links.https')); e.target.value = c.url || ''; return; } const arr = custom.map((x) => ({ ...x })); arr[i].url = u; setCustom(arr); } }),
+    h('input', { class: 'input', type: 'url', inputmode: 'url', value: c.url || '', placeholder: 'https://', enterkeyhint: 'done', autocapitalize: 'off', 'aria-label': t('set.linkUrl'), 'data-testid': 'custom-url-' + i, onchange: (e) => { const u = normUrl(e.target.value); if (!u) { ctx.toast(t('setX.links.https')); e.target.value = c.url || ''; return; } const arr = custom.map((x) => ({ ...x })); arr[i].url = u; setCustom(arr); } }),
     switchRow({ title: t('set.showOnHome'), checked: c.show !== false, id: 'custom-show-' + i, onchange: (v) => { const arr = custom.map((x) => ({ ...x })); arr[i].show = v; setCustom(arr); } })));
   const addSheet = () => {
     const lab = h('input', { class: 'input', placeholder: t('set.linkLabel'), 'aria-label': t('set.linkLabel'), maxlength: 30, 'data-testid': 'add-label' });
