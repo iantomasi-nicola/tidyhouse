@@ -7,6 +7,7 @@ import { CHORES, addDays } from './engine.js';
 import { weekDays, planOf, delayOf, checklistOwners, swapPatch, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
+import { openAssignWeekSheet } from './weekassign.js';
 
 registerStrings(it, en);
 registerStrings(itFlow, enFlow);
@@ -641,6 +642,9 @@ export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
     return h('div', { class: 'wd-item' }, rowEl,
       canAssign ? h('div', { class: 'wd-assign' }, h('button', { type: 'button', class: 'btn tonal sm', 'data-assign': chore, onclick: () => openAssignSheet(ctx, sunday, chore) }, icon('users'), ctx.t('flow.assignBtn'))) : null);
   })));
+
+  // assegnazione manuale della settimana (solo admin; vedi js/weekassign.js)
+  if (ctx.isAdmin && row.npres > 0) out.push(h('div', { class: 'list wd-assignweek' }, actRow('users', '', ctx.t('assign.btn'), ctx.t('assign.btnHint'), { 'data-act': 'assign-week' }, () => openAssignWeekSheet(ctx, sunday))));
 
   // riposo
   if (row.rest.length) out.push(h('div', { class: 'wd-rest' }, h('div', { class: 'tile rest' }, icon('moon')), h('div', { class: 'grow' }, h('div', { class: 'lbl' }, ctx.t('cal.rest')), h('div', { class: 'wd-names' }, row.rest.map((id) => h('span', { class: 'wd-name' }, person(ctx, id, 'sm'), ctx.name(id)))))));
