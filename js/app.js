@@ -622,7 +622,7 @@ async function registerSW() {
     const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
     if (!reg) return;   // service worker non disponibile (bloccato o non supportato)
     // nuova versione pronta: NON si applica da sola; il tasto nella Home diventa "Aggiorna" (colore accento) e un toast lo propone
-    const offer = (w) => { if (!w) return; S.waitingSW = w; ctx.markUpdateReady(); toast(t('update.available'), 8000, { action: { label: t('update.apply'), onClick: () => ctx.applyUpdate() } }); };
+    const offer = (w) => { if (!w) return; S.waitingSW = w; ctx.markUpdateReady(); toast(t('update.available'), 8000, { low: true, action: { label: t('update.apply'), onClick: () => ctx.applyUpdate() } }); };
     const check = () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); };
     setInterval(check, 10 * 60 * 1000); document.addEventListener('visibilitychange', check);
     if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);

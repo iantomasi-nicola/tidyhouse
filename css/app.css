@@ -262,7 +262,7 @@ select.input { background-image: linear-gradient(45deg, transparent 50%, var(--t
 @media (min-width: 700px) { .sheet { bottom: auto; top: 50%; border-radius: 32px; transform: translate(-50%, -46%) scale(.96); opacity: 0; transition: transform .35s var(--ease), opacity .25s; max-height: 86dvh; } .sheet.on { transform: translate(-50%, -50%); opacity: 1; } .sheet .grab { display: none; } }
 .toasts { position: absolute; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b) + 28px); display: grid; justify-items: center; gap: 8px; pointer-events: none; }
 @media (min-width: 900px) { .toasts { bottom: 28px; } }
-.toast { background: color-mix(in srgb, var(--text) 92%, transparent); color: var(--bg); padding: 12px 18px; border-radius: 999px; font-weight: 600; font-size: .9375rem; box-shadow: var(--shadow-2); animation: toast-in .4s var(--spring); max-width: 90vw; display: flex; gap: 10px; align-items: center; pointer-events: auto; }
+.toast { background: var(--text); color: var(--bg); padding: 12px 18px; border-radius: 999px; font-weight: 600; font-size: .9375rem; box-shadow: var(--shadow-2); animation: toast-in .4s var(--spring); max-width: 90vw; display: flex; gap: 10px; align-items: center; pointer-events: auto; }
 .toast.out { animation: toast-out .25s forwards; }
 @keyframes toast-in { from { transform: translateY(20px) scale(.9); opacity: 0; } }
 @keyframes toast-out { to { transform: translateY(10px) scale(.95); opacity: 0; } }
@@ -341,5 +341,14 @@ button.chip::after, a.chip::after, .chip-btn::after { content: ""; position: abs
 .eyebrow a::after, .eyebrow button::after { content: ""; position: absolute; inset: -13px -6px; }
 .sticky-actions { position: sticky; bottom: calc(var(--nav-h) + var(--safe-b) + 24px); }
 
-.toast-action { margin-left: 6px; padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: .875rem; color: color-mix(in srgb, var(--accent) 70%, var(--bg)); background: color-mix(in srgb, var(--bg) 14%, transparent); }
-.toast-action:active { transform: scale(.95); }
+/* «Annulla»: il toast è "inverso" (scuro nel tema chiaro, chiaro nello scuro). Il colore dell'azione deriva dall'accento ma è schiarito (tema chiaro) o scurito (tema scuro)
+   in misura fissa, così il contrasto resta >= 4,5:1 con qualsiasi accento, bianco e nero compresi. Sfondo trasparente: il contrasto è quello col toast. */
+:root { --toast-act: color-mix(in srgb, var(--accent) 35%, #fff); }
+:root[data-theme="dark"] { --toast-act: color-mix(in srgb, var(--accent) 40%, #000); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --toast-act: color-mix(in srgb, var(--accent) 40%, #000); } }
+.toast:has(.toast-action) { padding-block: 6px; padding-right: 8px; }
+.toast-action { position: relative; margin-left: 6px; padding: 0 14px; min-height: 36px; border-radius: 999px; font-weight: 700; font-size: .9375rem; color: var(--toast-act); background: transparent; }
+.toast-action::after { content: ""; position: absolute; inset: -4px -2px; }   /* area di tocco >= 44px */
+.toast-action:hover { background: color-mix(in srgb, var(--toast-act) 14%, transparent); }
+.toast-action:active { transform: scale(.95); background: color-mix(in srgb, var(--toast-act) 22%, transparent); }
+.toast-action:focus-visible { outline-color: var(--toast-act); }
