@@ -207,3 +207,12 @@ button.mx-chip::after { inset: 0; }
 .mx-conseqlist { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; color: var(--text); font-size: .875rem; }
 .mx-terms { height: 22px; font-size: .6875rem; }
 .mx-req .mx-termsbox { flex-basis: 100%; }
+
+/* spiegazione «Come funziona» nella pagina Regole */
+.mx-howto { padding: 0; overflow: hidden; }
+.mx-howto > summary { display: flex; align-items: center; gap: 12px; padding: 16px 18px; min-height: 60px; cursor: pointer; list-style: none; }
+.mx-howto > summary::-webkit-details-marker { display: none; }
+.mx-howto > summary .ico { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; background: var(--tonal); color: var(--accent-ink); flex: none; }
+.mx-howto > summary > svg.i { width: 18px; height: 18px; color: var(--text-3); transition: transform .2s var(--ease); }
+.mx-howto[open] > summary > svg.i { transform: rotate(90deg); }
+.mx-howto > .stack { padding: 0 18px 18px; gap: 14px; }

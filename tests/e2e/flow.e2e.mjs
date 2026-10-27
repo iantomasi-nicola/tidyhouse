@@ -294,6 +294,7 @@ const run = async () => {
     await openChore(p2, 'bathroom');
     await top(p2).locator('[data-act=ask]').click();
     await p2.waitForSelector('#layer .sheet [data-act=ask-send]');
+    await p2.waitForTimeout(450);                              // la guardia anti doppio tocco ignora due click vicini entro 350 ms
     await top(p2).locator('[data-act=ask-send]').click();     // "Chiunque" è la scelta predefinita
     await p2.waitForSelector('#layer .sheet [data-testid=cover-req]');
     assert.match(await top(p2).locator('[data-testid=cover-req]').innerText(), /chiunque/);

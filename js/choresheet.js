@@ -4,12 +4,14 @@
 import { h, icon, avatar, toggle, seg, copyText, download, confetti, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 import { CHORES, addDays } from './engine.js';
-import { weekDays, planOf, delayOf, checklistOwners, swapPatch, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
+import { weekDays, planOf, delayOf, checklistOwners, swapPatch, autoSub, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
+import { it as itCant, en as enCant } from './strings/cantdo.js';
 
 registerStrings(it, en);
 registerStrings(itFlow, enFlow);
+registerStrings(itCant, enCant);
 loadCss('css/calendar.css');
 
 export const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -375,6 +377,24 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
               : t('cal.swapCover', { a: aName, c1: t('chore.' + chore), b: ctx.name(e.id) }))),
           icon('chevron')))) : h('div', { class: 'empty' }, t('req.noChores')));
     }
+    if (st.view === 'cantdo') {
+      const sub = autoSub(row, c);
+      const lower = t('chore.' + chore).toLowerCase();
+      return h('div', { class: 'stack' },
+        back(ctx, () => go('main')),
+        h('div', { class: 'cs-title' }, t('cantdo.title')),
+        sub ? h('div', { class: 'note ok', 'data-testid': 'cantdo-sub' }, icon('users'), t('cantdo.text', { name: ctx.name(sub), chore: lower })) : h('div', { class: 'note warn', 'data-testid': 'cantdo-none' }, icon('alert'), t('cantdo.nosub')),
+        sub ? h('p', { class: 'muted small' }, t('cantdo.recover')) : null,
+        sub ? h('button', { type: 'button', class: 'btn lg block', 'data-act': 'cantdo-confirm', onclick: async () => {
+          let who = null;
+          try { who = await A.autoCover(sunday, chore); } catch (e) { ctx.toast(e && e.message === 'permission' ? t('err.permission') : e && e.message === 'nosub' ? t('cantdo.nosub') : t('error')); return; }
+          ctx.haptic(ctx.prefs.haptics, 10);
+          ctx.toast(t('cantdo.done', { name: ctx.name(who), chore: lower }), 7000, { action: { label: t('cantdo.undo'), onClick: () => run(ctx, () => A.clearAgreed(sunday, chore), t('cantdo.undone')) } });
+          sh.close();
+        } }, icon('users'), t('cantdo.confirm', { name: ctx.name(sub) })) : null,
+        ctx.feature('requests') ? h('button', { type: 'button', class: 'btn soft block', 'data-act': 'cantdo-ask', onclick: () => go('ask') }, icon('swap'), t('cantdo.ask')) : null,
+        h('a', { class: 'btn ghost block', href: '#/rules', 'data-act': 'cantdo-how', onclick: () => { try { sessionStorage.setItem('cp:howto', '1'); } catch { /* ignore */ } } /* il cambio di pagina chiude lo sheet da solo */ }, icon('book'), t('cantdo.how')));
+    }
     if (st.view === 'ask') {
       const ids = present(row).filter((id) => id !== assigned);
       const sug = row.subs[c];
@@ -541,7 +561,9 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
     const delayNow = delayOf(houseW(ctx), sunday, chore);
     if (assigned && assigned === me && !res.kind) {
       const rows = [];
-      if (ctx.feature('requests')) rows.push(actRow('users', '', t('flow.askBtn'), t('flow.askHint'), { 'data-act': 'ask' }, () => go('ask')));
+      if (agreed && agreed !== me) rows.push(actRow('users', 'g', t('cantdo.already', { name: ctx.name(agreed) }), null, { 'data-act': 'cantdo-clear' }, () => run(ctx, () => A.clearAgreed(sunday, chore), t('cantdo.undone'))));
+      else if (!row.closed) rows.push(actRow('users', 'o', t('cantdo.btn'), t('cantdo.hint'), { 'data-act': 'cantdo' }, () => go('cantdo')));
+      if (ctx.feature('requests') && !(agreed && agreed !== me)) rows.push(actRow('swap', '', t('flow.askBtn'), t('flow.askHint'), { 'data-act': 'ask' }, () => go('ask')));
       rows.push(actRow('clock', 'o', delayNow ? t('flow.delayUntil', { date: fmtDate(delayNow, ctx.lang) }) : t('flow.delayBtn'), delayNow ? t('flow.delayBtn') : t('flow.delayHint'), { 'data-act': 'delay' }, () => { st.delay = null; go('delay'); }));
       if (delayNow) rows.push(actRow('x', 'r', t('flow.delayClear'), null, { 'data-act': 'delay-clear-quick' }, async () => { await run(ctx, () => A.setDelay(sunday, chore, null), t('flow.delayCleared')); }));
       out.push(section(t('flow.sec.mine'), h('div', { class: 'list' }, rows)));

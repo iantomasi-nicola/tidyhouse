@@ -69,6 +69,17 @@ export function awayToday(house, personId, today) {
 }
 export function weekOfDate(house, date) { return dayStr(dayNum(house.startSunday) + 7 * Math.floor((dayNum(date) - dayNum(house.startSunday) + 6) / 7)); }
 
+/**
+ * Sostituto automatico per la mansione `c` di una riga del motore: quello suggerito dalle regole (chi ha aiutato meno, o chi ha il riposo),
+ * che sia a casa e non sia l'assegnato; altrimenti il primo presente. Ritorna '' se non c'è nessuno.
+ */
+export function autoSub(row, c) {
+  const assigned = row.assigned[c];
+  const ok = (id) => id && id !== assigned && row.nm.some((x, s) => x === id && row.pr[s] === 1);
+  if (ok(row.subs[c])) return row.subs[c];
+  return row.nm.find((id, s) => ok(id)) || '';
+}
+
 /** Unisce le settimane salvate con le assenze inserite come viaggi per vedere chi risulta assente. */
 export function isAway(house, row, personId) { return row.away.includes(personId); }
 

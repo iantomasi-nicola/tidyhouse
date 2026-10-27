@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners } from './extras.js';
+import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners } from './extras.js';
 import { engineHouse } from './store.js';
 
 // ---------- PIN admin ----------
@@ -165,6 +165,29 @@ export class Actions {
     this.need(this.admin);
     await this.s.setDoc('weeks', sunday, { agreed: { [chore]: personId || null } });
     if (personId) { await this.log('agreed', { week: sunday, chore, who: personId }); await this.notice(personId, 'assigned', { week: sunday, chore }); }
+  }
+  /** Toglie l'accordo («passato a X») su una mansione: chi lo ha creato (l'assegnato) o l'admin. */
+  async clearAgreed(sunday, chore) {
+    const row = this.row(sunday); const assigned = row && row.assigned[CHORES.indexOf(chore)];
+    this.need(!!row && !!assigned && (this.admin || assigned === this.me));
+    await this.s.setDoc('weeks', sunday, { agreed: { [chore]: null } });
+  }
+  /**
+   * «Non posso questa settimana»: il turno passa in automatico al sostituto più equo (quello suggerito dalle regole del foglio, come se
+   * chi non può non ci fosse). Chi non può resta l'assegnato: se l'altro lo fa («ha pulito X») o nessuno lo fa, il debito è suo e lo recupera
+   * nelle settimane dopo (di solito con un turno doppio). Ritorna l'id del sostituto.
+   */
+  async autoCover(sunday, chore) {
+    const row = this.row(sunday); const c = CHORES.indexOf(chore);
+    const assigned = row && row.assigned[c];
+    this.need(!!row && !!assigned && !row.closed && !row.res[c].kind && (this.admin || assigned === this.me));
+    const sub = autoSub(row, c);
+    if (!sub) throw new Error('nosub');
+    await this.s.setDoc('weeks', sunday, { agreed: { [chore]: sub } });
+    await this.log('agreed', { week: sunday, chore, who: sub, terms: 'auto' });
+    await this.notice(sub, 'assigned', { week: sunday, chore });
+    this.kick();
+    return sub;
   }
   /** "Pulirò in ritardo": annuncia quando (entro 14 giorni dopo la domenica). */
   async setDelay(sunday, chore, date) {
@@ -375,7 +398,7 @@ export function importBackupOps(backup, keepHouseId) {
 }
 
 // Le azioni che generano una notifica chiedono al server di controllare subito (vedi js/kick.js).
-for (const m of ['requestCover', 'offerCover', 'answerCover', 'requestSwap', 'answerSwap', 'assignCover', 'nudge', 'testAll', 'setDelay']) {
+for (const m of ['requestCover', 'offerCover', 'answerCover', 'requestSwap', 'answerSwap', 'assignCover', 'nudge', 'testAll', 'setDelay']) {   // (autoCover chiama già kick)
   const f = Actions.prototype[m];
   Actions.prototype[m] = async function (...a) { const r = await f.apply(this, a); this.kick(); return r; };
 }

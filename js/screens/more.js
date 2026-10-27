@@ -7,12 +7,14 @@ import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, SHARED_TEMPLATES, sharedStatus, t
 import { it, en } from '../strings/more.js';
 import { it as it2, en as en2 } from '../strings/more2.js';
 import { it as it3, en as en3 } from '../strings/more3.js';
+import { it as itHow, en as enHow } from '../strings/howto.js';
 import { normNeed, frequentNeeds, distinctNeeds, starterNeeds, splitPasted } from '../needs-suggest.js';
 import { it as itFlow, en as enFlow } from '../strings/flow.js';   // flow.shared.* (testi condivisi con la Home)
 
 registerStrings(it, en);
 registerStrings(it2, en2);
 registerStrings(it3, en3);
+registerStrings(itHow, enHow);
 registerStrings(itFlow, enFlow);
 
 const REPO = 'https://github.com/iantomasi-nicola/tidyhouse';
@@ -426,6 +428,9 @@ function openRulesEditor(ctx) {
       } }, icon('check'), t('save')))) });
 }
 
+/** Il link «Come funzionano turni e sostituzioni» apre la spiegazione già espansa. */
+let howtoOpen = false;   // la schermata si ridisegna a ogni aggiornamento: ricordiamo se la spiegazione è aperta
+function takeHowto() { try { if (sessionStorage.getItem('cp:howto') === '1') { sessionStorage.removeItem('cp:howto'); howtoOpen = true; } } catch { /* ignore */ } return howtoOpen; }
 function rulesPage(ctx) {
   if (!ctx.feature('rules')) return offPage(t('rules.title'));
   const house = ctx.house; const lang = ctx.lang;
@@ -434,6 +439,9 @@ function rulesPage(ctx) {
   const admin = ctx.isAdmin;
   const kids = [head(t('rules.title'), { right: admin ? h('button', { type: 'button', class: 'btn tonal sm', onclick: () => openRulesEditor(ctx) }, icon('edit'), t('rules.edit')) : null })];
   kids.push(h('div', { class: 'mx-chips' }, custom ? chip('acc', icon('edit'), t('rules.custom')) : null, chip('', t('misc.version', { v: ver }))));
+  kids.push(h('details', { class: 'card mx-howto', open: takeHowto(), 'data-testid': 'howto', ontoggle: (e) => { howtoOpen = e.currentTarget.open; } },
+    h('summary', null, h('span', { class: 'ico' }, icon('book')), h('span', { class: 'grow' }, h('b', null, t('howto.title')), h('div', { class: 'small muted' }, t('howto.hint'))), icon('chevron')),
+    h('div', { class: 'stack' }, [1, 2, 3, 4, 5, 6, 7].map((n) => h('div', { class: 'stack tight' }, h('div', { class: 't', style: { fontWeight: 700 } }, t('howto.h' + n)), h('p', { class: 'muted' }, t('howto.p' + n)))))));
   kids.push(renderRulesContent(ctx));
   if (admin) {
     const today = ctx.today();
