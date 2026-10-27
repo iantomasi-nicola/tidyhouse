@@ -1,6 +1,6 @@
 // Nucleo dell'app: avvio, registro case, identità, tema, router, shell, aggiornamento pagina, accessi.
 // Le schermate vivono in js/screens/*.js e ricevono un `ctx` (vedi ARCHITECTURE.md).
-import { h, clear, icon, toast, sheet, closeAllSheets, hasOpenSheets, cssReady, deviceInfo, haptic } from './ui.js';
+import { h, clear, icon, toast, sheet, closeAllSheets, hasOpenSheets, cssReady, deviceInfo, haptic, copyText } from './ui.js';
 import { t, tr, setLang, getLang, detectLang, registerStrings } from './i18n.js';
 import { it as coreIt, en as coreEn } from './strings/core.js';
 import { compute } from './engine.js';
@@ -9,7 +9,10 @@ import { scheduleKick } from './kick.js';
 import { Actions, buildHouse, verifyPin, localDate, importBackupOps, exportBackup, normalizeStartSunday } from './actions.js';
 import { requestsAwaiting, staleRequestIds, feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
 
+import { it as uxcIt, en as uxcEn } from './strings/uxc.js';
+
 registerStrings(coreIt, coreEn);
+registerStrings(uxcIt, uxcEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
 const VERSION = '1.7.1';
@@ -185,6 +188,8 @@ const boot = {
   get house() { return S.store ? S.store.state.house : null; },
   get params() { return S.stageParams || {}; },
   go(stage, params) { S.stage = stage; S.stageParams = params || {}; renderStage(); },
+  /** Cambia lingua dalle schermate di accesso (landing, nuova casa, chi sei): si ricorda e ridisegna la schermata. */
+  setLang(l) { prefs = { ...prefs, lang: l }; ls.set('cp:prefs', prefs); applyPrefs(); renderStage(); },
   /** Crea casa. mode 'cloud' | 'local'. Ritorna l'id. */
   async createHouse({ name, startSunday, roommates, adminName, pin, mode, imported }) {
     const useCloud = mode === 'cloud' && cloudAvailable;
@@ -294,7 +299,7 @@ function renderPushGate() {
   let btnEl = null;
   if (state === 'ios-install') {
     kids.push(h('h1', null, t('push.gate.ios.title')), h('p', { class: 'lead' }, t('push.gate.ios.why')));
-    if (/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(navigator.userAgent)) kids.push(h('div', { class: 'note warn', 'data-testid': 'push-safari' }, icon('alert'), t('push.gate.ios.safari')));
+    if (iosNotSafari()) kids.push(safariNote('push-safari'));
     kids.push(h('div', { class: 'card tonal stack tight', 'data-testid': 'push-ios-steps' }, gateSteps(['push.gate.ios.1', 'push.gate.ios.2', 'push.gate.ios.3'])));
   } else if (state === 'denied') {
     kids.push(h('h1', null, t('push.gate.denied.title')), h('p', { class: 'lead' }, t('push.gate.denied.why')),
@@ -340,17 +345,37 @@ function renderPushGate() {
 
 // ---------------- invito all'installazione ----------------
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+/** iPhone/iPad fuori da Safari: Chrome/Firefox/Edge/Opera/DuckDuckGo/Google app, oppure browser interni (WhatsApp, Instagram, ...) che non hanno «Safari/» nello user agent. */
+function iosNotSafari(ua = navigator.userAgent) {
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  return ios && !isStandalone() && (/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(ua) || !/Safari\//.test(ua));
+}
+/** Avviso «apri in Safari» con pulsante che copia il link corrente (compreso il codice d'invito). */
+function safariNote(testid) {
+  const copy = h('button', { class: 'btn tonal sm', type: 'button', 'data-testid': 'install-copy', onclick: async () => {
+    const ok = await copyText(location.href);
+    toast(ok ? t('uxc.safari.copied') : t('uxc.safari.copyFail'), ok ? 3200 : 6000);
+  } }, icon('copy'), t('uxc.safari.copy'));
+  return h('div', { class: 'note warn', 'data-testid': testid }, icon('alert'), h('div', { class: 'stack tight' }, h('strong', null, t('uxc.safari.title')), h('div', null, t('uxc.safari.text')), h('div', null, copy)));
+}
+/** Pulsante «Installa» (Chrome/Edge Android e desktop): usa l'evento catturato; l'evento si può usare una volta sola. */
+function installBtn() {
+  return h('button', { class: 'btn sm', type: 'button', 'data-testid': 'install-btn', onclick: async (e) => {
+    const el = e.currentTarget; const ev = window.__bip; window.__bip = null;
+    try { if (ev) { ev.prompt(); await ev.userChoice; } } catch { /* ignore */ }
+    el.remove();
+  } }, icon('download'), t('guide.install'));
+}
 function installBanner() {
   if (isStandalone()) return null;
   const ua = navigator.userAgent; const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1); const android = /Android/.test(ua);
   const steps = ios ? ['guide.ios1', 'guide.ios2', 'guide.ios3', 'guide.ios4'] : android ? ['guide.android1', 'guide.android2', 'guide.android3'] : ['guide.desktop1', 'guide.desktop2'];
-  const notSafari = ios && /CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(ua);
   const card = h('div', { class: 'card tonal stack tight', 'data-testid': 'install-banner' },
-    notSafari ? h('div', { class: 'note warn', 'data-testid': 'install-safari' }, icon('alert'), t('onb.install.safari')) : null,
+    iosNotSafari(ua) ? safariNote('install-safari') : null,
     h('div', { class: 'row' }, icon('download'), h('strong', null, t('onb.install.title'))),
     h('p', { class: 'small muted' }, t('onb.install.why')),
-    h('ol', { class: 'small', style: { margin: 0, paddingLeft: '20px', display: 'grid', gap: '4px' } }, steps.map((k) => h('li', null, t(k)))),
-    window.__bip ? h('button', { class: 'btn tonal sm', onclick: async () => { try { window.__bip.prompt(); await window.__bip.userChoice; } catch { /* ignore */ } } }, icon('download'), t('guide.install')) : null);
+    window.__bip ? installBtn() : null,
+    h('ol', { class: 'small', style: { margin: 0, paddingLeft: '20px', display: 'grid', gap: '4px' } }, steps.map((k) => h('li', null, t(k)))));
   return card;
 }
 
@@ -678,7 +703,12 @@ window.addEventListener('online', () => scheduleRender());
 window.addEventListener('offline', () => scheduleRender());
 let resizeT = 0;
 window.addEventListener('resize', () => { if (!S.ready || !navEl) return; clearTimeout(resizeT); resizeT = setTimeout(() => updateNav(tabOf(S.route.root)), 80); });
-window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bip = e; });
+// il browser può mandare l'evento dopo che la schermata è già comparsa: il pulsante «Installa» si aggiunge all'invito esistente
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); window.__bip = e;
+  document.querySelectorAll('[data-testid=install-banner]').forEach((b) => { if (!b.querySelector('[data-testid=install-btn]')) b.querySelector('p').after(installBtn()); });
+});
+window.addEventListener('appinstalled', () => { window.__bip = null; document.querySelectorAll('[data-testid=install-banner]').forEach((b) => b.remove()); });
 applyPrefs();
 registerSW();
 setupRefreshPrompt();

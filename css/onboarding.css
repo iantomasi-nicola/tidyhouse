@@ -172,3 +172,10 @@ body.onb-lock { overflow: hidden; }
 /* casa creata: QR compatto */
 .onb-done .qr svg { width: 176px; height: 176px; }
 .onb-done .onb-h:focus { outline: none; }
+
+/* selettore lingua IT/EN delle schermate di accesso */
+.onb-lang { justify-self: end; display: flex; gap: 2px; padding: 3px; border-radius: 14px; background: var(--surface-2); flex: none; }
+.onb-lang button { min-width: 44px; min-height: 44px; padding: 0 8px; border-radius: 11px; font-weight: 700; font-size: .8125rem; letter-spacing: .02em; color: var(--text-2); }
+.onb-lang button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+:root[data-theme="dark"] .onb-lang button[aria-pressed="true"] { background: var(--surface-3); }
+.gate.onb .onb-panel > .onb-lang { margin-bottom: -8px; }
