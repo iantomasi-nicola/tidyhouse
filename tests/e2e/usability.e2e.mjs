@@ -532,7 +532,7 @@ async function sectionUsab() {
   for (const dark of [false, true]) {
     const page = await mk({ dark, s: mkSeed({ needs: { n1: { text: 'Latte', urgent: true, by: 'bruno', at: '2026-10-27T10:00:00Z' } }, trips: { t1: { personId: 'bruno', from: '2026-11-03', to: '2026-11-08', note: 'Roma', by: 'bruno', at: '2026-10-20T10:00:00Z' } } }) });
     const agg = {};
-    for (const r of ROUTES) { await open(page, r, 300); for (const x of await page.evaluate(CONTRAST)) { const k = `${x.el} "${x.txt}"`; (agg[k] ||= { ...x, routes: [] }).routes.push(r || 'home'); } }
+    for (const r of ROUTES) { await open(page, r, r === '' ? 1500 : 300); /* la Home ha un'animazione d'ingresso scaglionata: si misura a fine animazione */ for (const x of await page.evaluate(CONTRAST)) { const k = `${x.el} "${x.txt}"`; (agg[k] ||= { ...x, routes: [] }).routes.push(r || 'home'); } }
     const list = Object.values(agg); metrics.contrast[dark ? 'dark' : 'light'] = list.length;
     console.log(`     contrasto ${dark ? 'SCURO' : 'CHIARO'}: ${list.length} testi sotto AA`);
     for (const x of list.slice(0, 25)) console.log(`       ${x.ratio}:1 (serve ${x.need}) ${x.el} "${x.txt}" [${x.routes.slice(0, 3).join(',')}]`);

@@ -496,6 +496,7 @@ if (want('metrics')) {
     let sumCls = 0, nLong = 0;
     for (const r of ROUTES) {
       await page.evaluate(() => { window.__cls = 0; window.__long = []; });
+      await page.keyboard.press('Shift');   // la navigazione dell'utente è un input: il cambio di pagina non conta come spostamento imprevisto (hadRecentInput)
       await page.evaluate((r) => { location.hash = '#/' + r; }, r); await settle(page, 450);
       const m = await page.evaluate(() => ({ cls: window.__cls, long: window.__long }));
       sumCls += m.cls; nLong += m.long.length;

@@ -69,8 +69,8 @@ const smallTargets = (page) => page.evaluate(() => {
 const REQ = () => ({
   r1: { kind: 'cover', terms: 'gift', week: SUN, chore: 'kitchen', from: 'bruno', to: null, status: 'pending', at: '2026-10-27T10:00:00.000Z' },
   r3: { kind: 'offer', terms: 'gift', week: SUN, chore: 'bathroom', from: 'bruno', to: 'anna', status: 'pending', at: '2026-10-27T11:00:00.000Z' },
-  old1: { kind: 'cover', terms: 'repay', week: '2026-10-11', chore: 'floor', from: 'carla', to: null, status: 'pending', at: '2026-10-09T10:00:00.000Z' },
-  old2: { kind: 'offer', terms: 'repay', week: '2026-10-11', chore: 'kitchen', from: 'anna', to: 'bruno', status: 'pending', at: '2026-10-09T11:00:00.000Z' },
+  old1: { kind: 'cover', terms: 'repay', week: '2026-10-18', chore: 'floor', from: 'carla', to: null, status: 'pending', at: '2026-10-09T10:00:00.000Z' },
+  old2: { kind: 'offer', terms: 'repay', week: '2026-10-18', chore: 'kitchen', from: 'anna', to: 'bruno', status: 'pending', at: '2026-10-09T11:00:00.000Z' },
 });
 
 // ============================================================ BLOCCO 1 · Altro
