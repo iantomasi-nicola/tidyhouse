@@ -657,12 +657,12 @@ await scenario('needs: aggiungi, compra, svuota, focus', async () => {
   await page.waitForTimeout(300);
   assert.equal(await page.inputValue('#mx-need'), 'Bozza');
   await page.fill('#mx-need', '');
-  await page.locator('.mx-need .checkcircle').first().click();
-  await page.waitForSelector('.mx-done .mx-need');
+  await page.locator('.mx-need .mx-needmain').first().click();   // un tocco sulla riga intera
+  await page.waitForFunction(() => document.querySelectorAll('.mx-done .mx-need').length === 1);
+  await page.locator('.mx-donetoggle').click();   // la sezione «Comprate» è chiusa di default
   assert.match(await page.locator('.mx-done').innerText(), /Comprato da Anna/);
   await shot(page, 'needs');
-  await page.getByRole('button', { name: /Svuota comprati/ }).click();
-  await page.locator('.sheet').getByRole('button', { name: /Svuota comprati/ }).click();
+  await page.getByRole('button', { name: /Svuota comprat/ }).click();   // senza conferma: c'è Annulla nel messaggio
   await page.waitForFunction(() => !document.querySelector('.mx-done'));
   assert.equal(Object.keys((await store(page)).needs).length, 1);
   await page.locator('.mx-need button.icon-btn').first().click();
