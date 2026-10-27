@@ -63,7 +63,11 @@
 .hm-tip { background: var(--tonal); border-radius: var(--r-xl); padding: 16px; display: grid; gap: 12px; }
 .hm-tiphead { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: .9375rem; color: var(--accent-ink); }
 .hm-tiphead svg.i { flex: none; }
-.hm-tip .daychips button { background: var(--surface); }
+/* tocco >= 44px: gap piccolo e meno padding; sotto i 372px di larghezza utile due righe (4+3) invece di bottoni piccoli */
+.hm-tip { padding: 14px 12px; }
+.hm-tip .daychips { gap: 3px; }
+.hm-tip .daychips button { background: var(--surface); min-width: 44px; min-height: 48px; aspect-ratio: auto; border-radius: 14px; }
+@media (max-width: 384px) { .hm-tip .daychips { grid-template-columns: repeat(4, 1fr); gap: 6px; } }
 .hm-tip .daychips button[aria-pressed="true"] { background: var(--accent); }
 .hm-tip .daychips button:disabled { cursor: default; }
 .hm-tip .daychips button span { font-variant-numeric: tabular-nums; }
@@ -211,3 +215,6 @@
 @keyframes hm-expand { from { max-width: 44px; padding-right: 12px; } to { max-width: 180px; } }
 @keyframes hm-label { from { opacity: 0; transform: translateX(-6px); } }
 @media (prefers-reduced-motion: reduce) { .hm-refresh.upd, .hm-refresh.upd .hm-refresh-label { animation: none; } }
+
+.hm-explain { margin: 0; padding: 10px 16px 12px; line-height: 1.35; }
+.hm-tablecard .hm-explain { padding: 10px 4px 2px; }

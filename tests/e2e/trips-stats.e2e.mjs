@@ -127,8 +127,8 @@ await step('utente normale (Bruno): niente selettore persona, elimina solo i pro
   // elimina il proprio viaggio
   const id = Object.keys(st.trips).find((k) => st.trips[k] === added || (st.trips[k].from === '2026-10-30'));
   await page.click(`.trip[data-trip="${id}"] .trip-del`);
-  await page.waitForSelector('.sheet.on .btn.danger'); await page.waitForTimeout(450);
-  await page.click('.sheet .btn.danger'); await sheetGone(page);
+  // UX-A: eliminazione immediata con «Annulla» (nessuna conferma)
+  await page.waitForFunction(() => !Object.values(window.__app.state.trips || {}).some((x) => x.from === '2026-10-30'));
   assert.equal(Object.values((await state(page)).trips).filter((x) => x.from === '2026-10-30').length, 0);
   noErrors(page);
 });

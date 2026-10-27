@@ -55,6 +55,7 @@ await scenario('elenco: card, corrente evidenziata, scroll automatico, stati', a
   assert.equal(await page.locator('.cal .week').count(), 17, 'da max(0,cur-6) a cur+12');
   assert.equal(await page.locator('.week.cur').count(), 1);
   assert.equal(await page.locator('.week.cur').getAttribute('data-sunday'), CUR);
+  await page.waitForFunction(() => { const r = document.querySelector('.week.cur').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }, null, { timeout: 3000 }).catch(() => {});   // lo scroll automatico parte dopo due frame
   const box = await page.locator('.week.cur').boundingBox();
   assert.ok(box.y >= 0 && box.y + box.height <= 844, 'la settimana corrente è nel viewport: ' + JSON.stringify(box));
   assert.match(await page.locator('.week.cur').innerText(), /In corso/);

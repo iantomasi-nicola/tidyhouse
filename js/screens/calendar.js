@@ -104,10 +104,12 @@ export async function render(ctx) {
     h('h1', { class: 'title' }, ctx.t('cal.title')),
     cur >= 0 ? h('button', { type: 'button', class: 'btn tonal sm', 'data-act': 'today', onclick: () => goToday(ctx) }, icon('calendar'), ctx.t('cal.goToday')) : null);
 
+  // legenda delle icone delle card (sui telefoni i title non si vedono)
+  const legend = h('div', { class: 'cal-legend', 'aria-hidden': 'true', 'data-testid': 'cal-legend' }, [['check', 'ok', 'st.done'], ['refresh', 'acc', 'st.makeup'], ['swap', 'acc', 'st.swapped'], ['x', 'bad', 'st.skipped']].map(([ic, tone, k]) => h('span', { class: 'lg' }, h('span', { class: 'ind ' + tone }, icon(ic)), ctx.t(k))));
   const notStarted = cur < 0 && ctx.house.startSunday ? h('div', { class: 'note' }, icon('info'), ctx.t('cal.planStarts', { date: fmtDate(addDaysIso(ctx.house.startSunday, -6), ctx.lang, { year: true }) })) : null;
 
   const panel = wide && selected ? h('aside', { class: 'cal-panel card', 'aria-label': ctx.t('cal.title') }, renderWeekDetail(ctx, selected, { heading: true })) : null;
-  const node = h('div', { class: 'cal' }, head, notStarted, h('div', { class: 'cal-layout' }, list, panel));
+  const node = h('div', { class: 'cal' }, head, legend, notStarted, h('div', { class: 'cal-layout' }, list, panel));
   prevNode = node;
 
   // dopo l'inserimento nel DOM: scroll automatico alla settimana corrente (prima visita) o mantenimento della posizione

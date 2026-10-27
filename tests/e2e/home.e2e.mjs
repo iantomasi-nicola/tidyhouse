@@ -130,17 +130,15 @@ const run = async () => {
     noErrors(page);
   });
 
-  await test('"Questa settimana sono via": conferma e annulla', async () => {
+  await test('"Questa settimana sono via": un tocco, senza conferma, con Annulla', async () => {
     const s = mk({ me: 'anna', weeks: doneWeeks() });
     const page = await open({ s });
     await page.click('.hm-heroaway');
-    await page.waitForSelector('.sheet.on');
-    await page.keyboard.press('Escape'); await page.waitForTimeout(600);
-    assert.ok(await page.locator('[data-testid="hero-todo"], [data-testid="hero-rest"], [data-testid="hero-none"]').count(), 'annullato: resta in turno');
-    await page.click('.hm-heroaway');
-    await page.waitForSelector('.sheet.on');
-    await page.locator('.sheet .btn:not(.soft)').click();
     await page.waitForSelector('[data-testid="hero-away"]');
+    assert.equal(await page.locator('.sheet.on').count(), 0, 'nessuna conferma');
+    await page.waitForTimeout(450);
+    await page.click('.toast-action');
+    await page.waitForSelector('[data-testid="hero-todo"], [data-testid="hero-rest"], [data-testid="hero-none"]');
     noErrors(page);
   });
 
