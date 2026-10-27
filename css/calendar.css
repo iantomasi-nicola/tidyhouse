@@ -169,3 +169,8 @@ button.cs-pick:active { background: var(--tonal-2); }
 .cs-sec .card > .daychips { margin: 0 -8px; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
 .cs-sec .card > .daychips button { min-width: 0; min-height: 48px; aspect-ratio: auto; padding: 0; border-radius: 14px; }
 @media (max-width: 384px) { .cs-sec .card > .daychips { margin: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; } }
+
+.cal-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: -2px 4px 12px; font-size: .75rem; color: var(--text-2); }
+.cal-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+.cal-legend .ind { width: 20px; height: 20px; }
+.cal-legend .ind svg.i { width: 13px; height: 13px; }

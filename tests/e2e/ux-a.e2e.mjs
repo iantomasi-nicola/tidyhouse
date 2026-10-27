@@ -259,6 +259,21 @@ const run = async () => {
     noErrors(page); await page.close();
   });
 
+  // ===== B5: spiegazioni senza gergo =====
+  await test('B5 legenda icone nelle Settimane, spiegazione di recupero/riposo e TR/CDM nella Home', async () => {
+    const w = { ...DONE, '2026-10-18': { result: { floor: 'done', bathroom: 'skipped', kitchen: 'done' } } };
+    const page = await open({ s: mk({ me: 'anna', admin: true, weeks: w }), hash: '#/calendar' });
+    assert.equal(await page.locator('[data-testid="cal-legend"]').count(), 1);
+    assert.match(await page.locator('[data-testid="cal-legend"]').innerText(), /Recupero/);
+    await page.goto(env.url + '/#/'); await page.waitForSelector('[data-screen="home"]'); await page.waitForTimeout(500);
+    assert.match(await page.locator('[data-testid="rank-explain"]').innerText(), /TR = .*CDM = /);
+    await page.close();
+    const s2 = mk({ me: 'anna', admin: false, weeks: { ...DONE, '2026-10-04': { result: { floor: 'by:carla', bathroom: 'done', kitchen: 'done' } } } });
+    const p2 = await open({ s: s2 });
+    if (await p2.locator('[data-widget="makeups"]').count()) assert.match(await p2.locator('[data-testid="makeups-explain"]').innerText(), /Recupero:.*Riposo:/);
+    noErrors(p2); await p2.close();
+  });
+
   await env.close();
   const bad = results.filter((r) => !r[1]);
   console.log(`\n${results.length - bad.length}/${results.length} ok`);
