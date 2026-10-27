@@ -23,7 +23,7 @@ const safeUrl = (u) => { try { const x = new URL(String(u || '').trim()); return
 async function lazy(ctx, loader, fn) {
   try { const m = await loader(); await fn(m); } catch (e) { console.warn('home: modulo non disponibile', e); ctx.toast(ctx.t('error')); }
 }
-const openChore = (ctx, sunday, chore) => lazy(ctx, () => import('../choresheet.js'), (m) => m.openChoreSheet(ctx, sunday, chore));
+const openChore = (ctx, sunday, chore, opts) => lazy(ctx, () => import('../choresheet.js'), (m) => m.openChoreSheet(ctx, sunday, chore, opts));
 const openWeek = (ctx, sunday) => lazy(ctx, () => import('../choresheet.js'), (m) => m.openWeekSheet(ctx, sunday));
 
 // ---------------- modello dei dati della settimana ----------------
@@ -113,7 +113,7 @@ function widgetHero(ctx, M) {
       variant: 'late', testid: 'hero-late', kicker: `${t('st.late')} · ${t('home.weekOf', { range: fmtWeekRange(f.sunday) })}`, ic: IC[CHORES[f.c]], big: t('chore.' + CHORES[f.c]), sub: t('home.lateHint'),
       chips: [['', t('st.late'), 'clock'], ...(M.prev.isMakeup[f.c] ? [['', t('st.makeup'), 'history']] : []), ...flowChips(ctx, f.sunday, CHORES[f.c]).map((x) => [x.tone, x.text, x.ic])],
       actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, f.sunday, f.c, e) }, icon('check'), t('home.markDone')) : null,
-        h('button', { class: 'btn glass lg', type: 'button', onclick: () => openChore(ctx, f.sunday, CHORES[f.c]) }, t('home.didSomeoneElse'))],
+        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cover', onclick: () => openChore(ctx, f.sunday, CHORES[f.c], { view: 'cover' }) }, t('home.didSomeoneElse'))],
       list: mini(rest),
     }));
     return wrap;
@@ -129,11 +129,13 @@ function widgetHero(ctx, M) {
       const ex = extrasLeft(ctx, M, row.sunday, c); if (ex) chips.push(['', `${ex} ${t('tasks.extra')}`, 'list']);
       for (const x of flowChips(ctx, row.sunday, ch)) chips.push([x.tone, x.text, x.ic]);
       const canDone = ctx.actions.canResult(row.sunday, ch, 'done');
-      const canPlan = ctx.feature('planDay') && ctx.actions.canPlan(row.sunday, ch);
+      // «Non posso questa settimana» a 2 tocchi (apre subito la conferma); non serve se il turno e' gia' stato passato a un altro
+      const agreedTo = (((ctx.state.weeks || {})[row.sunday] || {}).agreed || {})[ch];
+      const canHand = !(agreedTo && agreedTo !== me);
       wrap.append(heroCard({
         testid: 'hero-todo', kicker: curItems.length > 1 ? `${t('home.yourTurn')} · ${t('home.nTurns', { n: curItems.length })}` : t('home.yourTurn'), ic: IC[ch], big: t('chore.' + ch), chips,
         actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, row.sunday, c, e) }, icon('check'), t('home.markDone')) : null,
-          canPlan ? h('button', { class: 'btn glass lg', type: 'button', onclick: () => openChore(ctx, row.sunday, ch) }, t('home.chooseDay')) : null],
+          canHand ? h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cantdo', onclick: () => openChore(ctx, row.sunday, ch, { view: 'cantdo' }) }, t('cantdo.btn')) : null],
         list: mini(curItems.filter((x) => x.c !== c)), foot: awayBtn,
       }));
       const tip = planTip(ctx, M, f); if (tip) wrap.append(tip);
