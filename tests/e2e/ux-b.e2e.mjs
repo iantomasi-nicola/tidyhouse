@@ -240,6 +240,71 @@ await scenario('impostazioni: parole semplici nelle regole e testo «Chiave API�
   await done(p);
 });
 
+await scenario('funzioni: ogni interruttore ha un effetto visibile subito (hub, navigazione) e torna indietro', async () => {
+  const p = await open({ seed: S() });
+  const hubRow = { needs: '#/needs', tasks: '#/tasks', lastout: '#/lastout', requests: '#/requests', rules: '#/rules', activity: '#/activity', shared: '#/more/shared' };
+  await goto(p, '/settings/features');
+  for (const [k, href] of Object.entries(hubRow)) {
+    await p.waitForTimeout(420);
+    await p.locator(tid('feat-' + k + '-row')).click();
+    await p.waitForFunction((x) => window.__app.house.features && window.__app.house.features[x] === false, k);
+    await hop(p, '/more');
+    assert.equal(await p.locator(`a.li[href="${href}"]`).count(), 0, `${k}: la riga dell'hub deve sparire`);
+    await hop(p, '/settings/features'); await p.waitForTimeout(420);
+    await p.locator(tid('feat-' + k + '-row')).click();
+    await p.waitForFunction((x) => window.__app.house.features[x] === true, k);
+    await hop(p, '/more');
+    assert.equal(await p.locator(`a.li[href="${href}"]`).count(), 1, `${k}: la riga torna`);
+    await hop(p, '/settings/features');
+  }
+  // statistiche + classifica spente: sparisce la scheda in navigazione
+  await p.waitForTimeout(420); await p.locator(tid('feat-stats-row')).click();
+  await p.waitForFunction(() => window.__app.house.features.stats === false); await p.waitForTimeout(420);
+  await p.locator(tid('feat-ranking-row')).click();
+  await p.waitForFunction(() => window.__app.house.features.ranking === false);
+  await p.waitForFunction(() => !document.querySelector('nav.nav a[data-tab="stats"]'));
+  await done(p);
+});
+
+await scenario('colore: l\'admin che lo imposta per tutta la casa segue poi quello della casa; gli altri vedono il nuovo colore', async () => {
+  const st = S();
+  const a = await open({ seed: st });
+  await goto(a, '/settings/appearance');
+  await a.click(tid('accent-00796b'));
+  await a.waitForFunction(() => window.__app.prefs.accent === '#00796b');
+  assert.equal(await a.locator(tid('accent-house')).count(), 1);
+  await a.waitForTimeout(420);
+  await a.click(tid('accent-house'));
+  await a.waitForFunction(() => window.__app.house.accent === '#00796b');
+  await a.waitForFunction(() => window.__app.prefs.accent === null || window.__app.prefs.accent === undefined, null, { timeout: 3000 });
+  assert.equal(await a.evaluate(() => document.documentElement.style.getPropertyValue('--accent')), '#00796b');
+  // la casa cambia colore di nuovo: l'admin lo vede subito (prima restava sul colore personale)
+  await a.click(tid('accent-d93025'));
+  await a.waitForFunction(() => window.__app.prefs.accent === '#d93025');
+  await a.waitForTimeout(420); await a.click(tid('accent-house'));
+  await a.waitForFunction(() => window.__app.house.accent === '#d93025');
+  assert.equal(await a.evaluate(() => window.__app.prefs.accent || null), null);
+  assert.equal(await a.evaluate(() => document.documentElement.style.getPropertyValue('--accent')), '#d93025');
+  // un altro coinquilino (senza colore personale) vede quello della casa
+  const hs = await a.evaluate(() => JSON.parse(JSON.stringify(window.__app.house)));
+  await done(a);
+  const b = await open({ seed: S({ admin: false, me: 'bruno', houseExtra: { accent: hs.accent } }) });
+  await goto(b, '/settings/appearance');
+  assert.equal(await b.evaluate(() => document.documentElement.style.getPropertyValue('--accent')), '#d93025');
+  assert.equal(await b.locator(tid('accent-house')).count(), 0, 'chi non è admin non può cambiare il colore della casa');
+  await done(b);
+});
+
+await scenario('hub: la scheda con il mio nome apre il profilo (cambio «chi sei» in 2 tap dall\'hub)', async () => {
+  const p = await open({ seed: S() });
+  await goto(p, '/more');
+  await p.locator(tid('hub-me')).click();
+  await p.waitForSelector('.st-page[data-sub="profile"]');
+  await p.locator(tid('who-bruno')).click();
+  await p.waitForFunction(() => window.__app.me === 'bruno');
+  await done(p);
+});
+
 // ============================================================ chiusura
 console.log(`\n${ran - failed}/${ran} scenari ok`);
 await env.close();

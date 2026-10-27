@@ -6,7 +6,8 @@
 .mx-back { width: 44px; height: 44px; margin-left: -10px; flex: none; color: var(--accent-ink); }
 .mx-right { flex: none; }
 .mx-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.mx-me { display: flex; align-items: center; gap: 14px; }
+.mx-me { display: flex; align-items: center; gap: 14px; color: var(--text); }
+.mx-me > svg.i { color: var(--text-3); flex: none; }
 .mx-me-name { font-size: 1.25rem; font-weight: 750; letter-spacing: -.02em; }
 .mx-me-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .mx-ai { min-height: 52px; }

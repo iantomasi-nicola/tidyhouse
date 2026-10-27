@@ -108,10 +108,11 @@ function hub(ctx) {
   const group = (title, rows) => (rows.filter(Boolean).length ? h('section', null, title ? h('div', { class: 'eyebrow' }, title) : null, h('div', { class: 'list' }, rows.filter(Boolean))) : null);
 
   const me = ctx.me ? ctx.meName : null;
-  const profile = h('section', { class: 'card mx-me' },
+  const profile = h('a', { class: 'card mx-me', href: '#/settings/profile', 'data-testid': 'hub-me', 'aria-label': `${t('set.profile')}: ${me || ''}` },
     avatar(me || '?', ctx.me ? ctx.color(ctx.me) : '#888', 'lg'),
     h('div', { class: 'grow' }, h('div', { class: 'mx-me-name' }, me || t('misc.person')), h('div', { class: 'muted small' }, house.name || 'Tidy House'),
-      h('div', { class: 'mx-me-chips' }, ctx.isAdmin ? chip('acc', icon('shield'), t('misc.admin')) : null, chip('', icon(ctx.cloud ? 'users' : 'device'), ctx.cloud ? t('moreX.cloud') : t('misc.localOnly')))));
+      h('div', { class: 'mx-me-chips' }, ctx.isAdmin ? chip('acc', icon('shield'), t('misc.admin')) : null, chip('', icon(ctx.cloud ? 'users' : 'device'), ctx.cloud ? t('moreX.cloud') : t('misc.localOnly')))),
+    icon('chevron'));
 
   const ai = ctx.isAdmin && house.ai && house.ai.enabled
     ? h('button', { type: 'button', class: 'btn tonal block mx-ai', onclick: async () => {

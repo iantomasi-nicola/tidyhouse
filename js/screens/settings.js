@@ -299,7 +299,7 @@ function appearance(ctx) {
     group(t('set.theme'), [h('div', { class: 'li' }, theme)]),
     card(h('div', { class: 'lbl' }, t('set.accent')), sw,
       h('div', { class: 'btn-row', style: { marginTop: '12px' } },
-        ctx.isAdmin ? h('button', { type: 'button', class: 'btn tonal sm', 'data-testid': 'accent-house', onclick: async () => { try { await ctx.actions.setHouse({ accent }); ctx.toast(t('saved')); } catch { ctx.toast(t('error')); } } }, t('setX.accent.all')) : null,
+        ctx.isAdmin ? h('button', { type: 'button', class: 'btn tonal sm', 'data-testid': 'accent-house', onclick: async () => { try { await ctx.actions.setHouse({ accent }); ctx.savePrefs({ accent: null }); ctx.toast(t('saved')); } catch { ctx.toast(t('error')); } } }   /* poi l'admin segue il colore della casa, come gli altri */, t('setX.accent.all')) : null,
         p.accent ? h('button', { type: 'button', class: 'btn soft sm', onclick: () => { ctx.savePrefs({ accent: null }); saved(ctx); } }, t('setX.accent.house')) : null)),
     card(h('div', { class: 'row-between' }, h('div', { class: 'lbl' }, t('set.textSize')), sizeVal),
       h('div', { class: 'st-range' }, h('span', { class: 'small', 'aria-hidden': 'true' }, 'A'), range, h('span', { style: { fontSize: '1.25rem' }, 'aria-hidden': 'true' }, 'A')),
