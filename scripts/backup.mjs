@@ -1,6 +1,7 @@
 // Backup cifrato di ogni casa in backups/<id>.json (richiede BACKUP_PASSPHRASE). I dati restano illeggibili senza la passphrase.
 import admin from 'firebase-admin';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { encryptBackup } from '../js/backupcrypto.js';
 
 if (!process.env.BACKUP_PASSPHRASE) { console.log('BACKUP_PASSPHRASE non impostata: nessun backup.'); process.exit(0); }
@@ -12,6 +13,8 @@ for (const h of hs.docs) {
   const data = { house: h.data() };
   for (const c of ['weeks', 'trips', 'needs', 'requests', 'log']) { const qs = await h.ref.collection(c).get(); data[c] = {}; qs.forEach((d) => { data[c][d.id] = d.data(); }); }
   const env = await encryptBackup({ app: 'casa-pulita', version: 1, exportedAt: new Date().toISOString(), data }, process.env.BACKUP_PASSPHRASE);
-  fs.writeFileSync(`backups/${h.id}.json`, JSON.stringify(env));
-  console.log('backup', h.id);
+  // il nome del file NON contiene il codice della casa (il repo è pubblico): è un'impronta del codice
+  const name = crypto.createHash('sha256').update(h.id).digest('hex').slice(0, 16);
+  fs.writeFileSync(`backups/${name}.json`, JSON.stringify(env));
+  console.log('backup', name);
 }

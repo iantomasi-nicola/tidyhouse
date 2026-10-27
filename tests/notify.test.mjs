@@ -69,7 +69,7 @@ test('server notifiche: chiave VAPID diversa => casa saltata; casa rotta non blo
   assert.equal(r.sent, 0); assert.match(r.skipped[0], /vapid/);
   db.houses.H2 = { house: { id: 'H2' } };
   const r2 = await runNotify({ db, send: async () => {}, now: new Date('2026-10-31T09:15:00Z'), vapidPublic: 'PUB' });
-  assert.ok(r2.skipped.some((s) => s.startsWith('H2')));
+  assert.ok(r2.skipped.some((s) => s.startsWith('casa 2')) && !JSON.stringify(r2).includes('H2'), 'nei log/riepilogo non compare il codice della casa');
   assert.equal(r2.sent, 3);
 });
 

@@ -19,9 +19,10 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
   const summary = { houses: 0, sent: 0, failed: 0, removed: 0, skipped: [] };
   for (const { id: hid, house } of await db.listHouses()) {
     summary.houses++;
+    const label = 'casa ' + summary.houses;   // mai il codice della casa nei log (il repo è pubblico: i log li legge chiunque)
     try {
-      if (!house || !house.roommates) { summary.skipped.push(hid + ':empty'); continue; }
-      if (vapidPublic && house.vapidPublic && house.vapidPublic !== vapidPublic) { summary.skipped.push(hid + ':vapid-mismatch'); log(`[${hid}] chiave VAPID diversa: salto`); continue; }
+      if (!house || !house.roommates) { summary.skipped.push(label + ':empty'); continue; }
+      if (vapidPublic && house.vapidPublic && house.vapidPublic !== vapidPublic) { summary.skipped.push(label + ':vapid-mismatch'); log(`[${label}] chiave VAPID diversa da quella del server: salto`); continue; }
       const [weeks, trips, members, sentDocs, requests, needs] = await Promise.all(['weeks', 'trips', 'members', 'sent', 'requests', 'needs'].map((c) => db.coll(hid, c)));
       const eh = engineHouse({ house, weeks, trips });
       const sent = new Set(Object.keys(sentDocs));
@@ -32,7 +33,7 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
       const home = (id) => !awayToday(eh, id, today);
       { // diagnosi (solo conteggi: i log di un repo pubblico sono leggibili da tutti)
         const withPush = Object.values(members).filter((m) => m && m.push && m.push.endpoint);
-        log(`diagnosi: dispositivi ${Object.keys(members).length}, con push ${withPush.length} (persone ${new Set(withPush.map((m) => m.personId)).size}), voci spesa ${Object.keys(needs).length}, spesa ${cfg.needs.on ? 'attiva' : 'spenta'}`);
+        log(`[${label}] diagnosi: dispositivi ${Object.keys(members).length}, con push ${withPush.length} (persone ${new Set(withPush.map((m) => m.personId)).size}), voci spesa ${Object.keys(needs).length}, spesa ${cfg.needs.on ? 'attiva' : 'spenta'}`);
       }
 
       // Le notifiche della stessa esecuzione per lo stesso dispositivo si fondono in UN solo avviso («3 novità in casa»).
@@ -62,7 +63,7 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
           catch (e) {
             summary.failed++;
             if (e && (e.statusCode === 404 || e.statusCode === 410)) { await db.setDoc(hid, 'members', t.id, { push: null }, true); delete members[t.id].push; summary.removed++; }
-            else log(`[${hid}] invio fallito a ${t.id}: ${e && (e.statusCode || e.message)}`);
+            else log(`[${label}] invio fallito: ${e && (e.statusCode || e.message)}`);
           }
         }
         for (const fn of after) await fn();
@@ -139,8 +140,8 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
       for (const [k, v] of Object.entries(views)) if (v.at && now - new Date(v.at) > 60 * DAY) await db.delDoc(hid, 'views', k);
       await db.setHouse(hid, { serverRun: now.toISOString() });
     } catch (e) {
-      summary.skipped.push(hid + ':error');
-      log(`[${hid}] errore: ${e && e.message}`);
+      summary.skipped.push(label + ':error');
+      log(`[${label}] errore: ${e && e.message}`);
     }
   }
   return summary;
