@@ -335,3 +335,41 @@ Object.assign(en, {
   'setX.kick.norepo': 'I can\'t tell the repository from this address: instant start only works from GitHub Pages.', 'setX.kick.test': 'Try now', 'setX.kick.testing': 'Sending…', 'setX.kick.testOk': 'Done: the server is starting now (about 30 seconds).',
   'setX.kick.testDenied': 'GitHub rejected the token: check it is valid and has Actions: Read and write on this repository.', 'setX.kick.testNotFound': 'Repository or workflow not found: check the token is for this repository.', 'setX.kick.testFail': 'Failed ({s}).', 'setX.kick.remove': 'Remove',
   'setX.kick.foot': 'The token is stored in the house and housemates can read it; with this permission it can only start this repository\'s notification workflow. If you revoke it on GitHub, notifications go back to hourly.' });
+
+// notifiche personali raggruppate, diagnostica richiudibile, chiave push esistente
+Object.assign(it, {
+  'setX.ntg.shifts': 'Turni e promemoria', 'setX.ntg.shifts.desc': 'Cosa ti tocca (sabato), «segna fatto» (domenica), solleciti se sei in ritardo, novità del lunedì e promemoria del giorno scelto',
+  'setX.ntg.absence': 'Assenze (venerdì)', 'setX.ntg.absence.desc': 'Il venerdì ti ricordiamo di segnare se sei via',
+  'setX.ntg.requests': 'Richieste e scambi', 'setX.ntg.requests.desc': 'Proposte di scambio, risposte e solleciti di coinquilini o admin',
+  'setX.ntg.needs': 'Lista della spesa', 'setX.ntg.needs.desc': 'Quando un coinquilino segna qualcosa da comprare',
+  'setX.ntg.admin': 'Riepilogo admin', 'setX.ntg.admin.desc': 'Lunedì: risultati da registrare (solo admin)',
+  'setX.notif.diagTitle': 'Diagnostica e prove',
+  'setX.sched.keyState.ready': 'pronte', 'setX.sched.keyState.missing': 'da creare',
+  'setX.sched.genHave': 'Questa casa ha già una chiave: generarne una nuova scollega tutti i dispositivi.',
+  'setX.sched.useKey': 'Usa una chiave pubblica esistente',
+  'setX.sched.useKeyHelp': 'Per far condividere lo stesso server notifiche a due case: genera le chiavi in una sola casa e incolla qui, nell\'altra, la stessa chiave pubblica.',
+  'setX.sched.useKeyHelp2': 'Le case devono stare nello stesso progetto Firebase: un solo workflow GitHub le controlla tutte con un solo VAPID_PRIVATE_KEY.',
+  'setX.sched.useKeyPh': 'Chiave pubblica (87 caratteri)',
+  'setX.sched.useKeySave': 'Usa questa chiave',
+  'setX.sched.keyInvalid': 'Chiave non valida: dev\'essere la chiave pubblica di 87 caratteri (lettere, numeri, «-» e «_»).',
+  'setX.sched.keyUsed': 'Chiave pubblica impostata',
+  'setX.sched.useKeyWarn': 'Questa casa userà un\'altra chiave: i dispositivi si ricollegano da soli all\'apertura e il secret VAPID_PRIVATE_KEY del server deve essere quello di questa chiave.',
+});
+Object.assign(en, {
+  'setX.ntg.shifts': 'Chores and reminders', 'setX.ntg.shifts.desc': 'What you have to do (Saturday), “mark done” (Sunday), nudges if you are late, Monday news and the reminder on your chosen day',
+  'setX.ntg.absence': 'Absences (Friday)', 'setX.ntg.absence.desc': 'On Friday we remind you to say if you are away',
+  'setX.ntg.requests': 'Requests and swaps', 'setX.ntg.requests.desc': 'Swap proposals, answers and nudges from housemates or the admin',
+  'setX.ntg.needs': 'Shopping list', 'setX.ntg.needs.desc': 'When a housemate adds something to buy',
+  'setX.ntg.admin': 'Admin summary', 'setX.ntg.admin.desc': 'Monday: results to log (admin only)',
+  'setX.notif.diagTitle': 'Diagnostics and tests',
+  'setX.sched.keyState.ready': 'ready', 'setX.sched.keyState.missing': 'to create',
+  'setX.sched.genHave': 'This house already has a key: generating a new one disconnects every device.',
+  'setX.sched.useKey': 'Use an existing public key',
+  'setX.sched.useKeyHelp': 'To share one notification server between two houses: generate the keys in one house only and paste the same public key here, in the other.',
+  'setX.sched.useKeyHelp2': 'Both houses must be in the same Firebase project: a single GitHub workflow checks them all with one VAPID_PRIVATE_KEY.',
+  'setX.sched.useKeyPh': 'Public key (87 characters)',
+  'setX.sched.useKeySave': 'Use this key',
+  'setX.sched.keyInvalid': 'Invalid key: it must be the 87-character public key (letters, digits, “-” and “_”).',
+  'setX.sched.keyUsed': 'Public key set',
+  'setX.sched.useKeyWarn': 'This house will use a different key: devices reconnect by themselves when opened, and the server\'s VAPID_PRIVATE_KEY secret must be the one for this key.',
+});

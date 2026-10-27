@@ -7,6 +7,9 @@ registerStrings(it, en);
 const UA = () => (typeof navigator !== 'undefined' && navigator.userAgent) || '';
 export const isIOS = () => /iPad|iPhone|iPod/.test(UA()) || (/Macintosh/.test(UA()) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
 export const isStandalone = () => { try { return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch { return false; } };
+export const platform = () => (isIOS() ? 'ios' : /Android/.test(UA()) ? 'android' : 'other');
+/** Chiavi di stringa dei 2 passi per riattivare un permesso negato, adatti al dispositivo. */
+export const deniedSteps = () => [1, 2].map((n) => `push.gate.denied.${platform()}.${n}`);
 const supported = () => typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 
 // ---------- base64url ----------

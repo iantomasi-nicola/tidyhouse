@@ -269,15 +269,62 @@ function needPushGate() {
   if (ctx.house.requirePush === false) return false;
   return ['off', 'ios-install', 'denied'].includes(pushState());
 }
+/** Elenco numerato di passi (cerchio col numero + testo). */
+function gateSteps(keys, testid) {
+  return h('ol', { 'data-testid': testid, style: { listStyle: 'none', margin: '0', padding: '0', display: 'grid', gap: '10px', textAlign: 'left' } }, keys.map((k, i) => h('li', { style: { display: 'flex', gap: '12px', alignItems: 'flex-start' } },
+    h('span', { style: { flex: 'none', width: '28px', height: '28px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontWeight: '700', background: 'var(--tonal)', color: 'var(--accent-ink)' } }, String(i + 1)),
+    h('span', { style: { paddingTop: '3px' } }, t(k)))));
+}
+/** Schermata obbligatoria su mobile: un solo grande pulsante (permesso + iscrizione + salvataggio), poi prosegue da sola. */
 function renderPushGate() {
-  const state = pushState(); const msg = h('p', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite' });
-  const kids = [h('div', { class: 'logo' }, icon('bell')), h('h1', null, t('onb.push.title')), h('p', { class: 'lead' }, t('onb.push.why'))];
-  if (state === 'ios-install') { kids.push(h('div', { class: 'note warn' }, icon('alert'), t('onb.push.ios'))); const b = installBanner(); if (b) kids.push(b); }
-  if (state === 'denied') kids.push(h('div', { class: 'note warn' }, icon('alert'), t('onb.push.denied')));
-  if (state === 'off') kids.push(h('button', { class: 'btn lg block', 'data-testid': 'push-enable', onclick: async () => { let r = null; try { r = await pushMod.enable(ctx); } catch { /* ignore */ } if (r && r.ok) evaluate(); else { msg.textContent = t('onb.push.fail'); } } }, icon('bell'), t('onb.push.enable')));
-  else kids.push(h('button', { class: 'btn lg block soft', 'data-testid': 'push-recheck', onclick: () => evaluate() }, icon('refresh'), t('onb.push.recheck')));
+  const state = pushState(); const pm = pushMod;
+  const perm = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+  const msg = h('p', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', 'data-testid': 'push-msg' });
+  const kids = [h('div', { class: 'logo' }, icon(state === 'denied' ? 'bellOff' : 'bell'))];
+  let btnEl = null;
+  if (state === 'ios-install') {
+    kids.push(h('h1', null, t('push.gate.ios.title')), h('p', { class: 'lead' }, t('push.gate.ios.why')));
+    if (/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(navigator.userAgent)) kids.push(h('div', { class: 'note warn', 'data-testid': 'push-safari' }, icon('alert'), t('push.gate.ios.safari')));
+    kids.push(h('div', { class: 'card tonal stack tight', 'data-testid': 'push-ios-steps' }, gateSteps(['push.gate.ios.1', 'push.gate.ios.2', 'push.gate.ios.3'])));
+  } else if (state === 'denied') {
+    kids.push(h('h1', null, t('push.gate.denied.title')), h('p', { class: 'lead' }, t('push.gate.denied.why')),
+      h('div', { class: 'card tonal stack tight', 'data-testid': 'push-denied-steps' }, gateSteps(pm.deniedSteps())));
+  } else {
+    kids.push(h('h1', null, t('push.gate.title')), h('p', { class: 'lead' }, t('push.gate.why')));
+  }
+  let busy = false;
+  const doEnable = async (auto) => {
+    if (busy) return; busy = true; msg.textContent = '';
+    if (btnEl) { btnEl.disabled = true; btnEl.lastChild.textContent = t('push.gate.working'); }
+    let r = null; try { r = await pm.enable(ctx); } catch { /* ignore */ }
+    busy = false;
+    if (r && r.ok) { evaluate(); return; }   // prosegue da sola
+    if (btnEl) { btnEl.disabled = false; btnEl.lastChild.textContent = t('push.gate.btn'); }
+    const why = r && r.reason;
+    if (why === 'denied') { evaluate(); return; }   // permesso negato: mostra come riattivarlo
+    if (!auto) msg.textContent = why === 'dismissed' ? t('push.gate.dismissed') : t('push.gate.failed');
+  };
+  if (state === 'off') {
+    btnEl = h('button', { class: 'btn lg block', type: 'button', 'data-testid': 'push-enable', onclick: () => doEnable(false) }, icon('bell'), h('span', null, t('push.gate.btn')));
+    kids.push(btnEl, h('p', { class: 'small muted' }, t('push.gate.hint')));
+  } else {
+    kids.push(h('button', { class: 'btn lg block' + (state === 'denied' ? '' : ' soft'), type: 'button', 'data-testid': 'push-recheck', onclick: () => evaluate() }, icon('refresh'), t('push.gate.recheck')), h('p', { class: 'small muted' }, t('push.gate.auto')));
+  }
   kids.push(msg);
-  if (ctx.isAdmin) kids.push(h('button', { class: 'btn ghost block', 'data-testid': 'push-skip', onclick: () => { S.pushSkip = true; evaluate(); } }, t('onb.push.skip')));
+  if (ctx.isAdmin) kids.push(h('button', { class: 'btn ghost block', type: 'button', 'data-testid': 'push-skip', onclick: () => { S.pushSkip = true; evaluate(); } }, t('push.gate.skip')));
+  // ricontrolla da sola quando l'app torna in primo piano (es. dopo aver cambiato il permesso nelle impostazioni del telefono)
+  const off = () => { document.removeEventListener('visibilitychange', recheck); window.removeEventListener('focus', recheck); window.removeEventListener('pageshow', recheck); };
+  const recheck = () => {
+    if (S.stage !== 'push') { off(); return; }
+    if (document.visibilityState !== 'visible' || busy) return;
+    const st = pm.status(ctx); const p = typeof Notification !== 'undefined' ? Notification.permission : 'default';
+    if (st.state !== state || p !== perm) evaluate();
+  };
+  if (S.pushOff) S.pushOff();
+  S.pushOff = off;
+  document.addEventListener('visibilitychange', recheck); window.addEventListener('focus', recheck); window.addEventListener('pageshow', recheck);
+  // permesso già concesso ma iscrizione mancante (es. riattivato dalle impostazioni del telefono): completa da sola
+  if (state === 'off' && perm === 'granted' && Date.now() - (S.pushAutoAt || 0) > 5000) { S.pushAutoAt = Date.now(); Promise.resolve().then(() => doEnable(true)); }
   return h('div', { class: 'gate' }, h('div', { class: 'panel' }, ...kids));
 }
 
@@ -471,15 +518,26 @@ async function renderApp(force) {
   const title = `${ctx.house.name || 'Tidy House'} · Tidy House`; if (document.title !== title) document.title = title;
 }
 
-/** Promemoria (chiudibile per la sessione) se le notifiche non sono ancora attive su questo dispositivo. */
+/** Promemoria (rimandabile con «Più tardi», non sparisce per sempre) se le notifiche non sono ancora attive su questo dispositivo. */
 async function notifReminder() {
-  if (S.notifDismissed || !ctx.cloud || S.route.root === 'settings') return null;
+  // «Più tardi» nasconde il promemoria solo per un po': se le notifiche restano spente ricompare (e a ogni nuovo avvio)
+  if (!ctx.cloud || S.route.root === 'settings' || (S.notifLaterAt && Date.now() - S.notifLaterAt < 20 * 60000)) return null;
   const pm = await import('./push.js'); const st = pm.status(ctx); const state = (st && st.state) || st;
-  const close = h('button', { class: 'icon-btn', 'aria-label': t('close'), onclick: () => { S.notifDismissed = true; scheduleRender(true); } }, icon('x'));
+  const close = h('button', { class: 'icon-btn', 'aria-label': t('push.rem.later'), title: t('push.rem.later'), 'data-testid': 'notif-reminder-later', onclick: () => { S.notifLaterAt = Date.now(); scheduleRender(true); } }, icon('x'));
   if (state === 'off') {
+    // un solo tocco: permesso + iscrizione + salvataggio
+    const go = h('button', { class: 'btn sm', type: 'button', 'data-testid': 'notif-reminder-enable', onclick: async () => {
+      go.disabled = true; let r = null; try { r = await pm.enable(ctx); } catch { /* ignore */ }
+      if (r && r.ok) { toast(t('set.notif.status.on')); scheduleRender(true); return; }
+      go.disabled = false; toast(r && r.reason === 'dismissed' ? t('push.dismissed') : t('push.err')); if (r && r.reason === 'denied') scheduleRender(true);
+    } }, t('push.rem.enable'));
     return h('div', { class: 'card tonal row', style: { marginBottom: '16px' }, 'data-testid': 'notif-reminder' }, icon('bell'),
-      h('div', { class: 'grow' }, h('strong', null, t('onb.notif.title')), h('div', { class: 'small muted' }, t('onb.notif.text'))),
-      h('button', { class: 'btn sm', onclick: async () => { let r = null; try { r = await pm.enable(ctx); } catch { /* ignore */ } if (r && r.ok) { toast(t('set.notif.status.on')); S.notifDismissed = true; scheduleRender(true); } else ctx.nav('settings/notifications'); } }, t('onb.notif.enable')), close);
+      h('div', { class: 'grow' }, h('strong', null, t('push.rem.title')), h('div', { class: 'small muted' }, t('push.rem.text'))), go, close);
+  }
+  if (state === 'denied') {
+    return h('div', { class: 'card tonal row', style: { marginBottom: '16px' }, 'data-testid': 'notif-reminder-denied' }, icon('bellOff'),
+      h('div', { class: 'grow' }, h('strong', null, t('push.rem.deniedTitle')), h('div', { class: 'small muted' }, t('push.rem.deniedText'))),
+      h('a', { class: 'btn sm', href: '#/settings/notifications' }, t('push.rem.how')), close);
   }
   if (state === 'ios-install') {
     return h('div', { class: 'card tonal row', style: { marginBottom: '16px' }, 'data-testid': 'notif-reminder-ios' }, icon('bell'),

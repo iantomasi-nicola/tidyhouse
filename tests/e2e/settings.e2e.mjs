@@ -46,6 +46,9 @@ const toast = (page, re) => page.waitForFunction((s) => [...document.querySelect
 const until = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: 6000 });
 const shot = (page, name) => page.screenshot({ path: SHOTS + name + '.png', fullPage: true });
 const tid = (id) => `[data-testid="${id}"]`;
+/** Sezione richiudibile (<details>): la apre se è chiusa. */
+const openFold = async (page, id) => { if (!(await page.locator(tid(id)).evaluate((d) => d.open))) await page.click(`${tid(id)} > summary`); await page.waitForFunction((s) => document.querySelector(s).open, tid(id)); };
+const isOpen = (page, id) => page.locator(tid(id)).evaluate((d) => d.open);
 
 const members = {
   devB: { personId: 'bruno', name: 'iPhone di Bruno', device: { os: 'iPhone', browser: 'Safari', kind: 'device', label: 'iPhone · Safari' }, lastSeen: '2026-10-28T08:00:00.000Z', firstSeen: '2026-10-05T09:00:00.000Z', push: { endpoint: 'https://push.example/1', keys: { p256dh: 'a', auth: 'b' } }, standalone: true, version: '1.0.0', lang: 'it', isAdmin: false, rulesAck: { version: '1', at: '2026-10-05T09:00:00.000Z' } },
@@ -138,12 +141,26 @@ await test('layout Home: ordine, nascondi, reset, layout della casa', async (mk)
 await test('notifiche personali: stato, tipi, prefs sul member', async (mk) => {
   const page = await mk({ houseExtra: { notif: { needs: { on: false } } } }); await go(page, 'notifications');
   assert.equal(await page.locator(tid('push-state')).getAttribute('data-state'), 'nocloud');
-  await page.click(tid('nt-satDuty-row'));
-  await until(page, () => window.__app.prefs.notif && window.__app.prefs.notif.satDuty === false);
+  // cinque righe (non dieci); l'admin vede anche il riepilogo
+  assert.equal(await page.locator('input[data-testid^="nt-group-"]').count(), 5);
+  assert.equal(await page.locator('input[data-testid^="nt-group-"]:checked').count(), 5);
+  await page.click(tid('nt-group-shifts-row'));
+  await until(page, () => ['satDuty', 'sunMark', 'late', 'planDay', 'monNew'].every((k) => window.__app.prefs.notif && window.__app.prefs.notif[k] === false));
   const st = await state(page);
-  assert.equal(Object.values(st.members).find((m) => m.personId === 'anna').prefs.satDuty, false);
-  assert.match(await page.locator(tid('nt-needs-row')).innerText(), /spenta dall'admin/);
-  assert.ok(await page.locator(tid('nt-adminDigest')).count()); // admin vede anche il riepilogo
+  const pr = Object.values(st.members).find((m) => m.personId === 'anna').prefs;
+  for (const k of ['satDuty', 'sunMark', 'late', 'planDay', 'monNew']) assert.equal(pr[k], false, k);
+  assert.equal(pr.friAbsence, undefined, 'gli altri gruppi non cambiano');
+  assert.equal(await page.locator(tid('nt-group-shifts')).isChecked(), false);
+  // il gruppo è acceso se nessuna chiave è spenta: una sola chiave spenta lo spegne, e riaccendendo le riaccende tutte
+  await page.click(tid('nt-group-shifts-row'));
+  await until(page, () => ['satDuty', 'late', 'monNew'].every((k) => window.__app.prefs.notif[k] === true));
+  await page.click(tid('nt-group-requests-row'));
+  await until(page, () => window.__app.prefs.notif.requests === false && window.__app.prefs.notif.nudges === false);
+  await page.evaluate(() => { window.__app.savePrefs({ notif: { ...window.__app.prefs.notif, requests: true } }); });   // nudges resta false
+  await page.waitForFunction(() => !document.querySelector('[data-testid="nt-group-requests"]').checked);
+  assert.match(await page.locator(tid('nt-group-needs-row')).innerText(), /spenta dall'admin/);
+  assert.ok(await page.locator(tid('nt-group-admin')).count()); // admin vede anche il riepilogo
+  assert.equal(await page.locator(tid('nt-satDuty')).count(), 0, 'niente più interruttori per tipo');
   await shot(page, 'notifications-390');
   // funzioni di push (contesto finto)
   const r = await page.evaluate(async () => {
@@ -300,7 +317,11 @@ await test('notifiche attive: diagnosi registrazione sul server e prove sempre d
   await page.evaluate(() => { localStorage.setItem('cp:pushsub', '1'); Object.defineProperty(window.__app, 'mode', { get: () => 'cloud', configurable: true }); Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true }); });
   await go(page, 'notifications');
   assert.equal(await page.locator(tid('push-state')).getAttribute('data-state'), 'on');
+  // dispositivo «attivo» ma non registrato sul server: «Diagnostica e prove» si apre da sola
+  assert.equal(await isOpen(page, 'nt-diag'), true);
   assert.ok(await page.locator(tid('push-test')).isVisible()); assert.ok(await page.locator(tid('push-test-server')).isVisible());
+  assert.ok(await page.locator(tid('push-disable')).isVisible());
+  assert.ok(await page.locator(tid('test-all')).isVisible(), 'l\'admin ha la prova a tutti dentro la diagnostica');
   assert.equal(await page.locator(tid('diag-saved')).getAttribute('data-ok'), '0');
   assert.equal(await page.locator(tid('diag-server')).getAttribute('data-ok'), '1');
   assert.ok(await page.locator(tid('push-repair')).isVisible());
@@ -309,6 +330,31 @@ await test('notifiche attive: diagnosi registrazione sul server e prove sempre d
   await until(page, () => Object.values(window.__app.state.requests).some((r) => r.kind === 'test'));
   await page.waitForSelector(tid('diag-pending'));
   await shot(page, 'notifications-diag-390'); noErrors(page);
+});
+
+await test('notifiche attive e registrate: diagnostica chiusa, si apre a mano e resta aperta', async (mk) => {
+  const page = await mk({ houseExtra: { vapidPublic: 'BAAA', serverRun: '2026-10-28T09:30:00.000Z' } });
+  await page.evaluate(() => { localStorage.setItem('cp:pushsub', '1'); Object.defineProperty(window.__app, 'mode', { get: () => 'cloud', configurable: true }); Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true }); });
+  // l'avvio azzera i push salvati finché non sono «attivi»: il dispositivo si registra ora, come dopo «Attiva»
+  await page.evaluate(() => window.__app.actions.touchMember({ push: { endpoint: 'https://push.example/dev1', keys: { p256dh: 'a', auth: 'b' } } }));
+  await go(page, 'notifications');
+  assert.equal(await page.locator(tid('push-state')).getAttribute('data-state'), 'on');
+  assert.equal(await isOpen(page, 'nt-diag'), false, 'tutto ok: chiusa');
+  assert.equal(await page.locator(tid('push-test')).isVisible(), false);
+  assert.equal(await page.locator(tid('push-state')).isVisible(), true, 'lo stato resta in vista');
+  await openFold(page, 'nt-diag');
+  assert.equal(await page.locator(tid('diag-saved')).getAttribute('data-ok'), '1');
+  assert.ok(await page.locator(tid('push-test')).isVisible());
+  // un rerender (es. cambio di una preferenza) non richiude la sezione aperta dall'utente
+  await page.click(tid('nt-group-needs-row'));
+  await until(page, () => window.__app.prefs.notif && window.__app.prefs.notif.needs === false);
+  await page.waitForTimeout(150);
+  assert.equal(await isOpen(page, 'nt-diag'), true);
+  // non-admin: nessun riepilogo admin
+  assert.equal(await page.locator(tid('nt-group-admin')).count(), 1);
+  const p2 = await mk({ seedOpts: { admin: false, me: 'bruno' }, hash: '/settings/notifications' });
+  assert.equal(await p2.locator(tid('nt-group-admin')).count(), 0, 'il riepilogo admin è solo per l\'admin');
+  noErrors(page);
 });
 
 await test('admin: prova di notifica a tutti (una richiesta per persona con push)', async (mk) => {
@@ -330,6 +376,8 @@ await test('notifiche immediate: token, prova e avvio dopo una voce della spesa'
   await page.route('https://api.github.com/**', (route) => { calls.push({ url: route.request().url(), auth: route.request().headers()['authorization'], body: route.request().postData() }); route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' }, body: '' }); });
   await page.evaluate(() => { window.__app.house.id; });
   await go(page, 'notif-house');
+  assert.equal(await isOpen(page, 'fold-kick'), false, 'notifiche immediate: richiudibile e chiusa di default');
+  await openFold(page, 'fold-kick');
   assert.equal(await page.locator(tid('kick-state')).getAttribute('data-on'), '0');
   await page.fill(tid('kick-token'), 'github_pat_TEST'); await page.click(tid('kick-save'));
   await until(page, () => window.__app.house.kick && window.__app.house.kick.token === 'github_pat_TEST');
@@ -355,6 +403,12 @@ await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => 
   await page.click(tid('late-add')); await until(page, () => window.__app.house.notif.late.times.length === 4);
   await page.click(`${tid('step-late-max')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.late.max === 4);
   await page.click(`${tid('step-catchUp')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.catchUpHours === 6);
+  // in vista: master e card dei tipi; anteprima, chiavi, notifiche immediate e server sono sezioni richiudibili
+  assert.ok(await page.locator(tid('sw-notif-master')).isVisible()); assert.ok(await page.locator(tid('ncard-satDuty')).isVisible());
+  for (const f of ['fold-preview', 'fold-kick', 'fold-server']) assert.equal(await isOpen(page, f), false, f + ' chiusa');
+  assert.equal(await isOpen(page, 'fold-keys'), true, 'senza chiavi la sezione si apre da sola');
+  assert.equal(await page.locator(tid('preview')).isVisible(), false);
+  await openFold(page, 'fold-preview');
   assert.ok(await page.locator(`${tid('preview')} .li`).count() > 0);
   assert.match(await page.locator(tid('preview')).innerText(), /Sabato|ven|Venerdì/i);
   await page.click(tid('sw-notif-master-row')); await until(page, () => window.__app.house.notif.enabled === false);
@@ -372,8 +426,40 @@ await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => 
   assert.equal((await house(page)).vapidPublic, pub);
   await shot(page, 'notif-house-keys-390');
   await page.click(tid('vapid-hide')); await page.waitForSelector(tid('vapid-fresh'), { state: 'detached' });
+  assert.equal(await isOpen(page, 'fold-preview'), true, 'le sezioni aperte restano aperte dopo i salvataggi');
+  await openFold(page, 'fold-server');
   assert.equal(await page.locator(tid('server-run')).innerText(), 'Il server delle notifiche non si è ancora attivato');
   assert.equal(await page.locator(tid('readme-link')).getAttribute('href'), 'https://github.com/iantomasi-nicola/tidyhouse#readme');
+  noErrors(page);
+});
+
+await test('chiave pubblica esistente: valida, avviso, salva (stesso server per due case)', async (mk) => {
+  const page = await mk({ viewport: { width: 390, height: 844 } }); await go(page, 'notif-house');
+  assert.equal(await page.locator(tid('vapid-gen-have')).count(), 0, 'nessun avviso senza chiave');
+  const good = crypto.createECDH('prime256v1'); good.generateKeys();
+  const pub = good.getPublicKey().toString('base64url'); assert.equal(pub.length, 87);
+  // non valide: troppo corta, caratteri sbagliati, 87 caratteri ma non una chiave non compressa
+  for (const bad of ['abc', pub.slice(0, 86) + '!', 'A'.repeat(87)]) {
+    await page.waitForTimeout(400);   // lascia passare i ridisegni dovuti ai salvataggi in background
+    await page.evaluate(() => { document.querySelector('[data-testid=vapid-existing-err]').textContent = ''; });
+    await page.fill(tid('vapid-existing'), bad); await page.click(tid('vapid-existing-save'));
+    await page.waitForFunction(() => document.querySelector('[data-testid=vapid-existing-err]').textContent.length > 0, null, { timeout: 5000 });
+    assert.equal((await house(page)).vapidPublic, undefined, 'non salvata: ' + bad);
+  }
+  await page.fill(tid('vapid-existing'), '  ' + pub + '  '); await page.click(tid('vapid-existing-save'));
+  await until(page, (p) => window.__app.house.vapidPublic === p, pub);
+  await page.waitForFunction(() => /configurate/i.test((document.querySelector('[data-testid=vapid-state]') || {}).textContent || ''));
+  await page.waitForFunction((p) => (document.querySelector('[data-testid=vapid-public]') || {}).textContent === p, pub);
+  assert.equal(await page.locator(tid('vapid-fresh')).count(), 0, 'nessuna chiave privata mostrata');
+  // ora la casa ha una chiave: avviso accanto a «Genera chiavi» e conferma prima di sostituirla
+  assert.ok(await page.locator(tid('vapid-gen-have')).isVisible());
+  const other = crypto.createECDH('prime256v1'); other.generateKeys(); const pub2 = other.getPublicKey().toString('base64url');
+  await page.fill(tid('vapid-existing'), pub2); await page.click(tid('vapid-existing-save'));
+  await page.waitForSelector('.sheet .btn.danger');
+  assert.equal((await house(page)).vapidPublic, pub, 'in attesa di conferma');
+  await shot(page, 'notif-house-usekey-390');
+  await page.click('.sheet .btn.danger');
+  await until(page, (p) => window.__app.house.vapidPublic === p, pub2);
   noErrors(page);
 });
 
