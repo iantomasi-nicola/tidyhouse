@@ -1,6 +1,6 @@
 // Home a widget: turno personale, settimana, avvisi, extra ricorrenti, scorciatoie, link, assenze, anteprima, recuperi, classifica, spesa.
 // L'ordine e la visibilita' vengono da ctx.homeLayout(). choresheet.js e trips.js si importano solo al click.
-import { h, icon, avatar, loadCss, confetti, haptic, promptDialog, confirmDialog } from '../ui.js';
+import { h, icon, avatar, loadCss, confetti, haptic, promptDialog } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, validateRoommates } from '../engine.js';
 import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote, termsLine } from '../choresheet.js';
@@ -67,13 +67,14 @@ async function markDone(ctx, sunday, c, ev) {
 }
 const isOk = (r) => r.kind === 'done' || r.kind === 'by';
 
+/** «Sono via»: un tocco, senza conferma (e' reversibile): messaggio con «Annulla» che ti rimette in turno. */
 async function setSelfAway(ctx, sunday, on, revert) {
   const t = ctx.t;
-  if (on) {
-    const ok = await confirmDialog({ title: t('home.awayConfirmTitle'), text: t('home.awayConfirm'), ok: t('home.imAway') });
-    if (!ok) { revert && revert(); return; }
-  }
-  try { await ctx.actions.setAway(sunday, ctx.me, on); ctx.toast(on ? t('home.awayDone') : t('home.backDone')); } catch { revert && revert(); ctx.toast(t('error')); }
+  try {
+    await ctx.actions.setAway(sunday, ctx.me, on);
+    if (on) ctx.toast(t('home.awayDone'), 7000, { action: { label: t('flow.undo'), onClick: async () => { try { await ctx.actions.setAway(sunday, ctx.me, false); ctx.toast(t('home.backDone')); } catch { ctx.toast(t('error')); } } } });
+    else ctx.toast(t('home.backDone'));
+  } catch { revert && revert(); ctx.toast(t('error')); }
 }
 const canSelfAway = (ctx) => !!ctx.me && ctx.feature('selfAway') && ctx.actions.canAway(ctx.me);
 /** L'assenza e' stata segnata a mano (e quindi annullabile) o deriva da viaggi / "tutti via"? */
