@@ -1,6 +1,7 @@
 // Audit di usabilita' UX-A (Home, Settimane, Assenze, Classifica e fogli collegati). Prefisso uxa.
 export const it = {
   'uxa.swapRestored': 'Scambio ripristinato',
+  'uxa.tripRestored': 'Assenza ripristinata',
   // l'admin sceglie chi fa un turno: stesse due opzioni delle richieste (con recupero / regalo)
   'uxa.terms.whoPicked': 'la persona scelta',
   'uxa.terms.repay.assign.title': 'Con recupero',
@@ -10,6 +11,7 @@ export const it = {
 };
 export const en = {
   'uxa.swapRestored': 'Swap restored',
+  'uxa.tripRestored': 'Absence restored',
   'uxa.terms.whoPicked': 'the person you pick',
   'uxa.terms.repay.assign.title': 'With make-up',
   'uxa.terms.repay.assign.desc': 'The person you pick cleans instead of the assigned one and logs «cleaned». By the rules the assigned person owes a make-up.',

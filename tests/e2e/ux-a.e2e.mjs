@@ -42,7 +42,7 @@ const noOverflow = async (page, label = '') => assert.ok(await page.evaluate(() 
 const noErrors = (page) => assert.deepEqual((page.__errors || []).filter((e) => !/Failed to load resource/.test(e)), [], 'errori in console');
 const wk = (page, s = CUR) => page.evaluate((sun) => JSON.parse(JSON.stringify(window.__app.state.weeks[sun] || {})), s);
 const reqs = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__app.state.requests || {})));
-const trips = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__app.state.trips || {})));
+const trips_ = (page) => page.evaluate(() => JSON.parse(JSON.stringify(window.__app.state.trips || {})));
 const sheets = (page) => page.locator('#layer .sheet').count();
 const closeSheets = async (page) => { for (let i = 0; i < 4 && (await sheets(page)); i++) { await page.keyboard.press('Escape'); await page.waitForTimeout(480); } };
 const waitSheet = async (page) => { await page.waitForSelector('#layer .sheet.on'); await page.waitForTimeout(450); };
@@ -169,6 +169,33 @@ const run = async () => {
     const w = await wk(page);
     assert.ok(w.agreed && w.agreed.floor && w.agreed.floor !== F, 'sostituto assegnato: ' + JSON.stringify(w.agreed));
     assert.ok(tp.n <= 2, 'tocchi: ' + tp.n);
+    noErrors(page); await page.close();
+  });
+
+  // ===== B2: tap target dei giorni (Home), elimina assenza con Annulla =====
+  await test('B2 giorni della Home: tocco >= 44px a 390 (a 320 su due righe, mai piu\' piccoli)', async () => {
+    for (const vp of [MOBILE, SMALL]) {
+      const page = await open({ s: mk({ me: F, admin: false }), viewport: vp, fs: vp === SMALL ? 1.3 : 1 });
+      await page.waitForSelector('[data-testid="plan-tip"] .daychips button');
+      const boxes = await page.$$eval('[data-testid="plan-tip"] .daychips button', (bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }));
+      assert.equal(boxes.length, 7);
+      for (const [w, h] of boxes) assert.ok(w >= 44 && h >= 44, `${vp.width}px: bottone ${w}x${h}`);
+      await noOverflow(page, 'giorni ' + vp.width); await page.close();
+    }
+  });
+
+  await test('B2 elimina assenza: 1 tocco, niente conferma, Annulla la ripristina', async () => {
+    const trips = { t1: { personId: 'bruno', from: '2026-11-05', to: '2026-11-09', note: 'Weekend', by: 'bruno', at: '2026-10-20T10:00:00Z' } };
+    const page = await open({ s: mk({ me: 'bruno', admin: false, trips }), hash: '#/trips' });
+    const tp = tapper(page);
+    await tp.tap('[data-trip="t1"] .trip-del');
+    assert.equal(await sheets(page), 0, 'nessun dialogo di conferma');
+    assert.equal(Object.keys(await trips_(page)).length, 0, 'eliminata subito');
+    await tp.tap('.toast-action');
+    await page.waitForTimeout(500);
+    const back = Object.values(await trips_(page));
+    assert.equal(back.length, 1, 'ripristinata'); assert.equal(back[0].from, '2026-11-05'); assert.equal(back[0].note, 'Weekend');
+    assert.equal(tp.n, 2);
     noErrors(page); await page.close();
   });
 

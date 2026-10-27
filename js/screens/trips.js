@@ -1,9 +1,13 @@
 // Schermata "Assenze e viaggi" + sheet "Nuova assenza" (openTripSheet, usata anche dalla Home).
-import { h, icon, loadCss, avatar, toggle, empty, confirmDialog, haptic, clear } from '../ui.js';
+import { h, icon, loadCss, avatar, toggle, empty, haptic, clear } from '../ui.js';
 import { t, registerStrings, fmtDate, fmtWeekRange, getLang } from '../i18n.js';
 import { dayNum, addDays, weekEnd, awayFromTrips } from '../engine.js';
 import { it, en } from '../strings/trips.js';
+import { it as itU, en as enU } from '../strings/uxa.js';
+import { it as itF, en as enF } from '../strings/flow.js';   // flow.undo
 registerStrings(it, en);
+registerStrings(itU, enU);
+registerStrings(itF, enF);
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const OPEN_HORIZON = 8;      // settimane mostrate per un'assenza senza rientro
@@ -141,11 +145,12 @@ function tripCard(ctx, trip, kind) {
     imp ? weekChips(imp.weeks, kind === 'past') : null);
 }
 
+/** Elimina subito (un tocco) con «Annulla» nel messaggio: niente dialogo di conferma per un'azione facilmente rimediabile. */
 async function removeTrip(ctx, trip) {
-  const ok = await confirmDialog({ title: t('delete'), text: t('trips.deleteConfirm'), ok: t('delete'), danger: true });
-  if (!ok) return;
-  try { await ctx.actions.removeTrip(trip.id); ctx.toast(t('trips.deleted')); }
-  catch (e) { ctx.toast(t('error')); }
+  const copy = { personId: trip.personId, from: trip.from, to: trip.to || null, note: trip.note || null };
+  try { await ctx.actions.removeTrip(trip.id); } catch (e) { ctx.toast(t('error')); return; }
+  haptic(ctx.prefs.haptics, 10);
+  ctx.toast(t('trips.deleted'), 7000, { action: { label: t('flow.undo'), onClick: async () => { try { await ctx.actions.addTrip(copy); ctx.toast(t('uxa.tripRestored')); } catch (e) { ctx.toast(t('error')); } } } });
 }
 
 // ---------------------------------------------------------------- assenza per singola settimana
@@ -214,7 +219,7 @@ export function openTripSheet(ctx, personId) {
   // ---- campi
   const fromInp = h('input', { class: 'input', type: 'date', id: 'trip-from', value: st.from, 'aria-label': t('trips.leave') });
   const toInp = h('input', { class: 'input', type: 'date', id: 'trip-to', value: st.to, 'aria-label': t('trips.return') });
-  const noteInp = h('input', { class: 'input', type: 'text', id: 'trip-note', maxlength: '80', placeholder: t('trips.note'), autocomplete: 'off', 'aria-label': t('trips.note') });
+  const noteInp = h('input', { class: 'input', type: 'text', id: 'trip-note', maxlength: '80', placeholder: t('trips.note'), autocomplete: 'off', enterkeyhint: 'done', 'aria-label': t('trips.note') });
   const toField = h('div', { class: 'field' }, h('label', { for: 'trip-to' }, t('trips.return')), toInp);
   const openSw = toggle(false, (on) => { st.open = on; toField.hidden = on; refresh(); }, t('trips.openEnded'));
   const openInp = openSw.querySelector('input');
