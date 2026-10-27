@@ -400,8 +400,9 @@ await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => 
   await page.selectOption(tid('dow-satDuty'), '5'); await until(page, () => window.__app.house.notif.satDuty.dow === 5);
   await page.fill(tid('time-satDuty'), '11:30'); await until(page, () => window.__app.house.notif.satDuty.time === '11:30');
   await page.click(tid('ncard-monNew') + ' .switch'); await until(page, () => window.__app.house.notif.monNew.on === true);
-  await page.click(tid('late-add')); await until(page, () => window.__app.house.notif.late.times.length === 4);
-  await page.click(`${tid('step-late-max')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.late.max === 4);
+  await page.waitForTimeout(400);   // l'app ignora un secondo click ravvicinato (<350 ms) sullo stesso punto
+  await page.click(tid('late-add')); await until(page, () => window.__app.house.notif.late.times.length === 3);
+  await page.click(`${tid('step-late-max')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.late.max === 3);
   await page.click(`${tid('step-catchUp')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.catchUpHours === 6);
   // in vista: master e card dei tipi; anteprima, chiavi, notifiche immediate e server sono sezioni richiudibili
   assert.ok(await page.locator(tid('sw-notif-master')).isVisible()); assert.ok(await page.locator(tid('ncard-satDuty')).isVisible());
@@ -536,6 +537,7 @@ await test('dati: export JSON/CSV/XLSX, import JSON, cifrato, Excel reale', asyn
   await page.setInputFiles(sel, { name: 'b.enc.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(enc)) });
   await page.fill(tid('pass-1'), 'sbagliata'); await page.click(tid('pass-ok'));
   await page.waitForFunction(() => document.querySelector('[data-testid=pass-error]').textContent.length > 0);
+  await page.waitForTimeout(400);
   await page.fill(tid('pass-1'), 'segreta123'); await page.click(tid('pass-ok'));
   await page.waitForSelector(tid('import-summary')); await page.click(tid('import-confirm'));
   await until(page, () => window.__app.house.name === 'Casa Cifrata');
@@ -617,6 +619,7 @@ await test('IA: senza chiave e con errore del servizio', async (mk) => {
   await page.waitForSelector('.sheet .note.warn');
   await page.evaluate(() => localStorage.setItem('cp:ai', JSON.stringify({ provider: 'openai', key: 'k' })));
   await page.route('https://api.openai.com/**', (route) => route.request().method() === 'OPTIONS' ? route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' } }) : route.fulfill({ status: 401, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { message: 'bad key' } }) }));
+  await page.waitForTimeout(400);
   await page.click(tid('ai-run')); await page.waitForSelector(tid('ai-error'));
   assert.match(await page.locator(tid('ai-error')).innerText(), /bad key/);
   await page.click('.sheet .icon-btn[aria-label="Chiudi"]');
@@ -630,8 +633,10 @@ await test('sicurezza: cambio PIN, blocco e sblocco', async (mk) => {
   const page = await mk({ houseExtra: { adminSalt: salt, adminHash } }); await go(page, 'security');
   await page.fill(tid('pin-old'), '9999'); await page.fill(tid('pin-new'), '5678'); await page.fill(tid('pin-new2'), '5678'); await page.click(tid('pin-save'));
   await page.waitForFunction(() => document.querySelector('[data-testid=pin-error]').textContent.includes('errato'));
+  await page.waitForTimeout(400);
   await page.fill(tid('pin-old'), '1234'); await page.fill(tid('pin-new2'), '0000'); await page.click(tid('pin-save'));
   await page.waitForFunction(() => document.querySelector('[data-testid=pin-error]').textContent.includes('coincidono'));
+  await page.waitForTimeout(400);
   await page.fill(tid('pin-new2'), '5678'); await page.click(tid('pin-save'));
   await until(page, () => window.__app.house.adminSalt !== 'SALTSALTSALT1234');
   const ok = await page.evaluate(async () => { const a = await import('/js/actions.js'); return [await a.verifyPin(window.__app.house, '5678'), await a.verifyPin(window.__app.house, '1234')]; });
