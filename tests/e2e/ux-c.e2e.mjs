@@ -197,46 +197,67 @@ if (want('badges')) {
   await cmp('richiesta già accettata o rifiutata', { requests: { a1: REQ({ kind: 'cover', week: SUN, chore: 'floor', from: 'anna', to: null, status: 'accepted' }), d1: REQ({ kind: 'offer', week: SUN, chore: 'floor', from: 'carla', to: 'bruno', status: 'declined' }) }, expect: 0 });
   await cmp('funzione «richieste» spenta', { features: { requests: false }, requests: { c1: REQ({ kind: 'cover', week: SUN, chore: 'floor', from: 'anna', to: null }) }, expect: 0 });
   await cmp('nessuna settimana in corso (prima dell\'inizio)', { now: '2026-09-20T10:00:00', requests: { c1: REQ({ kind: 'cover', week: '2026-10-04', chore: 'floor', from: 'anna', to: null }) }, expect: 1 });
+  await cmp('richiesta su una settimana chiusa: non conta', { requests: { c1: REQ({ kind: 'cover', week: '2026-10-04', chore: 'floor', from: 'anna', to: null }), c2: REQ({ kind: 'cover', week: SUN, chore: 'floor', from: 'anna', to: null }) }, expect: 1 });
   await cmp('chi sono io non conta se la richiesta è mia', { me: 'anna', requests: { c1: REQ({ kind: 'cover', week: SUN, chore: 'floor', from: 'anna', to: null }) }, expect: 0 });
+  // badge unico: compiti condivisi «tocca a te» + richieste = chip «Da fare ora» dell'hub
+  {
+    let mine = 0;
+    for (const me of ['anna', 'bruno', 'carla']) {
+      const page = await env.page({ now: NOW, seed: mkSeed({ me, admin: false, houseExtra: { shared: [{ id: 's1', text: 'Spazzatura', every: 2, enabled: true }] } }) });
+      await open(page, 'more', 500);
+      const nav = await page.evaluate(() => { const b = document.querySelector('nav a[data-tab=more] .badge'); return b ? +b.textContent : 0; });
+      const todo = await page.evaluate(() => { const c = document.querySelector('[data-testid=hub-todo] .eyebrow .chip'); return c ? +c.textContent : 0; });
+      ok(nav === todo, `[DIFETTO] compito condiviso (${me}): badge nav (${nav}) = «Da fare ora» (${todo})`);
+      mine += todo; await page.close();
+    }
+    ok(mine === 1, 'il compito condiviso tocca a una sola persona', mine);
+  }
 }
 
-// ============================================================================================ 4. SCADENZA RICHIESTE
+// ============================================================================================ 4. SCADENZA / PULIZIA RICHIESTE
 if (want('expiry')) {
   console.log('\n== SCADENZA RICHIESTE ==');
   const REQ = (o) => ({ status: 'pending', at: '2026-10-01T10:00:00.000Z', terms: 'repay', ...o });
-  const reqs = {
-    old1: REQ({ kind: 'cover', week: '2026-10-04', chore: 'floor', from: 'anna', to: null }),
-    old2: REQ({ kind: 'offer', week: '2026-10-18', chore: 'floor', from: 'carla', to: 'bruno' }),
-    old3: REQ({ week: '2026-10-11', from: 'anna', to: 'bruno', fromChore: 'floor', toChore: 'kitchen' }),
-    edge: REQ({ kind: 'cover', week: '2026-10-25', chore: 'floor', from: 'anna', to: null }),   // chiusa da 3 giorni: resta
+  const reqs = () => ({
+    old1: REQ({ kind: 'cover', week: '2026-10-04', chore: 'floor', from: 'anna', to: null }),                               // chiusa da 24 giorni: pulita
+    old3: REQ({ week: '2026-10-11', from: 'anna', to: 'bruno', fromChore: 'floor', toChore: 'kitchen' }),                   // 17 giorni: pulita
+    old2: REQ({ kind: 'offer', week: '2026-10-18', chore: 'floor', from: 'carla', to: 'bruno' }),                           // 10 giorni: resta, ma «scaduta» (fuori dai badge)
+    edge: REQ({ kind: 'cover', week: '2026-10-25', chore: 'floor', from: 'anna', to: null }),                               // 3 giorni
     cur: REQ({ kind: 'cover', week: '2026-11-01', chore: 'floor', from: 'anna', to: null }),
     acc: REQ({ kind: 'cover', week: '2026-10-04', chore: 'floor', from: 'anna', to: null, status: 'accepted', by: 'bruno' }),
     note: { kind: 'notice', code: 'x', to: 'bruno', from: 'anna', status: 'info', at: '2026-10-02T10:00:00.000Z' },
     nudge: REQ({ kind: 'nudge', to: 'bruno', from: 'anna', text: 'ciao' }),
-  };
-  const st = seed({ me: 'bruno', admin: false, houseExtra: { requireRules: false, tasks: [] } });
-  st['cp:h:LOCALTEST001'].requests = reqs;
-  const page = await env.page({ now: NOW, seed: st });
-  await open(page, 'more', 900);
-  const got = await page.evaluate(() => Object.fromEntries(Object.entries(window.__app.state.requests).map(([k, v]) => [k, v.status])));
-  ok(got.old1 === 'expired' && got.old2 === 'expired' && got.old3 === 'expired', '[DIFETTO] richieste in attesa su settimane chiuse da più di 7 giorni → expired', got);
-  ok(got.edge === 'pending' && got.cur === 'pending', 'settimana chiusa da 3 giorni e settimana in corso: restano in attesa', got);
-  ok(got.acc === 'accepted' && got.note === 'info' && got.nudge === 'pending', 'accettate, avvisi e solleciti non vengono toccati', got);
-  const nav = await page.evaluate(() => { const b = document.querySelector('nav a[data-tab=more] .badge'); return b ? +b.textContent : 0; });
-  const hub = await page.evaluate(() => { const c = document.querySelector('#main a[href="#/requests"] .chip'); return c ? +c.textContent : 0; });
-  ok(nav === 2 && hub === 2, `[DIFETTO] i badge contano solo le richieste ancora valide (nav ${nav}, hub ${hub}; attese: edge + cur = 2)`);
-  const ea = await page.evaluate(() => window.__app.state.requests.old1.expiredAt);
-  ok(typeof ea === 'string' && ea.startsWith('2026-10-28'), 'expiredAt registrato', ea);
-  // una sola scrittura per apertura: ricaricando non cambia più nulla
-  const wr = await page.evaluate(() => { let n = 0; const b = window.__app.store.b; const w = b.write.bind(b); b.write = (ops) => { n += (Array.isArray(ops) ? ops : [ops]).filter((o) => o.coll === 'requests').length; return w(ops); }; return new Promise((res) => { window.__app.rerender(); setTimeout(() => res(n), 600); }); });
-  ok(wr === 0, 'nessuna nuova scrittura sulle richieste già scadute', wr);
-  // la scadenza non fa comparire una richiesta scaduta come «in attesa» nella pagina Richieste
-  await open(page, 'requests', 500);
-  const txt = await page.evaluate(() => document.querySelector('#main').innerText);
-  // NB: in js/screens/more.js (UX-B) lo «Storico» mostra una richiesta expired con il chip «In attesa» (statusChip non conosce expired): da correggere lì, vedi docs/ux/core.md
-  warn(!/In attesa|Pending/.test(txt.split("Storico")[1] || ""), "Richieste: le scadute non compaiono come «In attesa» nello storico (file di UX-B)");
-  ok(!errs(page).length, 'nessun errore in console', errs(page));
-  await page.close();
+  });
+  const withReqs = (o) => { const st = seed({ requireRules: false, ...o, houseExtra: { requireRules: false, tasks: [] } }); st['cp:h:LOCALTEST001'].requests = reqs(); return st; };
+  // a) admin: all'apertura le pending su settimane chiuse da più di 14 giorni vengono tolte
+  {
+    const page = await env.page({ now: NOW, seed: withReqs({ me: 'anna', admin: true }) });
+    await open(page, 'more', 900);
+    const got = await page.evaluate(() => Object.fromEntries(Object.entries(window.__app.state.requests).map(([k, v]) => [k, v.status])));
+    ok(!('old1' in got) && !('old3' in got), '[DIFETTO] admin: le richieste in attesa su settimane chiuse da più di 14 giorni vengono ripulite', got);
+    ok(got.old2 === 'pending' && got.edge === 'pending' && got.cur === 'pending', 'chiuse da meno di 14 giorni e settimana in corso: restano', got);
+    ok(got.acc === 'accepted' && got.note === 'info' && got.nudge === 'pending', 'accettate, avvisi e solleciti non vengono toccati', got);
+    // una sola scrittura per apertura: nuovi aggiornamenti non scrivono più
+    const wr = await page.evaluate(() => { let n = 0; const b = window.__app.store.b; const w = b.write.bind(b); b.write = (ops) => { n += (Array.isArray(ops) ? ops : [ops]).filter((o) => o.coll === 'requests').length; return w(ops); }; return new Promise((res) => { window.__app.rerender(); window.__app.store.setDoc('needs', 'qq', { text: 'x', by: 'anna', at: new Date().toISOString() }); setTimeout(() => res(n), 600); }); });
+    ok(wr === 0, 'nessuna nuova scrittura sulle richieste', wr);
+    ok(!errs(page).length, 'nessun errore in console', errs(page));
+    await page.close();
+  }
+  // b) non-admin: non scrive; i badge ignorano comunque le richieste su settimane chiuse (nav = hub)
+  {
+    const page = await env.page({ now: NOW, seed: withReqs({ me: 'bruno', admin: false }) });
+    await open(page, 'more', 900);
+    const got = await page.evaluate(() => Object.keys(window.__app.state.requests).length);
+    ok(got === Object.keys(reqs()).length, 'un non-admin non ripulisce nulla', got);
+    const nav = await page.evaluate(() => { const b = document.querySelector('nav a[data-tab=more] .badge'); return b ? +b.textContent : 0; });
+    const hub = await page.evaluate(() => { const c = document.querySelector('#main a[href="#/requests"] .chip'); return c ? +c.textContent : 0; });
+    ok(nav === 1 && hub === 1, `[DIFETTO] i badge contano solo le richieste su settimane ancora aperte (nav ${nav}, hub ${hub}; attesa: 1 = cur)`);
+    // la risposta a una richiesta su una settimana chiusa viene rifiutata
+    const err = await page.evaluate(async () => { try { await window.__app.actions.answerCover('old2', true); return 'ok'; } catch (e) { return e.message; } });
+    ok(err === 'expired', '[DIFETTO] answerCover su settimana chiusa: Error(expired)', err);
+    ok(!errs(page).length, 'nessun errore in console', errs(page));
+    await page.close();
+  }
 }
 
 // ============================================================================================ 5. LINGUA NELL'ONBOARDING
@@ -397,15 +418,15 @@ if (want('paths')) {
   }
   // d) rientro dopo giorni: le richieste vecchie scadono al ritorno in primo piano
   {
-    const st = seed({ me: 'bruno', admin: false, houseExtra: { requireRules: false, tasks: [] } });
+    const st = seed({ me: 'anna', admin: true, houseExtra: { requireRules: false, tasks: [] } });
     st['cp:h:LOCALTEST001'].requests = { r1: { status: 'pending', kind: 'cover', week: '2026-10-25', chore: 'floor', from: 'anna', to: null, at: '2026-10-20T10:00:00.000Z', terms: 'repay' } };
     const page = await env.page({ now: NOW, seed: st });
     await open(page, '', 600);
-    ok(await page.evaluate(() => window.__app.state.requests.r1.status) === 'pending', 'rientro: la richiesta di 3 giorni fa è ancora valida');
-    await page.clock.setSystemTime(new Date('2026-11-03T10:00:00'));
+    ok(await page.evaluate(() => !!window.__app.state.requests.r1), 'rientro: la richiesta di 3 giorni fa è ancora valida');
+    await page.clock.setSystemTime(new Date('2026-11-12T10:00:00'));
     await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
     await sleep(800);
-    ok(await page.evaluate(() => window.__app.state.requests.r1.status) === 'expired', 'rientro dopo 6 giorni: la richiesta scade');
+    ok(await page.evaluate(() => !window.__app.state.requests.r1), 'rientro dopo 18 giorni (admin): la richiesta vecchia viene ripulita');
     ok(!errs(page).length, 'rientro: nessun errore in console', errs(page));
     await page.close();
   }

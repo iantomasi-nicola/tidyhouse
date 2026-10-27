@@ -7,7 +7,7 @@ import { compute } from './engine.js';
 import { Store, LocalBackend, CloudBackend, engineHouse } from './store.js';
 import { scheduleKick } from './kick.js';
 import { Actions, buildHouse, verifyPin, localDate, importBackupOps, exportBackup, normalizeStartSunday } from './actions.js';
-import { requestsAwaiting, staleRequestIds, feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
+import { requestsAwaiting, staleRequestIds, sharedStatus, feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
 
 import { it as uxcIt, en as uxcEn } from './strings/uxc.js';
 
@@ -74,10 +74,10 @@ async function attach(id, mode) {
   S.version++;
   return { ok: true };
 }
-/** Richieste vecchie (settimane chiuse da più di 7 giorni) → «expired»: una scrittura leggera, solo se ce ne sono, una volta per richiesta e per apertura. */
+/** Pulizia delle richieste rimaste «in attesa» su settimane chiuse da più di 14 giorni: una scrittura leggera, solo da un admin, solo se ce ne sono, una volta per richiesta e per apertura. */
 const expiring = new Set();
 function maybeExpire() {
-  if (!S.actions || !S.ready || S.stage !== 'app') return;
+  if (!S.actions || !S.ready || S.stage !== 'app' || !ctx.isAdmin) return;
   try {
     const ids = staleRequestIds(S.store.state.requests, localDate(new Date())).filter((id) => !expiring.has(id));
     if (!ids.length) return;
@@ -124,8 +124,10 @@ const ctx = {
     try {
       const me = this.me;
       // «Altro»: stessa regola e stessi casi dell'hub (awaitingMe() in more.js) — indipendente dalla settimana in corso; zero se la funzione «richieste» è spenta (l'hub non mostra la riga)
-      if (me && this.feature('requests')) out.more = requestsAwaiting(this.state, me).length;
-      const { out: o } = this.calc;
+      const { out: o } = this.calc; const today = localDate(new Date());
+      if (me && this.feature('requests')) out.more = requestsAwaiting(this.state, me, { rows: o.rows, today }).length;   // senza quelle su settimane chiuse (come l'hub)
+      // più i compiti condivisi «tocca a te» (stesso conteggio del blocco «Da fare ora» dell'hub)
+      if (me && this.feature('shared')) { try { out.more += sharedStatus(this.calc.eh, o, today).filter((x) => x.due && x.suggested === me).length; } catch { /* ignore */ } }
       if (me && o.cur >= 0) {
         for (let i = Math.max(0, o.cur - 1); i <= o.cur; i++) { const r = o.rows[i]; for (let c = 0; c < 3; c++) if (r.assigned[c] === me && !r.res[c].kind && (i < o.cur || r.isCur)) out.home += i < o.cur ? 1 : 0; }
       }
