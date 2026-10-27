@@ -160,6 +160,86 @@ await scenario('tap target ≥ 44 px su Altro e Impostazioni (390 e 320 con test
   assert.deepEqual(bad, [], 'target sotto i 44 px');
 });
 
+// ============================================================ BLOCCO 2 · Impostazioni
+await scenario('funzioni: ogni interruttore ha icona e una riga che spiega cosa cambia (anche «Compiti condivisi»)', async () => {
+  const p = await open({ seed: S() });
+  await goto(p, '/settings/features');
+  const rows = await p.evaluate(() => [...document.querySelectorAll('[data-testid^="feat-"][data-testid$="-row"]')].map((r) => ({ id: r.getAttribute('data-testid'), ico: !!r.querySelector('.ico svg'), d: (r.querySelector('.d') || {}).textContent || '' })));
+  assert.ok(rows.length >= 15, 'righe funzioni: ' + rows.length);
+  assert.deepEqual(rows.filter((r) => !r.ico).map((r) => r.id), [], 'icona mancante');
+  assert.deepEqual(rows.filter((r) => !r.d.trim()).map((r) => r.id), [], 'spiegazione mancante');
+  await noRawKeys(p, 'features'); await shot(p, 'features-390'); await done(p);
+});
+
+await scenario('indice impostazioni: rapide in cima (tema in 1 tap), ricerca, «aperte spesso»', async () => {
+  const p = await open({ seed: S() });
+  await goto(p, '/settings');
+  assert.ok(await p.locator(tid('st-quick')).isVisible(), 'impostazioni rapide');
+  await p.locator(tid('st-quick') + ' button:has-text("Scuro")').click();
+  await p.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'dark');
+  await p.locator(tid('st-quick') + ' button:has-text("Automatico")').click();
+  await p.waitForFunction(() => !document.documentElement.hasAttribute('data-theme'));
+  // ricerca
+  const q = p.locator(tid('st-search'));
+  await q.fill('penalità');
+  await p.waitForSelector(tid('st-results') + ' a[href="#/settings/rules"]');
+  assert.equal(await p.locator(tid('st-results') + ' a').count(), 1);
+  assert.equal(await p.locator(tid('settings-groups')).isVisible(), false, 'durante la ricerca spariscono i gruppi');
+  await q.fill('codice');
+  await p.waitForSelector(tid('st-results') + ' a[href="#/settings/invite"]');
+  await q.fill('zzzz');
+  assert.match(await p.locator(tid('st-results')).innerText(), /Nessun risultato per «zzzz»/);
+  assert.equal(await p.inputValue(tid('st-search')), 'zzzz');
+  await p.evaluate(() => window.__app.rerender()); await p.waitForTimeout(300);
+  assert.equal(await p.inputValue(tid('st-search')), 'zzzz', 'la ricerca sopravvive ai rerender');
+  await q.fill('');
+  assert.equal(await p.locator(tid('settings-groups')).isVisible(), true);
+  // aperte spesso: dopo 2 aperture la sezione sale in cima
+  assert.equal(await p.locator(tid('st-freq')).count(), 0);
+  for (let i = 0; i < 2; i++) { await hop(p, '/settings/features'); await hop(p, '/settings'); }
+  await p.waitForSelector(tid('st-freq') + ' a[href="#/settings/features"]');
+  assert.equal(await p.locator('a.li[href^="#/settings/"]').count(), 15, 'le 15 sezioni restano raggiungibili dall\'indice');
+  await noOverflow(p, 'settings'); await noRawKeys(p, 'settings'); await shot(p, 'settings-index-390'); await done(p);
+  // non admin: la ricerca non porta a sezioni vietate
+  const n = await open({ seed: S({ admin: false, me: 'bruno' }) });
+  await goto(n, '/settings');
+  await n.locator(tid('st-search')).fill('backup');
+  assert.match(await n.locator(tid('st-results')).innerText(), /Nessun risultato/);
+  await n.locator(tid('st-search')).fill('tema');
+  await n.waitForSelector(tid('st-results') + ' a[href="#/settings/appearance"]');
+  await done(n);
+  // EN
+  const e = await open({ seed: S({ houseExtra: { lang: 'en' } }), lang: 'en-US', viewport: D, dark: true });
+  await goto(e, '/settings');
+  await e.locator(tid('st-search')).fill('penalty');
+  await e.waitForSelector(tid('st-results') + ' a[href="#/settings/rules"]');
+  await noRawKeys(e, 'settings en'); await shot(e, 'settings-index-en-desktop'); await done(e);
+});
+
+await scenario('sicurezza: il nuovo admin non è preselezionato su chi è già admin; errori che non spariscono', async () => {
+  const p = await open({ seed: S({ houseExtra: { adminSalt: 'SALTSALTSALT1234', adminHash: 'xx' } }) });
+  await goto(p, '/settings/security');
+  const v = await p.locator(tid('newadmin-who')).inputValue();
+  assert.notEqual(v, 'anna', 'il primo candidato non deve essere l\'admin attuale');
+  assert.equal(await p.locator(tid('newadmin-pin')).getAttribute('enterkeyhint'), 'done');
+  await p.fill(tid('pin-old'), '9999'); await p.fill(tid('pin-new'), '5678'); await p.fill(tid('pin-new2'), '5678'); await p.click(tid('pin-save'));
+  await p.waitForFunction(() => /errato/.test(document.querySelector('[data-testid=pin-error]').textContent));
+  await p.evaluate(() => window.__app.rerender()); await p.waitForTimeout(300);
+  assert.match(await p.locator(tid('pin-error')).textContent(), /errato/, 'l\'errore resta dopo un rerender (arrivano dati da un altro telefono)');
+  await done(p);
+});
+
+await scenario('impostazioni: parole semplici nelle regole e testo «Chiave API» tradotto', async () => {
+  const p = await open({ seed: S() });
+  await goto(p, '/settings/rules');
+  const t = await body(p);
+  assert.match(t, /Persone a casa per concedere un riposo/); assert.match(t, /Settimane contate in classifica/);
+  assert.doesNotMatch(t, /Finestra classifica/);
+  await goto(p, '/settings/ai');
+  assert.equal(await p.locator(tid('ai-key')).getAttribute('placeholder'), 'Chiave API');
+  await done(p);
+});
+
 // ============================================================ chiusura
 console.log(`\n${ran - failed}/${ran} scenari ok`);
 await env.close();

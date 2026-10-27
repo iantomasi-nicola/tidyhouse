@@ -127,3 +127,13 @@
 /* tap target ≥ 44 px (audit UX-B) */
 .st-about a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; }
 .st-page .eyebrow button { min-height: 44px; min-width: 44px; }
+
+/* indice: ricerca, rapide, aperte spesso */
+.st-search { min-height: 48px; width: 100%; background: var(--surface); box-shadow: var(--shadow-1); }
+.st-quick { padding: 16px; }
+.st-quick .eyebrow { margin: 0 0 2px; }
+.st-quick-row { display: flex; align-items: center; gap: 12px; min-height: 48px; color: var(--text); }
+.st-quick-link > svg.i { color: var(--text-3); flex: none; }
+.st-freq-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.st-freq-chip { min-height: 44px; padding: 0 16px 0 12px; font-size: .9375rem; font-weight: 600; background: var(--tonal-2); color: var(--accent-ink); }
+.st-page [hidden] { display: none !important; }
