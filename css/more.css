@@ -216,3 +216,14 @@ button.mx-chip::after { inset: 0; }
 .mx-howto > summary > svg.i { width: 18px; height: 18px; color: var(--text-3); transition: transform .2s var(--ease); }
 .mx-howto[open] > summary > svg.i { transform: rotate(90deg); }
 .mx-howto > .stack { padding: 0 18px 18px; gap: 14px; }
+
+/* hub: «Da fare ora» (richieste e compiti condivisi con il pulsante già pronto) */
+.mx-todo-row { align-items: flex-start; }
+.mx-todo-row > .avatar, .mx-todo-row > .mx-ct { margin-top: 2px; }
+.mx-todo-row .mx-kindrow { margin-bottom: 4px; }
+.mx-todo-act { margin-top: 10px; }
+.mx-todo-act .btn { flex: 1 1 120px; }
+/* richieste scadute */
+.mx-stalehint { margin: 0 6px 8px; }
+.mx-stale { opacity: .8; }
+.mx-stalebtn { margin-top: 10px; }

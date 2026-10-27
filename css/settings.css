@@ -123,3 +123,7 @@
 .st-page .kpis { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .st-page .kpi { padding: 12px 14px; }
 .st-page .kpi .v { font-size: 1.5rem; }
+
+/* tap target ≥ 44 px (audit UX-B) */
+.st-about a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; }
+.st-page .eyebrow button { min-height: 44px; min-width: 44px; }
