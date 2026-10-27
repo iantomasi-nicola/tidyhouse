@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners } from './extras.js';
+import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds } from './extras.js';
 import { engineHouse } from './store.js';
 import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
 
@@ -132,6 +132,19 @@ export class Actions {
   async notice(toId, code, p = {}) {
     if (!toId || toId === this.me) return;
     await this.s.setDoc('requests', 'n' + uid(), { kind: 'notice', code, to: toId, from: this.me || 'admin', ...p, status: 'info', at: this.ctx.now().toISOString() });
+  }
+  /**
+   * Pulizia: le richieste (sostituzione, offerta, scambio) ancora «in attesa» su una settimana chiusa da più di `days` giorni diventano `expired`
+   * (non contano più nei badge, non si possono più accettare). Una sola scrittura, solo se serve; idempotente (più dispositivi possono farla insieme).
+   * Ritorna gli id scaduti.
+   */
+  async expireStaleRequests({ days = 7, only = null } = {}) {
+    let ids = staleRequestIds(this.s.state.requests, this.today(), days);
+    if (only) ids = ids.filter((id) => only.includes(id));
+    if (!ids.length) return [];
+    const at = this.ctx.now().toISOString();
+    await this.s.write(ids.map((id) => ({ coll: 'requests', id, data: { status: 'expired', expiredAt: at } })));
+    return ids;
   }
   /** L'assegnato chiede una sostituzione (a una persona precisa o a chiunque). */
   async requestCover({ week, chore, to = null, terms = 'repay' }) {

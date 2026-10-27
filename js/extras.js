@@ -522,3 +522,25 @@ export function validateHouse(h) {
   return issues;
 }
 export { CHORES, compute, awayFromTrips };
+
+// ---------- richieste: «in attesa di me» e scadenza (nucleo: badge del nav, pulizia all'apertura) ----------
+/** Tipo di richiesta: 'swap' (scambio, senza kind), 'cover', 'offer', 'notice', 'nudge'. */
+const reqKindOf = (r) => (['cover', 'offer', 'notice', 'nudge'].includes(r.kind) ? r.kind : 'swap');
+/**
+ * Richieste ancora in attesa di una MIA risposta. Stessa regola di `awaitingMe()` in js/screens/more.js: sostituzioni (cover) a me o aperte a tutti
+ * (tranne chi le ha chieste), offerte e scambi solo se indirizzati a me; avvisi e solleciti non contano. Il badge del nav usa questa funzione.
+ */
+export function requestsAwaiting(state, me) {
+  if (!me) return [];
+  return Object.entries((state && state.requests) || {}).map(([id, r]) => ({ id, ...r })).filter((r) => {
+    if (r.status !== 'pending') return false;
+    const k = reqKindOf(r);
+    if (k === 'cover') return r.from !== me && (!r.to || r.to === me);
+    if (k === 'offer' || k === 'swap') return r.to === me;
+    return false;
+  });
+}
+/** Id delle richieste (cover/offer/scambio) ancora «pending» su una settimana chiusa da più di `days` giorni: non servono più. */
+export function staleRequestIds(requests, today, days = 7) {
+  return Object.entries(requests || {}).filter(([, r]) => r && r.status === 'pending' && !['notice', 'nudge'].includes(r.kind) && /^\d{4}-\d{2}-\d{2}$/.test(r.week || '') && dayNum(today) - dayNum(r.week) > days).map(([id]) => id);
+}
