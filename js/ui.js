@@ -199,21 +199,50 @@ export function sheet({ title, body, full = false, onClose, actions } = {}) {
 /** Chiude tutti gli sheet. { keepHistory:true } quando la chiusura nasce già da un cambio di pagina. */
 export function closeAllSheets(opts = {}) { [...sheetStack].reverse().forEach((s) => s.close(opts)); }
 
-let toastBox;
-/** Notifica temporanea. opts.action = { label, onClick } mostra un pulsante (es. "Annulla"). Restituisce una funzione per chiuderla. */
+// ---- toast: al massimo UNO visibile alla volta ----
+// Regole: un toast nuovo sostituisce quello visibile (niente pile); l'unica eccezione è un toast con azione («Annulla») ancora visibile:
+// un messaggio semplice che arriva nel frattempo aspetta in coda (max 2) e compare appena l'azione scade, così l'«Annulla» non viene mai coperto.
+let toastBox = null, tCur = null; const tQueue = [];
+function toastLayer() {
+  if (!toastBox || !toastBox.isConnected) { toastBox = h('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' }); layer().append(toastBox); tCur = null; tQueue.length = 0; }
+  return toastBox;
+}
+function toastShow(item) {
+  const box = toastLayer();
+  for (const x of [...box.children]) x.remove();   // mai due toast insieme, nemmeno durante l'animazione d'uscita
+  const el = h('div', { class: 'toast' }, item.msg);
+  item.el = el;
+  if (item.opts.action) el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { if (item.used) return; item.used = true; try { item.opts.action.onClick(); } finally { item.dismiss(); } } }, item.opts.action.label));
+  box.append(el); tCur = item;
+  const dur = item.opts.action ? Math.max(item.ms, 6000) : item.ms; item.until = Date.now() + dur; item.timer = setTimeout(item.dismiss, dur);
+}
+/** Notifica temporanea. opts.action = { label, onClick } mostra un pulsante (es. "Annulla"); opts.low = true: priorità bassa (un messaggio semplice lo sostituisce
+ *  subito, es. «nuova versione»). Restituisce una funzione per chiuderla. */
 export function toast(msg, ms = 2600, opts = {}) {
-  if (!toastBox || !toastBox.isConnected) { toastBox = h('div', { class: 'toasts', role: 'status', 'aria-live': 'polite' }); layer().append(toastBox); }
-  // lo stesso messaggio già visibile (doppio tocco) non si accumula: si rinnova
-  const dup = !opts.action && [...toastBox.children].find((x) => !x.classList.contains('out') && x.__msg === msg && !x.__action);
-  if (dup) { clearTimeout(dup.__timer); dup.__timer = setTimeout(dup.__dismiss, ms); return dup.__dismiss; }
-  while (toastBox.children.length >= 3) toastBox.firstChild.remove();
-  const el = h('div', { class: 'toast' }, msg);
-  const dismiss = () => { if (!el.isConnected || el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), calm() ? 30 : 260); };
-  if (opts.action) el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { if (el.__used) return; el.__used = true; try { opts.action.onClick(); } finally { dismiss(); } } }, opts.action.label));
-  el.__msg = msg; el.__action = !!opts.action; el.__dismiss = dismiss;
-  toastBox.append(el);
-  el.__timer = setTimeout(dismiss, opts.action ? Math.max(ms, 6000) : ms);
-  return dismiss;
+  toastLayer();
+  const action = !!opts.action;
+  // lo stesso messaggio semplice già visibile (o già in coda) non si ripete: si rinnova
+  if (!action) {
+    if (tCur && !tCur.action && tCur.msg === msg) { clearTimeout(tCur.timer); tCur.timer = setTimeout(tCur.dismiss, ms); return tCur.dismiss; }
+    const q = tQueue.find((x) => x.msg === msg && !x.action); if (q) return q.dismiss;
+  }
+  const item = { msg, ms, opts, action, el: null, timer: 0, used: false, gone: false };
+  item.dismiss = () => {
+    if (item.gone) return; item.gone = true; clearTimeout(item.timer);
+    const qi = tQueue.indexOf(item); if (qi >= 0) { tQueue.splice(qi, 1); return; }
+    if (tCur !== item) return;
+    tCur = null;
+    const el = item.el; if (!el) return;
+    if (tQueue.length) { el.remove(); toastShow(tQueue.shift()); return; }   // c'è qualcosa in coda: subito il prossimo
+    el.classList.add('out'); setTimeout(() => el.remove(), calm() ? 30 : 260);
+  };
+  if (!tCur || !tCur.el || !tCur.el.isConnected) { tCur = null; toastShow(item); }
+  else if (action || !tCur.action || tCur.opts.low) { const old = tCur; old.gone = true; clearTimeout(old.timer); tCur = null; toastShow(item); }   // sostituisce il precedente
+  else {   // dietro a un «Annulla»: l'azione resta ancora al massimo 2 s, poi compare il messaggio
+    tQueue.push(item); while (tQueue.length > 2) tQueue.shift().gone = true;
+    if (tCur.until - Date.now() > 2000) { clearTimeout(tCur.timer); tCur.until = Date.now() + 2000; tCur.timer = setTimeout(tCur.dismiss, 2000); }
+  }
+  return item.dismiss;
 }
 
 export function confirmDialog({ title, text, ok = t('ok'), danger = false, cancel = t('cancel') }) {
@@ -238,7 +267,14 @@ export function promptDialog({ title, label, value = '', type = 'text', ok = t('
 }
 
 // ---- piccoli componenti ----
-export function avatar(name, color, cls = '') { return h('div', { class: 'av ' + cls, style: { background: color || '#888' }, title: name }, (name || '?').trim().slice(0, 1).toUpperCase()); }
+/** Colore del testo (bianco o quasi nero) con il contrasto migliore su uno sfondo #rrggbb (WCAG). */
+export function inkOn(bg) {
+  const m = /^#([0-9a-f]{6})$/i.exec(bg || ''); if (!m) return '#fff';
+  const l = [0, 2, 4].map((i) => { const v = parseInt(m[1].slice(i, i + 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  const L = 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2];
+  return 1.05 / (L + 0.05) >= (L + 0.05) / 0.0616 ? "#fff" : "#1c1c1e";   // contrasto con bianco vs. con #1c1c1e (L ≈ 0,0116)
+}
+export function avatar(name, color, cls = '') { const bg = color || '#888'; return h('div', { class: 'av ' + cls, style: inkOn(bg) === '#fff' ? { background: bg } : { background: bg, color: inkOn(bg) }, title: name }, (name || '?').trim().slice(0, 1).toUpperCase()); }
 export function toggle(checked, onchange, label) {
   const inp = h('input', { type: 'checkbox', role: 'switch', 'aria-label': label || '', onchange: (e) => onchange(e.target.checked) });
   inp.checked = !!checked;

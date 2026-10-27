@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners } from './extras.js';
+import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
 import { engineHouse } from './store.js';
 import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
 
@@ -133,6 +133,19 @@ export class Actions {
     if (!toId || toId === this.me) return;
     await this.s.setDoc('requests', 'n' + uid(), { kind: 'notice', code, to: toId, from: this.me || 'admin', ...p, status: 'info', at: this.ctx.now().toISOString() });
   }
+  /**
+   * Pulizia: le richieste (sostituzione, offerta, scambio) ancora «in attesa» su una settimana chiusa da più di `days` giorni (14) vengono tolte.
+   * (Prima di allora restano visibili nella sezione «Scadute» della pagina Richieste, ma non contano nei badge e non si possono più accettare.)
+   * Una sola scrittura, solo se serve; idempotente (più dispositivi possono farla insieme). Ritorna gli id tolti. Solo admin.
+   */
+  async expireStaleRequests({ days = 14, only = null } = {}) {
+    this.need(this.admin);
+    let ids = staleRequestIds(this.s.state.requests, this.today(), days);
+    if (only) ids = ids.filter((id) => only.includes(id));
+    if (!ids.length) return [];
+    await this.s.write(ids.map((id) => ({ coll: 'requests', id, del: true })));
+    return ids;
+  }
   /** L'assegnato chiede una sostituzione (a una persona precisa o a chiunque). */
   async requestCover({ week, chore, to = null, terms = 'repay' }) {
     const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
@@ -151,7 +164,9 @@ export class Actions {
   }
   /** Risposta a una richiesta di sostituzione/offerta. Accettando, il turno risulta "concordato" con quella persona. */
   async answerCover(reqId, accept) {
-    const rq = this.s.state.requests[reqId]; this.need(!!rq && (rq.kind === 'cover' || rq.kind === 'offer') && rq.status === 'pending');
+    const rq = this.s.state.requests[reqId]; this.need(!!rq && (rq.kind === 'cover' || rq.kind === 'offer'));
+    if (rq.status === 'expired' || isRequestStale(rq, this.out().rows, this.today())) throw new Error('expired');   // settimana chiusa: il turno non si può più concordare
+    this.need(rq.status === 'pending');
     if (rq.kind === 'cover') this.need(!!this.me && rq.from !== this.me && (!rq.to || rq.to === this.me));
     else this.need(this.admin || rq.to === this.me);
     if (!accept) { await this.s.setDoc('requests', reqId, { status: 'declined', answeredAt: this.ctx.now().toISOString(), notifiedAnswer: false }); return; }

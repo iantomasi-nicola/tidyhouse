@@ -33,6 +33,10 @@ const logo = () => h('div', { class: 'logo', html: MARK });
 const page = (cls, ...kids) => h('div', { class: 'gate onb ' + cls }, h('div', { class: 'panel onb-panel fade-up' }, ...kids));
 const errBox = () => h('p', { class: 'onb-err', role: 'alert', hidden: true });
 function setErr(el, msg) { el.textContent = msg || ''; el.hidden = !msg; }
+/** Selettore IT/EN delle schermate di accesso: cambia lingua subito e se la ricorda (preferenza del dispositivo). */
+const LANGS = [['it', 'IT', 'Italiano'], ['en', 'EN', 'English']];
+const langPick = (boot) => h('div', { class: 'onb-lang', 'data-testid': 'onb-lang', role: 'group', 'aria-label': t('uxc.lang.label') },
+  LANGS.map(([l, short, long]) => h('button', { type: 'button', 'data-lang': l, lang: l, title: long, 'aria-label': long, 'aria-pressed': String(getLang() === l), onclick: () => { if (getLang() !== l && boot.setLang) boot.setLang(l); } }, short)));
 const readmeLink = (label) => h('a', { class: 'onb-link', href: README, target: '_blank', rel: 'noopener' }, label || t('onb.cloudGuide'), icon('chevron'));
 
 /** Messaggio per un errore di join. */
@@ -81,6 +85,7 @@ function landing(boot) {
   const houses = [...(boot.houses || [])].sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
   const { form } = codeForm(boot, { label: t('join.code') });
   const kids = [
+    langPick(boot),
     logo(),
     h('div', { class: 'onb-hero' }, h('h1', null, t('app.name')), h('p', { class: 'lead' }, t('join.hello'))),
   ];
@@ -194,7 +199,7 @@ function whoStage(boot) {
       showPin ? pinForm : null);
   };
   paint();
-  return page('onb-who', logo(),
+  return page('onb-who', langPick(boot), logo(),
     h('div', { class: 'onb-hero' }, h('div', { class: 'onb-kicker' }, t('onb.who.kicker')), h('h1', { class: 'onb-h onb-housename' }, house.name || 'Tidy House'), h('p', { class: 'lead onb-whoq' }, t('join.who')), h('p', { class: 'muted small' }, t('onb.who.tap'))),
     body,
     h('div', { class: 'center' }, h('button', { type: 'button', class: 'onb-textbtn small', onclick: () => boot.go('landing') }, t('onb.switchHouse'))));
@@ -205,7 +210,7 @@ let wiz = null;
 const blankPerson = () => ({ name: '', from: '', to: '', expectedTo: '', adv: false });
 function newWiz() {
   return {
-    step: 1, name: t('onb.defaultName'), startSunday: normalizeStartSunday(todayStr()), startAdjusted: false, optsOpen: false,
+    step: 1, name: t('onb.defaultName'), defName: t('onb.defaultName'), startSunday: normalizeStartSunday(todayStr()), startAdjusted: false, optsOpen: false,
     mode: 'local', people: [blankPerson(), blankPerson(), blankPerson()],
     adminIdx: 0, adminOpen: false, pin: '', hidePin: false, imported: null, importing: false, importErr: '', busy: false, err: '',
   };
@@ -217,6 +222,7 @@ const peopleNow = () => (wiz.imported ? wiz.imported.roommates.map((r) => ({ nam
 function createStage(boot) {
   if (!wiz) { wiz = newWiz(); wiz.mode = boot.cloudAvailable ? 'cloud' : 'local'; }
   const W = wiz;
+  if (W.defName !== undefined && W.name === W.defName) { W.defName = W.name = t('onb.defaultName'); }   // cambio lingua: il nome proposto segue, quello scritto dall'utente no
   const TOTAL = 3;
   const content = h('div', { class: 'onb-step', tabindex: '-1' });
   const stepsEl = h('div', { class: 'steps', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': String(TOTAL) });
@@ -456,7 +462,7 @@ function createStage(boot) {
   render();
   focusStep();
   return page('onb-create wide',
-    h('div', { class: 'onb-top' }, logo(), h('div', { class: 'grow' }, h('div', { class: 'onb-kicker' }, t('setup.title')), labelEl)),
+    h('div', { class: 'onb-top' }, logo(), h('div', { class: 'grow' }, h('div', { class: 'onb-kicker' }, t('setup.title')), labelEl), langPick(boot)),
     stepsEl, content, nav);
 }
 

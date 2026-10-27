@@ -1,15 +1,18 @@
 // Nucleo dell'app: avvio, registro case, identità, tema, router, shell, aggiornamento pagina, accessi.
 // Le schermate vivono in js/screens/*.js e ricevono un `ctx` (vedi ARCHITECTURE.md).
-import { h, clear, icon, toast, sheet, closeAllSheets, hasOpenSheets, cssReady, deviceInfo, haptic } from './ui.js';
+import { h, clear, icon, toast, sheet, closeAllSheets, hasOpenSheets, cssReady, deviceInfo, haptic, copyText } from './ui.js';
 import { t, tr, setLang, getLang, detectLang, registerStrings } from './i18n.js';
 import { it as coreIt, en as coreEn } from './strings/core.js';
 import { compute } from './engine.js';
 import { Store, LocalBackend, CloudBackend, engineHouse } from './store.js';
 import { scheduleKick } from './kick.js';
 import { Actions, buildHouse, verifyPin, localDate, importBackupOps, exportBackup, normalizeStartSunday } from './actions.js';
-import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
+import { requestsAwaiting, staleRequestIds, sharedStatus, feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
+
+import { it as uxcIt, en as uxcEn } from './strings/uxc.js';
 
 registerStrings(coreIt, coreEn);
+registerStrings(uxcIt, uxcEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
 const VERSION = '1.7.1';
@@ -67,9 +70,20 @@ async function attach(id, mode) {
   S.houseId = id; S.mode = mode;
   S.store = new Store(b);
   S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null), localRulesAckSave: (v) => saveRulesAck(v), kick: () => scheduleKick(() => S.store && S.store.state.house) });
-  S.store.on(() => { S.version++; if (S.switching) return; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
+  S.store.on(() => { S.version++; if (S.switching) return; maybeExpire(); if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
   S.version++;
   return { ok: true };
+}
+/** Pulizia delle richieste rimaste «in attesa» su settimane chiuse da più di 14 giorni: una scrittura leggera, solo da un admin, solo se ce ne sono, una volta per richiesta e per apertura. */
+const expiring = new Set();
+function maybeExpire() {
+  if (!S.actions || !S.ready || S.stage !== 'app' || !ctx.isAdmin) return;
+  try {
+    const ids = staleRequestIds(S.store.state.requests, localDate(new Date())).filter((id) => !expiring.has(id));
+    if (!ids.length) return;
+    ids.forEach((id) => expiring.add(id));
+    S.actions.expireStaleRequests({ only: ids }).catch(() => ids.forEach((id) => expiring.delete(id)));
+  } catch { /* ignore */ }
 }
 function detach() { if (S.store) { try { S.store.close(); } catch { /* ignore */ } } S.store = null; S.actions = null; S.houseId = null; S.mode = null; S.calc = null; }
 
@@ -96,6 +110,7 @@ const ctx = {
   nav(path) { location.hash = '#/' + String(path || '').replace(/^#?\/?/, ''); },
   rerender: () => scheduleRender(true),
   get renderCount() { return renders; },
+  get renderSkips() { return renderSkips; },
   savePrefs(patch) { prefs = { ...prefs, ...patch }; ls.set('cp:prefs', prefs); applyPrefs(); scheduleRender(true); },
   /** Layout Home effettivo (personale oppure della casa). */
   homeLayout() {
@@ -107,15 +122,14 @@ const ctx = {
   badges() {
     const out = { home: 0, more: 0 };
     try {
-      const me = this.me; const { out: o } = this.calc;
+      const me = this.me;
+      // «Altro»: stessa regola e stessi casi dell'hub (awaitingMe() in more.js) — indipendente dalla settimana in corso; zero se la funzione «richieste» è spenta (l'hub non mostra la riga)
+      const { out: o } = this.calc; const today = localDate(new Date());
+      if (me && this.feature('requests')) out.more = requestsAwaiting(this.state, me, { rows: o.rows, today }).length;   // senza quelle su settimane chiuse (come l'hub)
+      // più i compiti condivisi «tocca a te» (stesso conteggio del blocco «Da fare ora» dell'hub)
+      if (me && this.feature('shared')) { try { out.more += sharedStatus(this.calc.eh, o, today).filter((x) => x.due && x.suggested === me).length; } catch { /* ignore */ } }
       if (me && o.cur >= 0) {
         for (let i = Math.max(0, o.cur - 1); i <= o.cur; i++) { const r = o.rows[i]; for (let c = 0; c < 3; c++) if (r.assigned[c] === me && !r.res[c].kind && (i < o.cur || r.isCur)) out.home += i < o.cur ? 1 : 0; }
-        // stessa regola di awaitingMe() in more.js: scambi/offerte indirizzati a me; sostituzioni (cover) a me o aperte a tutti tranne il richiedente
-        out.more = Object.values(this.state.requests || {}).filter((q) => {
-          if (q.status !== 'pending' || ['notice', 'nudge'].includes(q.kind)) return false;
-          if (q.kind === 'cover') return q.from !== me && (!q.to || q.to === me);
-          return q.to === me;
-        }).length;
       }
     } catch { /* ignore */ }
     return out;
@@ -176,6 +190,8 @@ const boot = {
   get house() { return S.store ? S.store.state.house : null; },
   get params() { return S.stageParams || {}; },
   go(stage, params) { S.stage = stage; S.stageParams = params || {}; renderStage(); },
+  /** Cambia lingua dalle schermate di accesso (landing, nuova casa, chi sei): si ricorda e ridisegna la schermata. */
+  setLang(l) { prefs = { ...prefs, lang: l }; ls.set('cp:prefs', prefs); applyPrefs(); renderStage(); },
   /** Crea casa. mode 'cloud' | 'local'. Ritorna l'id. */
   async createHouse({ name, startSunday, roommates, adminName, pin, mode, imported }) {
     const useCloud = mode === 'cloud' && cloudAvailable;
@@ -259,6 +275,7 @@ function evaluate() {
   S.stage = 'app'; S.ready = true; stageToken++;   // una schermata di accesso ancora in preparazione non deve coprire l'app
   if (first) { try { recordView('open'); } catch { /* ignore */ } }
   registerDevice();
+  maybeExpire();
   renderApp(true);
 }
 const memberLoaded = () => true;
@@ -284,7 +301,7 @@ function renderPushGate() {
   let btnEl = null;
   if (state === 'ios-install') {
     kids.push(h('h1', null, t('push.gate.ios.title')), h('p', { class: 'lead' }, t('push.gate.ios.why')));
-    if (/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(navigator.userAgent)) kids.push(h('div', { class: 'note warn', 'data-testid': 'push-safari' }, icon('alert'), t('push.gate.ios.safari')));
+    if (iosNotSafari()) kids.push(safariNote('push-safari'));
     kids.push(h('div', { class: 'card tonal stack tight', 'data-testid': 'push-ios-steps' }, gateSteps(['push.gate.ios.1', 'push.gate.ios.2', 'push.gate.ios.3'])));
   } else if (state === 'denied') {
     kids.push(h('h1', null, t('push.gate.denied.title')), h('p', { class: 'lead' }, t('push.gate.denied.why')),
@@ -330,17 +347,37 @@ function renderPushGate() {
 
 // ---------------- invito all'installazione ----------------
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+/** iPhone/iPad fuori da Safari: Chrome/Firefox/Edge/Opera/DuckDuckGo/Google app, oppure browser interni (WhatsApp, Instagram, ...) che non hanno «Safari/» nello user agent. */
+function iosNotSafari(ua = navigator.userAgent) {
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  return ios && !isStandalone() && (/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(ua) || !/Safari\//.test(ua));
+}
+/** Avviso «apri in Safari» con pulsante che copia il link corrente (compreso il codice d'invito). */
+function safariNote(testid) {
+  const copy = h('button', { class: 'btn tonal sm', type: 'button', 'data-testid': 'install-copy', onclick: async () => {
+    const ok = await copyText(location.href);
+    toast(ok ? t('uxc.safari.copied') : t('uxc.safari.copyFail'), ok ? 3200 : 6000);
+  } }, icon('copy'), t('uxc.safari.copy'));
+  return h('div', { class: 'note warn', 'data-testid': testid }, icon('alert'), h('div', { class: 'stack tight' }, h('strong', null, t('uxc.safari.title')), h('div', null, t('uxc.safari.text')), h('div', null, copy)));
+}
+/** Pulsante «Installa» (Chrome/Edge Android e desktop): usa l'evento catturato; l'evento si può usare una volta sola. */
+function installBtn() {
+  return h('button', { class: 'btn sm', type: 'button', 'data-testid': 'install-btn', onclick: async (e) => {
+    const el = e.currentTarget; const ev = window.__bip; window.__bip = null;
+    try { if (ev) { ev.prompt(); await ev.userChoice; } } catch { /* ignore */ }
+    el.remove();
+  } }, icon('download'), t('guide.install'));
+}
 function installBanner() {
   if (isStandalone()) return null;
   const ua = navigator.userAgent; const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1); const android = /Android/.test(ua);
   const steps = ios ? ['guide.ios1', 'guide.ios2', 'guide.ios3', 'guide.ios4'] : android ? ['guide.android1', 'guide.android2', 'guide.android3'] : ['guide.desktop1', 'guide.desktop2'];
-  const notSafari = ios && /CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|GSA\//.test(ua);
   const card = h('div', { class: 'card tonal stack tight', 'data-testid': 'install-banner' },
-    notSafari ? h('div', { class: 'note warn', 'data-testid': 'install-safari' }, icon('alert'), t('onb.install.safari')) : null,
+    iosNotSafari(ua) ? safariNote('install-safari') : null,
     h('div', { class: 'row' }, icon('download'), h('strong', null, t('onb.install.title'))),
     h('p', { class: 'small muted' }, t('onb.install.why')),
-    h('ol', { class: 'small', style: { margin: 0, paddingLeft: '20px', display: 'grid', gap: '4px' } }, steps.map((k) => h('li', null, t(k)))),
-    window.__bip ? h('button', { class: 'btn tonal sm', onclick: async () => { try { window.__bip.prompt(); await window.__bip.userChoice; } catch { /* ignore */ } } }, icon('download'), t('guide.install')) : null);
+    window.__bip ? installBtn() : null,
+    h('ol', { class: 'small', style: { margin: 0, paddingLeft: '20px', display: 'grid', gap: '4px' } }, steps.map((k) => h('li', null, t(k)))));
   return card;
 }
 
@@ -382,7 +419,7 @@ const tabOf = (root) => (SUBS.includes(root) || root === 'settings' ? 'more' : O
 
 // Rendering: un solo render alla volta, richieste ravvicinate fuse in una (rAF), aggiornamenti remoti al massimo ogni MIN_GAP ms.
 const MIN_GAP = 120;
-let rafId = 0, timerId = 0, pendingForce = false, lastRenderAt = 0, renders = 0;
+let rafId = 0, timerId = 0, pendingForce = false, lastRenderAt = 0, renders = 0, renderSkips = 0;
 let shell = null, mainEl = null, navEl = null, topEl = null, renderToken = 0, lastPath = null, navSig = '', topSig = '';
 const scrollMemo = new Map(); let popNav = false;
 function scheduleRender(force) {
@@ -408,7 +445,7 @@ const COMPLEX = /^(url|email|number|date|time|datetime-local|month|week)$/;
 /** Rimandare il render? Mai se cambia pagina; sempre durante una composizione IME; per i dati remoti con un campo attivo; per i render forzati solo con campi "complessi". */
 function mustDefer(force, routeChanged) {
   if (routeChanged) return false;
-  if (composing()) return true;
+  if (composing() || pressing()) return true;
   const a = activeField(); if (!a) return false;
   return !force || COMPLEX.test(a.type) || a.tagName === 'SELECT';
 }
@@ -419,7 +456,15 @@ document.addEventListener('compositionupdate', () => { compAt = performance.now(
 document.addEventListener('compositionend', () => { compFlag = false; setTimeout(flushDeferred, 80); }, true);
 document.addEventListener('focusout', () => { compFlag = false; }, true);
 document.addEventListener('input', (e) => { if (e.isTrusted && e.target) e.target.__typed = true; }, true);
-function flushDeferred() { if (S.deferred && !typing()) scheduleRender(true); }
+function flushDeferred() { if (S.deferred && !typing() && !pressing()) scheduleRender(true); }
+// Dito/mouse premuto dentro la pagina: il nodo sotto il dito non va sostituito, altrimenti il click (pointerup su un nodo nuovo) si perde.
+// I render arrivati nel frattempo restano in attesa (S.deferred) e partono subito dopo il rilascio. Si annulla da sola dopo 2,5 s (pressione lunga/anomala).
+let pressAt = 0;
+const pressing = () => pressAt > 0 && performance.now() - pressAt < 2500;
+document.addEventListener('pointerdown', (e) => { if (e.isPrimary !== false && mainEl && e.target && mainEl.contains(e.target)) pressAt = performance.now(); }, true);
+const releasePress = () => { if (!pressAt) return; pressAt = 0; setTimeout(flushDeferred, 90); };   // il click parte subito dopo il rilascio: il render aspetta che l'azione sia avviata
+for (const ev of ['pointerup', 'pointercancel', 'dragend', 'contextmenu']) document.addEventListener(ev, releasePress, true);
+window.addEventListener('blur', releasePress);
 
 // ---- doppio tocco: il secondo click ravvicinato sullo stesso punto di un pulsante d'azione viene ignorato (niente azioni/sheet duplicati) ----
 const ONCE = 'button.btn, a.btn, button.checkcircle, button.chore, button.li, a.li, button.week, button.who, button.hm-act';
@@ -463,6 +508,17 @@ function restoreFocus(snap) {
   try { if (snap.ss !== null && el.setSelectionRange) { el.setSelectionRange(snap.ss, snap.se, snap.sd || 'none'); el.scrollTop = snap.st; } } catch { /* ignore */ }
 }
 
+/** Firma di un nodo: HTML + proprietà che non compaiono nell'HTML (valore/spunta/disabilitato dei campi). */
+function domSig(el) {
+  let s = el.outerHTML.replace(/ hm-enter\b/g, "");   // «hm-enter» (animazione del primo disegno della Home) non conta: il secondo disegno non deve rimontare la pagina
+  for (const f of el.querySelectorAll('input,select,textarea,option')) s += '|' + (f.type === 'checkbox' || f.type === 'radio' ? (f.checked ? 1 : 0) : f.tagName === 'OPTION' ? (f.selected ? 1 : 0) : f.value) + (f.disabled ? 'd' : '');
+  return s;
+}
+/** Schermate per cui si può scartare un disegno identico a quello montato. Solo la Home: il calendario, ad esempio, ricorda il nodo dell'ultimo render
+ *  (se non è montato crede a una «nuova visita» e azzera lo storico mostrato), quindi un render scartato lo romperebbe. Le altre schermate si rimontano come prima. */
+const SKIP_OK = 'home';
+const sigOfKids = (els) => els.map(domSig).join('\u0001');
+
 async function renderApp(force) {
   if (S.stage !== 'app') return;
   const route = parseHash(); S.route = route;
@@ -502,6 +558,14 @@ async function renderApp(force) {
   // mentre la schermata si preparava l'utente può aver iniziato a scrivere: non togliergli il campo di sotto
   if (mustDefer(force, lastPath !== route.path)) { S.deferred = true; return; }
   if (!shell || !shell.isConnected) return;
+  // stessi dati visibili e pagina rimasta intatta dall'ultimo disegno: si tiene il nodo già montato (niente rimontaggio, focus/scroll/selezione intatti)
+  const fresh = reminder ? [reminder, node] : [node];
+  if (samePage && name === SKIP_OK && node.parentNode !== mainEl && mainEl.__sig !== undefined && mainEl.children.length === fresh.length && sigOfKids(fresh) === mainEl.__sig && sigOfKids([...mainEl.children]) === mainEl.__sig) {
+    updateNav(tab); updateTop(); renderSkips++; lastPath = route.path; popNav = false;
+    recordView(tab === '' ? 'home' : tab);
+    const title0 = `${ctx.house.name || 'Tidy House'} · Tidy House`; if (document.title !== title0) document.title = title0;
+    return;
+  }
   const snap = samePage ? captureFocus() : null;
   const y = samePage ? window.scrollY : (popNav && scrollMemo.has(route.path) ? scrollMemo.get(route.path) : 0);
   updateNav(tab); updateTop();
@@ -511,6 +575,7 @@ async function renderApp(force) {
   else if (node.parentNode === mainEl) { for (const c of [...mainEl.children]) if (c !== node) c.remove(); if (reminder) mainEl.prepend(reminder); }
   else mainEl.replaceChildren(...(reminder ? [reminder, node] : [node]));
   lastPath = route.path; popNav = false; renders++;
+  mainEl.__sig = sigOfKids([...mainEl.children]);
   window.scrollTo(0, y);
   restoreFocus(snap);
   hideBoot();
@@ -611,7 +676,7 @@ async function startFromHash() {
 
 // (l'avviso periodico «aggiorna la pagina» è stato tolto: restano il tasto Aggiorna nella Home e l'avviso di nuova versione)
 function setupRefreshPrompt() {
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { registerDevice(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { registerDevice(); maybeExpire(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
   window.addEventListener('focus', flushDeferred);
   document.addEventListener('focusout', () => { setTimeout(flushDeferred, 60); });
 }
@@ -622,7 +687,7 @@ async function registerSW() {
     const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
     if (!reg) return;   // service worker non disponibile (bloccato o non supportato)
     // nuova versione pronta: NON si applica da sola; il tasto nella Home diventa "Aggiorna" (colore accento) e un toast lo propone
-    const offer = (w) => { if (!w) return; S.waitingSW = w; ctx.markUpdateReady(); toast(t('update.available'), 8000, { action: { label: t('update.apply'), onClick: () => ctx.applyUpdate() } }); };
+    const offer = (w) => { if (!w) return; S.waitingSW = w; ctx.markUpdateReady(); toast(t('update.available'), 8000, { low: true, action: { label: t('update.apply'), onClick: () => ctx.applyUpdate() } }); };
     const check = () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); };
     setInterval(check, 10 * 60 * 1000); document.addEventListener('visibilitychange', check);
     if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
@@ -643,7 +708,12 @@ window.addEventListener('online', () => scheduleRender());
 window.addEventListener('offline', () => scheduleRender());
 let resizeT = 0;
 window.addEventListener('resize', () => { if (!S.ready || !navEl) return; clearTimeout(resizeT); resizeT = setTimeout(() => updateNav(tabOf(S.route.root)), 80); });
-window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__bip = e; });
+// il browser può mandare l'evento dopo che la schermata è già comparsa: il pulsante «Installa» si aggiunge all'invito esistente
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); window.__bip = e;
+  document.querySelectorAll('[data-testid=install-banner]').forEach((b) => { if (!b.querySelector('[data-testid=install-btn]')) b.querySelector('p').after(installBtn()); });
+});
+window.addEventListener('appinstalled', () => { window.__bip = null; document.querySelectorAll('[data-testid=install-banner]').forEach((b) => b.remove()); });
 applyPrefs();
 registerSW();
 setupRefreshPrompt();
