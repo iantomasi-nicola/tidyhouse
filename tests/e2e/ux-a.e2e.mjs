@@ -169,7 +169,37 @@ const run = async () => {
     const w = await wk(page);
     assert.ok(w.agreed && w.agreed.floor && w.agreed.floor !== F, 'sostituto assegnato: ' + JSON.stringify(w.agreed));
     assert.ok(tp.n <= 2, 'tocchi: ' + tp.n);
+    // dopo il passaggio la Home offre subito «Annulla il passaggio» (1 tocco)
+    await closeSheets(page);
+    await page.waitForSelector('[data-testid="hero-todo"] [data-act="hero-uncantdo"]');
+    assert.equal(await page.locator('[data-testid="hero-todo"] [data-act="hero-cantdo"]').count(), 0);
+    await tp.tap('[data-testid="hero-todo"] [data-act="hero-uncantdo"]');
+    await page.waitForTimeout(500);
+    assert.ok(!((await wk(page)).agreed || {}).floor, 'passaggio annullato');
     noErrors(page); await page.close();
+  });
+
+  await test('B1 «Sono via» dalla Home: 1 tocco, niente conferma, Annulla ti rimette in turno', async () => {
+    const page = await open({ s: mk({ me: F, admin: false }) });
+    const tp = tapper(page);
+    await tp.tap('.hm-heroaway');
+    assert.equal(await sheets(page), 0, 'nessuna conferma');
+    assert.ok((await wk(page)).awayMap[F], 'segnato assente');
+    await tp.tap('.toast-action');
+    assert.ok(!((await wk(page)).awayMap || {})[F], 'di nuovo in turno');
+    assert.equal(tp.n, 2); noErrors(page); await page.close();
+  });
+
+  // ===== B4: «Segna fatto» raggiungibile senza scorrere a 390x844 (anche a testo 130%, anche da admin e in ritardo) =====
+  await test('B4 Home: «Segna fatto» visibile subito (390x844, testo 100% e 130%, utente e admin, in ritardo)', async () => {
+    const cases = [['turno', mk({ me: F, admin: false }), 'hero-todo'], ['admin', mk({ me: F, admin: true }), 'hero-todo'], ['ritardo', mk({ me: P3.floor, admin: false, weeks: DONE3 }), 'hero-late'], ['ritardo admin', mk({ me: P3.floor, admin: true, weeks: DONE3 }), 'hero-late']];
+    for (const [label, s, hero] of cases) for (const f of [1, 1.3]) {
+      const page = await open({ s, fs: f });
+      await page.waitForSelector(`[data-testid="${hero}"] [data-act="done"]`);
+      const m = await page.evaluate((h) => { const b = document.querySelector(`[data-testid="${h}"] [data-act="done"]`).getBoundingClientRect(); const n = document.querySelector('nav.nav').getBoundingClientRect(); return { top: b.top, bottom: b.bottom, navTop: n.top, vh: innerHeight, scroll: scrollY }; }, hero);
+      assert.ok(m.scroll === 0 && m.top >= 0 && m.bottom <= m.navTop, `${label}@${f}: ${JSON.stringify(m)}`);
+      await page.close();
+    }
   });
 
   // ===== B2: tap target dei giorni (Home), elimina assenza con Annulla =====

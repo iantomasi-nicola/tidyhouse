@@ -139,7 +139,8 @@ function widgetHero(ctx, M) {
       wrap.append(heroCard({
         testid: 'hero-todo', sub: row.isMakeup[c] ? t('chore.makeupHint') : null, kicker: curItems.length > 1 ? `${t('home.yourTurn')} · ${t('home.nTurns', { n: curItems.length })}` : t('home.yourTurn'), ic: IC[ch], big: t('chore.' + ch), chips,
         actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, row.sunday, c, e) }, icon('check'), t('home.markDone')) : null,
-          canHand ? h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cantdo', onclick: () => openChore(ctx, row.sunday, ch, { view: 'cantdo' }) }, t('cantdo.btn')) : null],
+          canHand ? h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cantdo', onclick: () => openChore(ctx, row.sunday, ch, { view: 'cantdo' }) }, t('cantdo.btn'))
+          : h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-uncantdo', onclick: async (e) => { const b = e.currentTarget; b.disabled = true; try { await ctx.actions.clearAgreed(row.sunday, ch); ctx.toast(t('cantdo.undone')); } catch { b.disabled = false; ctx.toast(t('error')); } } }, t('cantdo.cancel'))],
         list: mini(curItems.filter((x) => x.c !== c)), foot: awayBtn,
       }));
       const tip = planTip(ctx, M, f); if (tip) wrap.append(tip);
