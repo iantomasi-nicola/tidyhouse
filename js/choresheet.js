@@ -370,7 +370,7 @@ export function openAssignSheet(ctx, sunday, chore) {
 export function openChoreSheet(ctx, sunday, chore, opts = {}) {
   const c = ci(chore);
   if (c < 0 || !rowOf(ctx, sunday)) return null;
-  const st = { view: opts.view || 'main', delay: null, coverTo: '*', terms: 'repay' };   // stato che non deve perdersi nei ridisegni
+  const st = { view: opts.view || 'main', coverTo: '*', terms: 'repay' };   // stato che non deve perdersi nei ridisegni
 
   const build = (sh) => {
     const go = (v) => { st.view = v; sh.focusFirst = true; sh.draw(true); };
@@ -395,6 +395,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
     // ------ sotto-viste ------
     // aperta direttamente da un pulsante della Home ma non piu' valida (es. altri hanno gia' risposto): si torna alla vista principale
     if (st.view === 'cover' && !coverCandidates(row, assigned).some((id) => A.canResult(sunday, chore, 'by:' + id))) st.view = 'main';
+    if (st.view === 'delay' && !(assigned && assigned === me && !res.kind)) st.view = 'main';
     if (st.view === 'cantdo' && !(assigned && !res.kind && !row.closed && (ctx.isAdmin || assigned === me))) st.view = 'main';
     if (st.view === 'cover') {
       // tutti quelli della casa in quella settimana: anche chi e' via ora puo' aver pulito (prima di partire, o a settimana finita); i presenti per primi
@@ -490,22 +491,24 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       const today = ctx.today();
       const days = Array.from({ length: 14 }, (_, i) => addDays(sunday, i + 1));
       const cur = delayOf(houseW(ctx), sunday, chore);
-      if (st.delay === null) st.delay = cur || '';
       const free = days.filter((d) => d >= today);
       const pickLabel = (d) => `${dowLong(d, ctx.lang)} ${fmtDate(d, ctx.lang)}`;
+      // un tocco sul giorno annuncia subito il ritardo (con «Annulla» nel messaggio): niente passaggio di conferma
+      const announce = async (d) => {
+        if (!(await run(ctx, () => A.setDelay(sunday, chore, d)))) return;
+        ctx.toast(t('flow.delaySaved', { date: fmtDate(d, ctx.lang) }), 7000, { action: { label: t('flow.undo'), onClick: () => run(ctx, () => A.setDelay(sunday, chore, cur || null), t('flow.delayCleared')) } });
+        if (opts.view === 'delay') sh.close(); else go('main');
+      };
       return h('div', { class: 'stack' },
         back(ctx, () => go('main')),
         h('div', { class: 'cs-title' }, t('flow.delayTitle')),
-        h('p', { class: 'muted small' }, t('flow.delayHint')),
+        h('p', { class: 'muted small' }, t('uxa.delayHint')),
         free.length ? h('div', { class: 'fl-days daychips', role: 'group', 'aria-label': t('flow.delayPick') }, days.map((d) => h('button', {
-          type: 'button', class: d < today ? 'past' : '', disabled: d < today ? true : null, 'data-day': d, 'aria-pressed': String(st.delay === d), 'aria-label': pickLabel(d),
-          onclick: () => { st.delay = d; sh.draw(true); },
+          type: 'button', class: d < today ? 'past' : '', disabled: d < today ? true : null, 'data-day': d, 'aria-pressed': String(cur === d), 'aria-label': pickLabel(d),
+          onclick: () => announce(d),
         }, h('small', null, t('dow.' + dowIdx(d))), String(+d.slice(8)))))
           : h('div', { class: 'note warn' }, icon('alert'), t('flow.delayNoDays')),
-        h('button', { type: 'button', class: 'btn lg block', 'data-act': 'delay-save', disabled: st.delay && st.delay >= today ? null : true, onclick: async () => {
-          if (await run(ctx, () => A.setDelay(sunday, chore, st.delay), t('flow.delaySaved', { date: fmtDate(st.delay, ctx.lang) }))) { st.delay = null; go('main'); }
-        } }, icon('clock'), st.delay ? t('flow.delayConfirm', { day: pickLabel(st.delay) }) : t('flow.delayPick')),
-        cur ? h('button', { type: 'button', class: 'btn soft block', 'data-act': 'delay-clear', onclick: async () => { if (await run(ctx, () => A.setDelay(sunday, chore, null), t('flow.delayCleared'))) { st.delay = null; go('main'); } } }, icon('x'), t('flow.delayClear')) : null);
+        cur ? h('button', { type: 'button', class: 'btn soft block', 'data-act': 'delay-clear', onclick: async () => { if (await run(ctx, () => A.setDelay(sunday, chore, null), t('flow.delayCleared'))) go('main'); } }, icon('x'), t('flow.delayClear')) : null);
     }
 
     // ------ vista principale ------
@@ -627,7 +630,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       if (agreed && agreed !== me) rows.push(actRow('users', 'g', t('cantdo.already', { name: ctx.name(agreed) }), null, { 'data-act': 'cantdo-clear' }, () => run(ctx, () => A.clearAgreed(sunday, chore), t('cantdo.undone'))));
       else if (!row.closed) rows.push(actRow('users', 'o', t('cantdo.btn'), t('cantdo.hint'), { 'data-act': 'cantdo' }, () => go('cantdo')));
       if (ctx.feature('requests') && !(agreed && agreed !== me)) rows.push(actRow('swap', '', t('flow.askBtn'), t('flow.askHint'), { 'data-act': 'ask' }, () => go('ask')));
-      rows.push(actRow('clock', 'o', delayNow ? t('flow.delayUntil', { date: fmtDate(delayNow, ctx.lang) }) : t('flow.delayBtn'), delayNow ? t('flow.delayBtn') : t('flow.delayHint'), { 'data-act': 'delay' }, () => { st.delay = null; go('delay'); }));
+      rows.push(actRow('clock', 'o', delayNow ? t('flow.delayUntil', { date: fmtDate(delayNow, ctx.lang) }) : t('flow.delayBtn'), delayNow ? t('flow.delayBtn') : t('flow.delayHint'), { 'data-act': 'delay' }, () => go('delay')));
       if (delayNow) rows.push(actRow('x', 'r', t('flow.delayClear'), null, { 'data-act': 'delay-clear-quick' }, async () => { await run(ctx, () => A.setDelay(sunday, chore, null), t('flow.delayCleared')); }));
       out.push(section(t('flow.sec.mine'), h('div', { class: 'list' }, rows)));
     }

@@ -6,9 +6,11 @@ import { CHORES, validateRoommates } from '../engine.js';
 import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote, termsLine } from '../choresheet.js';
 import { planOf, buildStats, weekDays, sharedStatus } from '../extras.js';
 import { it, en } from '../strings/home.js';
+import { it as itU, en as enU } from '../strings/uxa.js';
 import { it as itZ, en as enZ } from '../strings/more3.js';   // moreZ.boughtToast (spesa: comprato + Annulla)
 registerStrings(it, en);
 registerStrings(itZ, enZ);
+registerStrings(itU, enU);
 
 const IC = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 const WEIGHT = { hero: 3.2, alerts: 1.2, week: 3.4, checklist: 2, shared: 1.8, quick: 1.4, links: 0.7, away: 1, upcoming: 2.4, makeups: 1.6, ranking: 2.2, needs: 1.6 };
@@ -113,7 +115,8 @@ function widgetHero(ctx, M) {
       variant: 'late', testid: 'hero-late', kicker: `${t('st.late')} · ${t('home.weekOf', { range: fmtWeekRange(f.sunday) })}`, ic: IC[CHORES[f.c]], big: t('chore.' + CHORES[f.c]), sub: t('home.lateHint'),
       chips: [['', t('st.late'), 'clock'], ...(M.prev.isMakeup[f.c] ? [['', t('st.makeup'), 'history']] : []), ...flowChips(ctx, f.sunday, CHORES[f.c]).map((x) => [x.tone, x.text, x.ic])],
       actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, f.sunday, f.c, e) }, icon('check'), t('home.markDone')) : null,
-        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cover', onclick: () => openChore(ctx, f.sunday, CHORES[f.c], { view: 'cover' }) }, t('home.didSomeoneElse'))],
+        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cover', onclick: () => openChore(ctx, f.sunday, CHORES[f.c], { view: 'cover' }) }, t('home.didSomeoneElse')),
+        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-delay', onclick: () => openChore(ctx, f.sunday, CHORES[f.c], { view: 'delay' }) }, icon('clock'), t('flow.delayBtn'))],
       list: mini(rest),
     }));
     return wrap;
@@ -133,7 +136,7 @@ function widgetHero(ctx, M) {
       const agreedTo = (((ctx.state.weeks || {})[row.sunday] || {}).agreed || {})[ch];
       const canHand = !(agreedTo && agreedTo !== me);
       wrap.append(heroCard({
-        testid: 'hero-todo', kicker: curItems.length > 1 ? `${t('home.yourTurn')} · ${t('home.nTurns', { n: curItems.length })}` : t('home.yourTurn'), ic: IC[ch], big: t('chore.' + ch), chips,
+        testid: 'hero-todo', sub: row.isMakeup[c] ? t('chore.makeupHint') : null, kicker: curItems.length > 1 ? `${t('home.yourTurn')} · ${t('home.nTurns', { n: curItems.length })}` : t('home.yourTurn'), ic: IC[ch], big: t('chore.' + ch), chips,
         actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, row.sunday, c, e) }, icon('check'), t('home.markDone')) : null,
           canHand ? h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cantdo', onclick: () => openChore(ctx, row.sunday, ch, { view: 'cantdo' }) }, t('cantdo.btn')) : null],
         list: mini(curItems.filter((x) => x.c !== c)), foot: awayBtn,
@@ -468,7 +471,7 @@ function widgetMakeups(ctx, M) {
   const num = (v) => h('td', null, v ? h('span', { class: 'hm-num on' }, v) : h('span', { class: 'hm-num' }, '·'));
   const head = h('tr', null, h('th', { class: 'l' }, t('misc.person')), [0, 1, 2].map((c) => h('th', { 'aria-label': t('chore.' + CHORES[c]), title: t('chore.' + CHORES[c]) }, h('span', { class: 'hm-minitile ' + CHORES[c] }, icon(IC[CHORES[c]])))), h('th', { 'aria-label': t('stats.openRests'), title: t('stats.openRests') }, h('span', { class: 'hm-minitile rest' }, icon('moon'))));
   const body = ppl.map(({ p, mk, rests }) => h('tr', null, h('td', { class: 'l' }, h('span', { class: 'hm-person' }, avatar(p.name, ctx.color(p.id), 'sm'), h('span', { class: 'hm-ell' }, p.name))), mk.map(num), num(rests)));
-  return h('section', { class: 'hm-w', 'data-widget': 'makeups' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.makeups'))), h('div', { class: 'card hm-tablecard' }, h('table', { class: 'hm-table' }, h('thead', null, head), h('tbody', null, body))));
+  return h('section', { class: 'hm-w', 'data-widget': 'makeups' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.makeups'))), h('div', { class: 'card hm-tablecard' }, h('table', { class: 'hm-table' }, h('thead', null, head), h('tbody', null, body)), h('p', { class: 'small muted hm-explain', 'data-testid': 'makeups-explain' }, t('uxa.makeupsExplain'))));
 }
 
 // ---------------- RANKING ----------------
@@ -482,7 +485,7 @@ function widgetRanking(ctx, M) {
     h('div', { class: 'pos' }, i + 1),
     h('div', { class: 'hm-rankwho' }, avatar(p.name, ctx.color(p.id), 'sm'), h('span', { class: 'hm-ell' }, p.name), p.tr ? h('span', { class: 'chip acc', title: t('stats.tr') }, 'TR') : null, p.cdm ? h('span', { class: 'chip bad', title: t('stats.cdm') }, 'CDM') : null),
     h('div', { class: 'hm-rankscore', title: t('stats.cleaned') }, h('b', null, p.score))));
-  return h('section', { class: 'hm-w', 'data-widget': 'ranking' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.ranking')), h('a', { href: '#/stats' }, t('home.seeAll'))), h('div', { class: 'list' }, rows));
+  return h('section', { class: 'hm-w', 'data-widget': 'ranking' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.ranking')), h('a', { href: '#/stats' }, t('home.seeAll'))), h('div', { class: 'list' }, rows), sorted.some((p) => p.tr || p.cdm) ? h('p', { class: 'small muted hm-explain', 'data-testid': 'rank-explain' }, t('stats.trHint')) : null);
 }
 
 // ---------------- NEEDS ----------------

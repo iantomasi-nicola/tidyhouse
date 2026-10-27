@@ -215,3 +215,6 @@
 @keyframes hm-expand { from { max-width: 44px; padding-right: 12px; } to { max-width: 180px; } }
 @keyframes hm-label { from { opacity: 0; transform: translateX(-6px); } }
 @media (prefers-reduced-motion: reduce) { .hm-refresh.upd, .hm-refresh.upd .hm-refresh-label { animation: none; } }
+
+.hm-explain { margin: 0; padding: 10px 16px 12px; line-height: 1.35; }
+.hm-tablecard .hm-explain { padding: 10px 4px 2px; }

@@ -199,6 +199,36 @@ const run = async () => {
     noErrors(page); await page.close();
   });
 
+  // ===== B3: scheda turno a testo grande, ritardo a 2 tocchi =====
+  await test('B3 scheda turno: giorni >= 44px e nessun overflow (390, 320 a testo 130%)', async () => {
+    for (const [vp, f] of [[MOBILE, 1], [MOBILE, 1.3], [SMALL, 1.3]]) {
+      const page = await open({ s: mk({ me: F, admin: false }), viewport: vp, fs: f });
+      await openChore(page, 'floor');
+      const boxes = await page.$$eval('#layer .sheet .cs-sec .daychips button', (bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }));
+      assert.equal(boxes.length, 7);
+      for (const [w, h] of boxes) assert.ok(w >= 44 && h >= 44, `${vp.width}@${f}: ${w}x${h}`);
+      await noOverflow(page, `scheda ${vp.width}@${f}`);
+      await page.close();
+    }
+  });
+
+  await test('B3 ritardo annunciato dalla Home: 2 tocchi (prima 4), Annulla lo toglie', async () => {
+    const s = mk({ me: P3.floor, admin: false, weeks: DONE3 });
+    const page = await open({ s });
+    await page.waitForSelector('[data-testid="hero-late"]');
+    const tp = tapper(page);
+    await tp.tap('[data-testid="hero-late"] [data-act="hero-delay"]');
+    await page.waitForSelector('#layer .sheet .fl-days');
+    await tp.tap('#layer .sheet [data-day="2026-10-30"]');
+    await page.waitForTimeout(500);
+    assert.equal((await wk(page, PREV)).delay.floor, '2026-10-30');
+    assert.equal(await sheets(page), 0, 'il foglio si chiude');
+    assert.ok(tp.n <= 2, 'tocchi: ' + tp.n);
+    await page.click('.toast-action'); await page.waitForTimeout(500);
+    assert.ok(!((await wk(page, PREV)).delay || {}).floor, 'annullato');
+    noErrors(page); await page.close();
+  });
+
   await env.close();
   const bad = results.filter((r) => !r[1]);
   console.log(`\n${results.length - bad.length}/${results.length} ok`);

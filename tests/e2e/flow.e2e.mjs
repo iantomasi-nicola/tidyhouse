@@ -339,28 +339,22 @@ const run = async () => {
     noErrors(page);
   });
 
-  await test('ritardo: giorni (14), selezione che non si perde con gli aggiornamenti, chip e rimozione', async () => {
+  await test('ritardo: giorni (14), un tocco annuncia, chip e rimozione', async () => {
     const page = await open({ s: mk({ me: F, admin: false }) });
     await openChore(page, 'floor');
     await top(page).locator('[data-act=delay]').click();
     await page.waitForSelector('#layer .sheet .fl-days');
     assert.equal(await top(page).locator('.fl-days button').count(), 14);
     assert.equal(await top(page).locator('.fl-days button:disabled').count(), 0);
-    assert.match(await top(page).innerText(), /Avvisa i coinquilini quando lo farai/);
-    assert.ok(await top(page).locator('[data-act=delay-save]').isDisabled(), 'serve un giorno');
+    assert.match(await top(page).innerText(), /Tocca il giorno in cui lo farai/);
+    // UX-A: un tocco sul giorno annuncia subito il ritardo (niente conferma)
     await top(page).locator('[data-day="2026-11-03"]').click();
-    // un aggiornamento dallo store (altro dispositivo) non deve far perdere la scelta
-    await page.evaluate(() => window.__app.store.setDoc('weeks', '2026-11-15', { note: 'altro dispositivo' }));
-    await page.waitForTimeout(400);
-    assert.equal(await top(page).locator('[data-day="2026-11-03"]').getAttribute('aria-pressed'), 'true', 'scelta mantenuta');
-    assert.match(await top(page).locator('[data-act=delay-save]').innerText(), /Annuncia: martedì 3 nov/);
-    await shot(page, 'delay-390');
-    await top(page).locator('[data-act=delay-save]').click();
     await page.waitForSelector('#layer .sheet [data-flow=delay]');
     assert.equal((await wk(page)).delay.floor, '2026-11-03');
     assert.match(await top(page).locator('[data-flow=delay]').innerText(), /In ritardo: lo farà il 3 nov/);
     assert.match(await text(page, '.hm-chore[data-chore=floor]'), /In ritardo: lo farà il 3 nov/);
     assert.ok((await logs(page)).some((l) => l.type === 'delay'));
+    await page.waitForTimeout(450);   // l'app ignora un secondo tocco vicino (<350 ms)
     await top(page).locator('[data-act=delay-clear-quick]').click();
     await page.waitForFunction(() => !((window.__app.state.weeks['2026-11-01'] || {}).delay || {}).floor);
     assert.equal(await top(page).locator('[data-flow=delay]').count(), 0);
