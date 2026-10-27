@@ -11,7 +11,7 @@ import { hashPin } from '../../js/actions.js';
 import { encryptBackup } from '../../js/backupcrypto.js';
 
 const require = createRequire(import.meta.url);
-const SHOTS = process.env.SHOTS || '/tmp/claude-0/-home-user/31bb54fa-07b7-55b0-a8eb-c0a272017a85/scratchpad/settings/';
+const SHOTS = process.env.SHOTS || path.join(os.tmpdir(), 'tidyhouse-shots', 'settings') + '/';
 const XLSX_REAL = process.env.XLSX_FILE || '/root/.claude/uploads/31bb54fa-07b7-55b0-a8eb-c0a272017a85/1f8df62c-House_Cleaning_Plan_Magliocco.xlsx';
 const NOW = '2026-10-28T10:00:00';
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -400,8 +400,11 @@ await test('programma notifiche: salva, anteprima, chiavi VAPID', async (mk) => 
   await page.selectOption(tid('dow-satDuty'), '5'); await until(page, () => window.__app.house.notif.satDuty.dow === 5);
   await page.fill(tid('time-satDuty'), '11:30'); await until(page, () => window.__app.house.notif.satDuty.time === '11:30');
   await page.click(tid('ncard-monNew') + ' .switch'); await until(page, () => window.__app.house.notif.monNew.on === true);
-  await page.click(tid('late-add')); await until(page, () => window.__app.house.notif.late.times.length === 4);
-  await page.click(`${tid('step-late-max')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.late.max === 4);
+  // i valori di partenza dei solleciti sono quelli di DEFAULT_NOTIF (2 orari, massimo 2): si controlla «uno in più»
+  const late0 = (await house(page)).notif.late || {}; const n0 = (late0.times || []).length || 2, m0 = late0.max || 2;
+  await page.click(tid('late-add')); await until(page, (n) => window.__app.house.notif.late.times.length === n, n0 + 1);
+  await page.waitForTimeout(400);   // l'app ignora un secondo tocco ravvicinato sui pulsanti d'azione
+  await page.click(`${tid('step-late-max')} button[aria-label="+"]`); await until(page, (m) => window.__app.house.notif.late.max === m, m0 + 1);
   await page.click(`${tid('step-catchUp')} button[aria-label="+"]`); await until(page, () => window.__app.house.notif.catchUpHours === 6);
   // in vista: master e card dei tipi; anteprima, chiavi, notifiche immediate e server sono sezioni richiudibili
   assert.ok(await page.locator(tid('sw-notif-master')).isVisible()); assert.ok(await page.locator(tid('ncard-satDuty')).isVisible());
@@ -536,6 +539,7 @@ await test('dati: export JSON/CSV/XLSX, import JSON, cifrato, Excel reale', asyn
   await page.setInputFiles(sel, { name: 'b.enc.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(enc)) });
   await page.fill(tid('pass-1'), 'sbagliata'); await page.click(tid('pass-ok'));
   await page.waitForFunction(() => document.querySelector('[data-testid=pass-error]').textContent.length > 0);
+  await page.waitForTimeout(400);   // anti doppio tocco: stesso pulsante, stessa posizione
   await page.fill(tid('pass-1'), 'segreta123'); await page.click(tid('pass-ok'));
   await page.waitForSelector(tid('import-summary')); await page.click(tid('import-confirm'));
   await until(page, () => window.__app.house.name === 'Casa Cifrata');
@@ -546,7 +550,7 @@ await test('dati: export JSON/CSV/XLSX, import JSON, cifrato, Excel reale', asyn
 });
 
 await test('dati: import del foglio Excel originale', async (mk) => {
-  if (!fs.existsSync(XLSX_REAL)) { console.log('  (file Excel non trovato, salto)'); return; }
+  if (!fs.existsSync(XLSX_REAL)) { console.log('  (file Excel reale non trovato: imposta XLSX_FILE=<percorso del foglio> per provare questa parte; salto)'); return; }
   const page = await mk(); await go(page, 'data');
   await page.setInputFiles(tid('import-file'), XLSX_REAL);
   await page.waitForSelector(tid('import-summary'), { timeout: 15000 }); await shot(page, 'import-xlsx-390');
@@ -617,6 +621,7 @@ await test('IA: senza chiave e con errore del servizio', async (mk) => {
   await page.waitForSelector('.sheet .note.warn');
   await page.evaluate(() => localStorage.setItem('cp:ai', JSON.stringify({ provider: 'openai', key: 'k' })));
   await page.route('https://api.openai.com/**', (route) => route.request().method() === 'OPTIONS' ? route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' } }) : route.fulfill({ status: 401, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ error: { message: 'bad key' } }) }));
+  await page.waitForTimeout(400);   // anti doppio tocco: stesso pulsante, stessa posizione
   await page.click(tid('ai-run')); await page.waitForSelector(tid('ai-error'));
   assert.match(await page.locator(tid('ai-error')).innerText(), /bad key/);
   await page.click('.sheet .icon-btn[aria-label="Chiudi"]');
@@ -630,8 +635,10 @@ await test('sicurezza: cambio PIN, blocco e sblocco', async (mk) => {
   const page = await mk({ houseExtra: { adminSalt: salt, adminHash } }); await go(page, 'security');
   await page.fill(tid('pin-old'), '9999'); await page.fill(tid('pin-new'), '5678'); await page.fill(tid('pin-new2'), '5678'); await page.click(tid('pin-save'));
   await page.waitForFunction(() => document.querySelector('[data-testid=pin-error]').textContent.includes('errato'));
+  await page.waitForTimeout(400);   // anti doppio tocco
   await page.fill(tid('pin-old'), '1234'); await page.fill(tid('pin-new2'), '0000'); await page.click(tid('pin-save'));
   await page.waitForFunction(() => document.querySelector('[data-testid=pin-error]').textContent.includes('coincidono'));
+  await page.waitForTimeout(400);
   await page.fill(tid('pin-new2'), '5678'); await page.click(tid('pin-save'));
   await until(page, () => window.__app.house.adminSalt !== 'SALTSALTSALT1234');
   const ok = await page.evaluate(async () => { const a = await import('/js/actions.js'); return [await a.verifyPin(window.__app.house, '5678'), await a.verifyPin(window.__app.house, '1234')]; });
