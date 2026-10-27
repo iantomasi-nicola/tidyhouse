@@ -192,10 +192,10 @@ export class Actions {
   /**
    * Assegnazione manuale della settimana (solo admin): `wanted` = { floor|bathroom|kitchen: personId | '' | null }.
    * Senza `merge` sostituisce tutto lo swap della settimana (le mansioni non indicate tornano «come da regole»);
-   * con `merge` tocca solo le mansioni indicate. Una persona uguale a quella delle regole non crea override.
+   * con `merge` tocca solo le mansioni indicate. Una persona uguale a quella delle regole non crea override (salvo `explicit`).
    * Valida gli id (devono essere persone attive in quella settimana). Ritorna { prev, swap, changes } (prev serve per Annulla).
    */
-  async setWeekAssignments(sunday, wanted, { merge = false, logText = '' } = {}) {
+  async setWeekAssignments(sunday, wanted, { merge = false, explicit = false, logText = '' } = {}) {
     this.need(this.admin);
     const eh = engineHouse(this.s.state);
     const row = compute(eh, this.today(), 26).rows.find((r) => r.sunday === sunday);
@@ -205,7 +205,7 @@ export class Actions {
     for (const c of CHORES) if (w[c] && (typeof w[c] !== 'string' || !active.has(w[c]))) throw new Error('invalid');
     const prev = { ...(this.weekDoc(sunday).swap || {}) };
     const ruled = ruleAssigned(eh, this.today(), sunday);
-    const { patch, swap } = finalSwap({ existing: prev, ruled, wanted: w, merge });
+    const { patch, swap } = finalSwap({ existing: prev, ruled, wanted: w, merge, explicit });
     const changes = diffAssign(row.assigned, applySwap(ruled, swap));
     await this.s.setDoc('weeks', sunday, { swap: Object.keys(swap).length ? patch : null });
     await this.log('assign', { week: sunday, text: logText || changes.map((x) => `${x.chore}: ${x.to}`).join(', ') || sunday, n: changes.length });

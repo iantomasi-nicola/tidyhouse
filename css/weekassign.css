@@ -1,6 +1,7 @@
 /* Assegna la settimana (js/weekassign.js): selettori a scelta singola per mansione e anteprima delle modifiche. */
 .wa { gap: 14px; }
-.wa-intro { margin: 0; }
+.wa-week { font-size: 1.0625rem; font-weight: 750; letter-spacing: -.01em; }
+.wa-intro { margin: -6px 0 0; }
 .wa-card { background: var(--surface); border-radius: var(--r-lg); padding: 14px; display: grid; gap: 12px; box-shadow: var(--shadow-1); min-width: 0; }
 .wa-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .wa-opts { display: flex; flex-wrap: wrap; gap: 8px; }

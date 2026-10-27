@@ -21,6 +21,8 @@ test('assignlogic: finalSwap non crea override uguali alle regole e unisce con m
   assert.deepEqual(finalSwap({ ruled, wanted: { floor: 'b', bathroom: 'b', kitchen: '' } }), { patch: { floor: 'b', bathroom: null, kitchen: null }, swap: { floor: 'b' } });
   // merge: tocca solo le mansioni indicate, le altre restano
   assert.deepEqual(finalSwap({ existing: { kitchen: 'a', floor: 'c' }, ruled, wanted: { floor: 'a' }, merge: true }), { patch: { floor: null, bathroom: null, kitchen: 'a' }, swap: { kitchen: 'a' } });
+  // explicit: la scelta resta anche se uguale alle regole
+  assert.deepEqual(finalSwap({ ruled, wanted: { floor: 'a' }, explicit: true }).swap, { floor: 'a' });
   // senza merge le mansioni non indicate tornano alle regole
   assert.deepEqual(finalSwap({ existing: { kitchen: 'a' }, ruled, wanted: { floor: 'c' } }).swap, { floor: 'c' });
   assert.deepEqual(diffAssign(['a', 'b', 'c'], ['b', 'b', '']), [{ chore: 'floor', from: 'a', to: 'b' }, { chore: 'kitchen', from: 'c', to: '' }]);

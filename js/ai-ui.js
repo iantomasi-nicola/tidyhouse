@@ -115,7 +115,7 @@ export function openAiImportSheet(ctx) {
     for (const [week, wanted] of groups) {
       try {
         const changes = Object.entries(wanted).map(([c, id]) => t('assign.logChange', { chore: t('chore.' + c).toLowerCase(), name: ctx.name(id) })).join(', ');
-        await ctx.actions.setWeekAssignments(week, wanted, { merge: true, logText: t('assign.log', { week: fmtWeekRange(week, ctx.lang), changes }) });
+        await ctx.actions.setWeekAssignments(week, wanted, { merge: true, explicit: true, logText: t('assign.log', { week: fmtWeekRange(week, ctx.lang), changes }) });
         ok += Object.keys(wanted).length;
       } catch { ko += Object.keys(wanted).length; }
     }

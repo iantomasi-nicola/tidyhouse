@@ -17,14 +17,15 @@ export function ruleAssigned(eh, today, sunday) {
 
 /**
  * Calcola lo swap finale da scrivere. `wanted` = { chore: personId | '' | null } (solo le mansioni da toccare con `merge`,
- * tutte le mansioni senza `merge`); una mansione assegnata alla stessa persona delle regole non crea override.
+ * tutte le mansioni senza `merge`); una mansione assegnata alla stessa persona delle regole non crea override,
+ * salvo `explicit` (scelta esplicita, es. dall'IA: resta valida anche se le regole poi cambiano).
  * Ritorna { patch, swap } con patch = { floor, bathroom, kitchen } (id oppure null per cancellare) e swap = oggetto compatto.
  */
-export function finalSwap({ existing = {}, ruled, wanted = {}, merge = false }) {
+export function finalSwap({ existing = {}, ruled, wanted = {}, merge = false, explicit = false }) {
   const patch = {}, swap = {};
   for (const c of CHORES) {
     let id = null;
-    if (c in wanted) id = wanted[c] && wanted[c] !== ruled[CHORES.indexOf(c)] ? wanted[c] : null;
+    if (c in wanted) id = wanted[c] && (explicit || wanted[c] !== ruled[CHORES.indexOf(c)]) ? wanted[c] : null;
     else if (merge) id = existing[c] || null;
     patch[c] = id; if (id) swap[c] = id;
   }

@@ -29,7 +29,6 @@ export function openAssignWeekSheet(ctx, sunday) {
   const effective = (c) => picks[c] || ruled[CHORES.indexOf(c)] || '';
 
   const s = ctx.sheet({ title: t('assign.title'), full: true, body: h('div') });
-  s.setTitle(`${t('assign.title')} · ${fmtWeekRange(sunday, ctx.lang)}`);
 
   function chipOpt(c, id, label, sub) {
     const on = (picks[c] || '') === id;
@@ -84,7 +83,7 @@ export function openAssignWeekSheet(ctx, sunday) {
       s.close();
       ctx.toast(t('assign.saved'), 7000, { action: { label: t('flow.undo'), onClick: async () => {
         try {
-          await ctx.actions.setWeekAssignments(sunday, res.prev, { logText: t('assign.logUndo', { week: fmtWeekRange(sunday, ctx.lang) }) });
+          await ctx.actions.setWeekAssignments(sunday, res.prev, { explicit: true, logText: t('assign.logUndo', { week: fmtWeekRange(sunday, ctx.lang) }) });
           ctx.toast(t('assign.undone'));
         } catch { ctx.toast(t('error')); }
       } } });
@@ -98,7 +97,7 @@ export function openAssignWeekSheet(ctx, sunday) {
     const y = s.body.scrollTop;
     const after = CHORES.map((c) => effective(c));
     const { box, changes } = preview(after);
-    const kids = [h('p', { class: 'muted small wa-intro' }, t('assign.intro'))];
+    const kids = [h('div', { class: 'wa-week', 'data-testid': 'wa-week' }, fmtWeekRange(sunday, ctx.lang)), h('p', { class: 'muted small wa-intro' }, t('assign.intro'))];
     if (!pres.length) kids.push(h('div', { class: 'note warn' }, icon('home2'), t('assign.noPeople')));
     if (row.closed) kids.push(h('div', { class: 'note warn', 'data-testid': 'wa-closed' }, icon('alert'), t('assign.closedWarn')));
     CHORES.forEach((c, i) => kids.push(card(c, i)));
