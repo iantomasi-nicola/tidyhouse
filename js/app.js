@@ -508,10 +508,13 @@ function restoreFocus(snap) {
 
 /** Firma di un nodo: HTML + proprietà che non compaiono nell'HTML (valore/spunta/disabilitato dei campi). */
 function domSig(el) {
-  let s = el.outerHTML;
+  let s = el.outerHTML.replace(/ hm-enter\b/g, "");   // «hm-enter» (animazione del primo disegno della Home) non conta: il secondo disegno non deve rimontare la pagina
   for (const f of el.querySelectorAll('input,select,textarea,option')) s += '|' + (f.type === 'checkbox' || f.type === 'radio' ? (f.checked ? 1 : 0) : f.tagName === 'OPTION' ? (f.selected ? 1 : 0) : f.value) + (f.disabled ? 'd' : '');
   return s;
 }
+/** Schermate per cui si può scartare un disegno identico a quello montato. Solo la Home: il calendario, ad esempio, ricorda il nodo dell'ultimo render
+ *  (se non è montato crede a una «nuova visita» e azzera lo storico mostrato), quindi un render scartato lo romperebbe. Le altre schermate si rimontano come prima. */
+const SKIP_OK = 'home';
 const sigOfKids = (els) => els.map(domSig).join('\u0001');
 
 async function renderApp(force) {
@@ -555,7 +558,7 @@ async function renderApp(force) {
   if (!shell || !shell.isConnected) return;
   // stessi dati visibili e pagina rimasta intatta dall'ultimo disegno: si tiene il nodo già montato (niente rimontaggio, focus/scroll/selezione intatti)
   const fresh = reminder ? [reminder, node] : [node];
-  if (samePage && node.parentNode !== mainEl && mainEl.__sig !== undefined && mainEl.children.length === fresh.length && sigOfKids(fresh) === mainEl.__sig && sigOfKids([...mainEl.children]) === mainEl.__sig) {
+  if (samePage && name === SKIP_OK && node.parentNode !== mainEl && mainEl.__sig !== undefined && mainEl.children.length === fresh.length && sigOfKids(fresh) === mainEl.__sig && sigOfKids([...mainEl.children]) === mainEl.__sig) {
     updateNav(tab); updateTop(); renderSkips++; lastPath = route.path; popNav = false;
     recordView(tab === '' ? 'home' : tab);
     const title0 = `${ctx.house.name || 'Tidy House'} · Tidy House`; if (document.title !== title0) document.title = title0;

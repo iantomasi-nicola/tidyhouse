@@ -103,6 +103,8 @@ if (want('render')) {
   {
     const page = await env.page({ now: NOW, seed: mkSeed() });
     await open(page);
+    await sleep(500);
+    ok(await page.evaluate(() => window.__app.renderCount) === 1, 'caricamento Home: un solo montaggio (niente secondo disegno dopo ~100 ms)', await page.evaluate(() => window.__app.renderCount));
     await page.evaluate(() => { const k = document.querySelector('#main').firstElementChild; k.__tag = 1; window.__r0 = window.__app.renderCount; });
     await page.evaluate(() => { for (let i = 0; i < 3; i++) window.__app.rerender(); }); await sleep(400);
     ok(await page.evaluate(() => document.querySelector('#main').firstElementChild.__tag === 1), '[DIFETTO] Home: con dati invariati il nodo della pagina non viene rimontato');
@@ -337,6 +339,154 @@ if (want('install') || want('ios')) {
     }
   }
   await browser.close();
+}
+
+// ============================================================================================ 7. PERCORSI TRASVERSALI
+if (want('paths')) {
+  console.log('\n== PERCORSI ==');
+  // a) indietro del browser con sheet aperti
+  {
+    const page = await env.page({ now: NOW, seed: mkSeed() });
+    await open(page, 'more'); await open(page, 'settings'); await sleep(300);
+    await page.evaluate(() => { window.__app.sheet({ title: 'Uno', body: 'a' }); window.__app.sheet({ title: 'Due', body: 'b' }); });
+    await sleep(500);
+    await page.goBack(); await sleep(600);
+    ok(await page.evaluate(() => document.querySelectorAll('.sheet:not([aria-hidden])').length) === 1 && await page.evaluate(() => location.hash) === '#/settings', 'indietro con 2 sheet: chiude solo quello sopra, la pagina resta');
+    await page.goBack(); await sleep(600);
+    ok(await page.evaluate(() => document.querySelectorAll('.sheet:not([aria-hidden])').length) === 0 && await page.evaluate(() => location.hash) === '#/settings', 'secondo indietro: chiude anche l\'altro, la pagina resta');
+    await page.goBack(); await sleep(600);
+    ok(await page.evaluate(() => location.hash) === '#/more', 'terzo indietro: torna alla pagina precedente');
+    // ricarica a metà azione: sheet aperto, poi reload
+    await page.evaluate(() => window.__app.sheet({ title: 'Azione', body: 'x' })); await sleep(400);
+    await page.reload(); await settle(page, 500);
+    ok(await page.evaluate(() => location.hash) === '#/more' && await page.locator('.sheet').count() === 0, 'ricarica con uno sheet aperto: stessa pagina, nessuno sheet, app viva');
+    ok(!errs(page).length, 'indietro/ricarica: nessun errore in console', errs(page));
+    await page.close();
+  }
+  // b) scroll ripristinato tornando indietro su una pagina lunga
+  {
+    const page = await env.page({ now: NOW, seed: mkSeed() });
+    await open(page, 'settings/features', 500);
+    const y = await page.evaluate(() => { window.scrollTo(0, 400); return window.scrollY; }); await sleep(200);
+    await page.evaluate(() => { location.hash = '#/more'; }); await sleep(500);
+    await page.goBack(); await sleep(700);
+    const y2 = await page.evaluate(() => window.scrollY);
+    ok(y > 100 && Math.abs(y2 - y) < 40, `indietro: lo scroll di una pagina lunga viene ripristinato (${y} → ${y2})`);
+    await page.close();
+  }
+  // c) link d'invito vecchio/non valido e rete assente: messaggi chiari, nessun blocco
+  {
+    const page = await env.page({ now: NOW, lang: 'it-IT' });
+    await page.route('**/vendor/firebase.js', (r) => r.abort());
+    await page.goto(env.url + '/#/join/ABCDEFGHJKLM'); await sleep(1500);
+    const txt = await page.evaluate(() => document.querySelector('.gate').innerText);
+    ok(/offline|connession|riprova|non (è|e') valid|errore/i.test(txt), 'join con rete assente: messaggio comprensibile', txt.slice(0, 160));
+    ok(await page.locator('.gate .btn').count() >= 1 && await page.locator('#onb-code').count() === 1, 'join con rete assente: si può riprovare o correggere il codice');
+    ok(!(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2)), 'join: nessun overflow');
+    await page.goto(env.url + '/#/join/ABC'); await sleep(600);
+    ok(/non (è|e') valid|codice/i.test(await page.evaluate(() => document.querySelector('.gate').innerText)), 'link con codice troppo corto: messaggio «non valido»');
+    await page.close();
+    // casa cloud salvata ma servizio non raggiungibile: schermata «offline» con pulsante per riprovare
+    const s = seed(); s['cp:houses'] = [{ id: 'CLOUDHOUSE12', name: 'Casa remota', mode: 'cloud', me: 'anna', lastUsed: 1 }]; s['cp:last'] = 'CLOUDHOUSE12';
+    const p2 = await env.page({ now: NOW, seed: s });
+    await p2.route('**/vendor/firebase.js', (r) => r.abort());
+    await p2.goto(env.url + '/'); await sleep(1500);
+    ok(await p2.locator('.onb-off').count() === 1 && await p2.locator('.onb-off .btn').count() === 1, 'casa cloud irraggiungibile: schermata «offline» con «Riprova»');
+    ok(/Casa remota/.test(await p2.evaluate(() => document.querySelector('.gate').innerText)), 'e dice quale casa');
+    await p2.close();
+  }
+  // d) rientro dopo giorni: le richieste vecchie scadono al ritorno in primo piano
+  {
+    const st = seed({ me: 'bruno', admin: false, houseExtra: { requireRules: false, tasks: [] } });
+    st['cp:h:LOCALTEST001'].requests = { r1: { status: 'pending', kind: 'cover', week: '2026-10-25', chore: 'floor', from: 'anna', to: null, at: '2026-10-20T10:00:00.000Z', terms: 'repay' } };
+    const page = await env.page({ now: NOW, seed: st });
+    await open(page, '', 600);
+    ok(await page.evaluate(() => window.__app.state.requests.r1.status) === 'pending', 'rientro: la richiesta di 3 giorni fa è ancora valida');
+    await page.clock.setSystemTime(new Date('2026-11-03T10:00:00'));
+    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+    await sleep(800);
+    ok(await page.evaluate(() => window.__app.state.requests.r1.status) === 'expired', 'rientro dopo 6 giorni: la richiesta scade');
+    ok(!errs(page).length, 'rientro: nessun errore in console', errs(page));
+    await page.close();
+  }
+  // e) tema × testo × larghezze sulle schermate di accesso e sull'app: niente overflow, tocchi >= 44 px dove servono
+  {
+    const bad = [];
+    for (const [vw, vh] of [[320, 640], [390, 844], [768, 1024], [1440, 900]]) {
+      for (const theme of ['light', 'dark', 'auto']) {
+        for (const fs of [1, 1.3]) {
+          const p0 = await env.page({ now: NOW, viewport: { width: vw, height: vh }, dark: theme === 'dark', lang: vw === 320 ? 'en-US' : 'it-IT' });
+          await p0.goto(env.url + '/'); await p0.evaluate(([t, f]) => { localStorage.setItem('cp:prefs', JSON.stringify({ theme: t === 'auto' ? 'auto' : t, textSize: f })); }, [theme, fs]);
+          await p0.reload(); await settle(p0, 400);
+          const r = await p0.evaluate(() => ({ ox: document.documentElement.scrollWidth > window.innerWidth + 2, small: [...document.querySelectorAll('.gate button, .gate .btn, .gate input')].filter((e) => { const b = e.getBoundingClientRect(); return b.width && b.height && (b.height < 40 || b.width < 40) && !e.classList.contains('sr') && e.type !== 'hidden'; }).map((e) => e.tagName + '.' + e.className + ':' + Math.round(e.getBoundingClientRect().width) + 'x' + Math.round(e.getBoundingClientRect().height)) }));
+          if (r.ox || r.small.length) bad.push({ vw, theme, fs, ...r });
+          await p0.close();
+        }
+      }
+    }
+    ok(!bad.length, 'landing: nessun overflow e nessun controllo < 40 px (320–1440 px, chiaro/scuro/auto, testo 100% e 130%)', bad.slice(0, 4));
+    const bad2 = [];
+    for (const [vw, vh] of [[320, 640], [390, 844], [1440, 900]]) {
+      for (const fs of [1, 1.3]) {
+        const p0 = await env.page({ now: NOW, viewport: { width: vw, height: vh }, seed: mkSeed({ extra: { 'cp:prefs': { textSize: fs } } }) });
+        for (const r of ['', 'calendar', 'more', 'settings']) {
+          await open(p0, r, 250);
+          const ox = await p0.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
+          const nav = await p0.evaluate(() => { const n = document.querySelector('.nav'); const b = n && n.getBoundingClientRect(); return !!b && b.left >= -1 && b.right <= window.innerWidth + 1; });
+          if (ox || !nav) bad2.push({ vw, fs, r, ox, nav });
+        }
+        await p0.close();
+      }
+    }
+    ok(!bad2.length, 'app: nessun overflow e nav dentro lo schermo (320–1440 px, testo 100% e 130%)', bad2.slice(0, 4));
+  }
+  // f) prefers-reduced-motion: niente animazioni reali (toast, sheet, ingresso pagina)
+  {
+    const { chromium } = require('playwright');
+    const browser = await chromium.launch();
+    for (const reduce of [false, true]) {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block', reducedMotion: reduce ? 'reduce' : 'no-preference' });
+      await ctx.addInitScript((d) => { if (!localStorage.getItem('cp:seeded')) { for (const [k, v] of Object.entries(d)) localStorage.setItem(k, JSON.stringify(v)); localStorage.setItem('cp:seeded', '1'); } }, mkSeed());
+      const page = await ctx.newPage();
+      await page.goto(env.url + '/#/'); await settle(page, 400);
+      const d = await page.evaluate(() => { window.__app.toast('x'); window.__app.sheet({ title: 's', body: 'b' }); const t = document.querySelector('.toast'); const sh = document.querySelector('.sheet'); return { toast: parseFloat(getComputedStyle(t).animationDuration), sheet: parseFloat(getComputedStyle(sh).transitionDuration) }; });
+      if (reduce) ok(d.toast < 0.01 && d.sheet < 0.01, 'reduced-motion: toast e sheet senza animazione reale', d);
+      else ok(d.toast > 0.1 && d.sheet > 0.1, 'movimento normale: animazioni presenti (controllo del test)', d);
+      await ctx.close();
+    }
+    await browser.close();
+  }
+}
+
+// ============================================================================================ 8. LAYOUT SHIFT E LONG TASK PER ROTTA
+if (want('metrics')) {
+  console.log('\n== METRICHE PER ROTTA ==');
+  const ROUTES = ['', 'calendar', 'trips', 'stats', 'more', 'needs', 'rules', 'lastout', 'tasks', 'requests', 'activity', 'guide', 'settings', 'settings/profile', 'settings/appearance', 'settings/home', 'settings/notifications', 'settings/house', 'settings/rules', 'settings/roommates', 'settings/features', 'settings/links', 'settings/notif-house', 'settings/invite', 'settings/access', 'settings/data', 'settings/ai', 'settings/security'];
+  const INIT = () => {
+    window.__cls = 0; window.__long = []; window.__lcp = 0;
+    try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (!e.hadRecentInput) window.__cls += e.value; }).observe({ type: 'layout-shift', buffered: true }); } catch { /* ignore */ }
+    try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push(Math.round(e.duration)); }).observe({ type: 'longtask', buffered: true }); } catch { /* ignore */ }
+  };
+  const worst = { cls: 0, long: 0, where: '' };
+  for (const vp of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
+    const page = await env.page({ now: NOW, viewport: vp, seed: mkSeed() });
+    await page.addInitScript(INIT);
+    await open(page, '', 600);
+    let sumCls = 0, nLong = 0;
+    for (const r of ROUTES) {
+      await page.evaluate(() => { window.__cls = 0; window.__long = []; });
+      await page.evaluate((r) => { location.hash = '#/' + r; }, r); await settle(page, 450);
+      const m = await page.evaluate(() => ({ cls: window.__cls, long: window.__long }));
+      sumCls += m.cls; nLong += m.long.length;
+      if (m.cls > worst.cls) { worst.cls = m.cls; worst.where = vp.width + ':' + r; }
+      if (m.cls >= 0.1) warn(false, `layout shift alto su #/${r} a ${vp.width}px`, m.cls);
+      if (m.long.some((d) => d > 200)) warn(false, `long task > 200 ms su #/${r} a ${vp.width}px`, m.long);
+    }
+    metrics['CLS totale 28 rotte ' + vp.width] = +sumCls.toFixed(4); metrics['long task 28 rotte ' + vp.width] = nLong;
+    ok(sumCls < 0.1, `layout shift totale sulle 28 rotte a ${vp.width}px: ${sumCls.toFixed(4)} (< 0.1)`);
+    ok(!errs(page).length, 'nessun errore in console', errs(page));
+    await page.close();
+  }
 }
 
 await env.close();
