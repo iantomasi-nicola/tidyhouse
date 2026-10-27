@@ -125,6 +125,7 @@ const run = async () => {
     await tg.click();                                   // fatto -> da fare
     await page.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[0].kind === '');
     await pressed(page, '.hm-chore[data-chore=floor] [data-toggle=floor]', false);
+    await page.waitForFunction(() => /Rimesso da fare/.test((document.querySelector('.toast') || {}).innerText || ''), null, { timeout: 5000 });   // il messaggio aspetta che l'«Annulla» precedente scada (max 2 s)
     assert.match(await page.locator('.toast').last().innerText(), /Rimesso da fare/);
     // da tastiera
     await tg.focus(); await page.keyboard.press('Enter');

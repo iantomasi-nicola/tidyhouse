@@ -7,7 +7,7 @@ import { compute } from './engine.js';
 import { Store, LocalBackend, CloudBackend, engineHouse } from './store.js';
 import { scheduleKick } from './kick.js';
 import { Actions, buildHouse, verifyPin, localDate, importBackupOps, exportBackup, normalizeStartSunday } from './actions.js';
-import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
+import { requestsAwaiting, staleRequestIds, feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
 
 registerStrings(coreIt, coreEn);
 const CFG = window.CASA_CONFIG || {};
@@ -67,9 +67,20 @@ async function attach(id, mode) {
   S.houseId = id; S.mode = mode;
   S.store = new Store(b);
   S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null), localRulesAckSave: (v) => saveRulesAck(v), kick: () => scheduleKick(() => S.store && S.store.state.house) });
-  S.store.on(() => { S.version++; if (S.switching) return; if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
+  S.store.on(() => { S.version++; if (S.switching) return; maybeExpire(); if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
   S.version++;
   return { ok: true };
+}
+/** Richieste vecchie (settimane chiuse da più di 7 giorni) → «expired»: una scrittura leggera, solo se ce ne sono, una volta per richiesta e per apertura. */
+const expiring = new Set();
+function maybeExpire() {
+  if (!S.actions || !S.ready || S.stage !== 'app') return;
+  try {
+    const ids = staleRequestIds(S.store.state.requests, localDate(new Date())).filter((id) => !expiring.has(id));
+    if (!ids.length) return;
+    ids.forEach((id) => expiring.add(id));
+    S.actions.expireStaleRequests({ only: ids }).catch(() => ids.forEach((id) => expiring.delete(id)));
+  } catch { /* ignore */ }
 }
 function detach() { if (S.store) { try { S.store.close(); } catch { /* ignore */ } } S.store = null; S.actions = null; S.houseId = null; S.mode = null; S.calc = null; }
 
@@ -96,6 +107,7 @@ const ctx = {
   nav(path) { location.hash = '#/' + String(path || '').replace(/^#?\/?/, ''); },
   rerender: () => scheduleRender(true),
   get renderCount() { return renders; },
+  get renderSkips() { return renderSkips; },
   savePrefs(patch) { prefs = { ...prefs, ...patch }; ls.set('cp:prefs', prefs); applyPrefs(); scheduleRender(true); },
   /** Layout Home effettivo (personale oppure della casa). */
   homeLayout() {
@@ -107,15 +119,12 @@ const ctx = {
   badges() {
     const out = { home: 0, more: 0 };
     try {
-      const me = this.me; const { out: o } = this.calc;
+      const me = this.me;
+      // «Altro»: stessa regola e stessi casi dell'hub (awaitingMe() in more.js) — indipendente dalla settimana in corso; zero se la funzione «richieste» è spenta (l'hub non mostra la riga)
+      if (me && this.feature('requests')) out.more = requestsAwaiting(this.state, me).length;
+      const { out: o } = this.calc;
       if (me && o.cur >= 0) {
         for (let i = Math.max(0, o.cur - 1); i <= o.cur; i++) { const r = o.rows[i]; for (let c = 0; c < 3; c++) if (r.assigned[c] === me && !r.res[c].kind && (i < o.cur || r.isCur)) out.home += i < o.cur ? 1 : 0; }
-        // stessa regola di awaitingMe() in more.js: scambi/offerte indirizzati a me; sostituzioni (cover) a me o aperte a tutti tranne il richiedente
-        out.more = Object.values(this.state.requests || {}).filter((q) => {
-          if (q.status !== 'pending' || ['notice', 'nudge'].includes(q.kind)) return false;
-          if (q.kind === 'cover') return q.from !== me && (!q.to || q.to === me);
-          return q.to === me;
-        }).length;
       }
     } catch { /* ignore */ }
     return out;
@@ -259,6 +268,7 @@ function evaluate() {
   S.stage = 'app'; S.ready = true; stageToken++;   // una schermata di accesso ancora in preparazione non deve coprire l'app
   if (first) { try { recordView('open'); } catch { /* ignore */ } }
   registerDevice();
+  maybeExpire();
   renderApp(true);
 }
 const memberLoaded = () => true;
@@ -382,7 +392,7 @@ const tabOf = (root) => (SUBS.includes(root) || root === 'settings' ? 'more' : O
 
 // Rendering: un solo render alla volta, richieste ravvicinate fuse in una (rAF), aggiornamenti remoti al massimo ogni MIN_GAP ms.
 const MIN_GAP = 120;
-let rafId = 0, timerId = 0, pendingForce = false, lastRenderAt = 0, renders = 0;
+let rafId = 0, timerId = 0, pendingForce = false, lastRenderAt = 0, renders = 0, renderSkips = 0;
 let shell = null, mainEl = null, navEl = null, topEl = null, renderToken = 0, lastPath = null, navSig = '', topSig = '';
 const scrollMemo = new Map(); let popNav = false;
 function scheduleRender(force) {
@@ -408,7 +418,7 @@ const COMPLEX = /^(url|email|number|date|time|datetime-local|month|week)$/;
 /** Rimandare il render? Mai se cambia pagina; sempre durante una composizione IME; per i dati remoti con un campo attivo; per i render forzati solo con campi "complessi". */
 function mustDefer(force, routeChanged) {
   if (routeChanged) return false;
-  if (composing()) return true;
+  if (composing() || pressing()) return true;
   const a = activeField(); if (!a) return false;
   return !force || COMPLEX.test(a.type) || a.tagName === 'SELECT';
 }
@@ -419,7 +429,15 @@ document.addEventListener('compositionupdate', () => { compAt = performance.now(
 document.addEventListener('compositionend', () => { compFlag = false; setTimeout(flushDeferred, 80); }, true);
 document.addEventListener('focusout', () => { compFlag = false; }, true);
 document.addEventListener('input', (e) => { if (e.isTrusted && e.target) e.target.__typed = true; }, true);
-function flushDeferred() { if (S.deferred && !typing()) scheduleRender(true); }
+function flushDeferred() { if (S.deferred && !typing() && !pressing()) scheduleRender(true); }
+// Dito/mouse premuto dentro la pagina: il nodo sotto il dito non va sostituito, altrimenti il click (pointerup su un nodo nuovo) si perde.
+// I render arrivati nel frattempo restano in attesa (S.deferred) e partono subito dopo il rilascio. Si annulla da sola dopo 2,5 s (pressione lunga/anomala).
+let pressAt = 0;
+const pressing = () => pressAt > 0 && performance.now() - pressAt < 2500;
+document.addEventListener('pointerdown', (e) => { if (e.isPrimary !== false && mainEl && e.target && mainEl.contains(e.target)) pressAt = performance.now(); }, true);
+const releasePress = () => { if (!pressAt) return; pressAt = 0; setTimeout(flushDeferred, 90); };   // il click parte subito dopo il rilascio: il render aspetta che l'azione sia avviata
+for (const ev of ['pointerup', 'pointercancel', 'dragend', 'contextmenu']) document.addEventListener(ev, releasePress, true);
+window.addEventListener('blur', releasePress);
 
 // ---- doppio tocco: il secondo click ravvicinato sullo stesso punto di un pulsante d'azione viene ignorato (niente azioni/sheet duplicati) ----
 const ONCE = 'button.btn, a.btn, button.checkcircle, button.chore, button.li, a.li, button.week, button.who, button.hm-act';
@@ -463,6 +481,14 @@ function restoreFocus(snap) {
   try { if (snap.ss !== null && el.setSelectionRange) { el.setSelectionRange(snap.ss, snap.se, snap.sd || 'none'); el.scrollTop = snap.st; } } catch { /* ignore */ }
 }
 
+/** Firma di un nodo: HTML + proprietà che non compaiono nell'HTML (valore/spunta/disabilitato dei campi). */
+function domSig(el) {
+  let s = el.outerHTML;
+  for (const f of el.querySelectorAll('input,select,textarea,option')) s += '|' + (f.type === 'checkbox' || f.type === 'radio' ? (f.checked ? 1 : 0) : f.tagName === 'OPTION' ? (f.selected ? 1 : 0) : f.value) + (f.disabled ? 'd' : '');
+  return s;
+}
+const sigOfKids = (els) => els.map(domSig).join('\u0001');
+
 async function renderApp(force) {
   if (S.stage !== 'app') return;
   const route = parseHash(); S.route = route;
@@ -502,6 +528,14 @@ async function renderApp(force) {
   // mentre la schermata si preparava l'utente può aver iniziato a scrivere: non togliergli il campo di sotto
   if (mustDefer(force, lastPath !== route.path)) { S.deferred = true; return; }
   if (!shell || !shell.isConnected) return;
+  // stessi dati visibili e pagina rimasta intatta dall'ultimo disegno: si tiene il nodo già montato (niente rimontaggio, focus/scroll/selezione intatti)
+  const fresh = reminder ? [reminder, node] : [node];
+  if (samePage && node.parentNode !== mainEl && mainEl.__sig !== undefined && mainEl.children.length === fresh.length && sigOfKids(fresh) === mainEl.__sig && sigOfKids([...mainEl.children]) === mainEl.__sig) {
+    updateNav(tab); updateTop(); renderSkips++; lastPath = route.path; popNav = false;
+    recordView(tab === '' ? 'home' : tab);
+    const title0 = `${ctx.house.name || 'Tidy House'} · Tidy House`; if (document.title !== title0) document.title = title0;
+    return;
+  }
   const snap = samePage ? captureFocus() : null;
   const y = samePage ? window.scrollY : (popNav && scrollMemo.has(route.path) ? scrollMemo.get(route.path) : 0);
   updateNav(tab); updateTop();
@@ -511,6 +545,7 @@ async function renderApp(force) {
   else if (node.parentNode === mainEl) { for (const c of [...mainEl.children]) if (c !== node) c.remove(); if (reminder) mainEl.prepend(reminder); }
   else mainEl.replaceChildren(...(reminder ? [reminder, node] : [node]));
   lastPath = route.path; popNav = false; renders++;
+  mainEl.__sig = sigOfKids([...mainEl.children]);
   window.scrollTo(0, y);
   restoreFocus(snap);
   hideBoot();
@@ -611,7 +646,7 @@ async function startFromHash() {
 
 // (l'avviso periodico «aggiorna la pagina» è stato tolto: restano il tasto Aggiorna nella Home e l'avviso di nuova versione)
 function setupRefreshPrompt() {
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { registerDevice(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { registerDevice(); maybeExpire(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
   window.addEventListener('focus', flushDeferred);
   document.addEventListener('focusout', () => { setTimeout(flushDeferred, 60); });
 }

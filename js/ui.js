@@ -214,7 +214,7 @@ function toastShow(item) {
   item.el = el;
   if (item.opts.action) el.append(h('button', { type: 'button', class: 'toast-action', onclick: () => { if (item.used) return; item.used = true; try { item.opts.action.onClick(); } finally { item.dismiss(); } } }, item.opts.action.label));
   box.append(el); tCur = item;
-  item.timer = setTimeout(item.dismiss, item.opts.action ? Math.max(item.ms, 6000) : item.ms);
+  const dur = item.opts.action ? Math.max(item.ms, 6000) : item.ms; item.until = Date.now() + dur; item.timer = setTimeout(item.dismiss, dur);
 }
 /** Notifica temporanea. opts.action = { label, onClick } mostra un pulsante (es. "Annulla"); opts.low = true: priorità bassa (un messaggio semplice lo sostituisce
  *  subito, es. «nuova versione»). Restituisce una funzione per chiuderla. */
@@ -238,7 +238,10 @@ export function toast(msg, ms = 2600, opts = {}) {
   };
   if (!tCur || !tCur.el || !tCur.el.isConnected) { tCur = null; toastShow(item); }
   else if (action || !tCur.action || tCur.opts.low) { const old = tCur; old.gone = true; clearTimeout(old.timer); tCur = null; toastShow(item); }   // sostituisce il precedente
-  else { tQueue.push(item); while (tQueue.length > 2) tQueue.shift().gone = true; }                                          // dietro a un «Annulla»
+  else {   // dietro a un «Annulla»: l'azione resta ancora al massimo 2 s, poi compare il messaggio
+    tQueue.push(item); while (tQueue.length > 2) tQueue.shift().gone = true;
+    if (tCur.until - Date.now() > 2000) { clearTimeout(tCur.timer); tCur.until = Date.now() + 2000; tCur.timer = setTimeout(tCur.dismiss, 2000); }
+  }
   return item.dismiss;
 }
 

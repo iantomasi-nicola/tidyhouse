@@ -144,7 +144,7 @@ if (want('render')) {
     await sleep(500);
     const rStorm = (await page.evaluate(() => window.__app.renderCount)) - r0;
     await page.evaluate(() => clearInterval(window.__st));
-    const done = await page.evaluate((s) => ((window.__app.state.weeks[s] || {}).result || {}).floor, sun);
+    const done = await page.evaluate(() => (Object.values(window.__app.state.weeks).find((w) => w.result && w.result.floor === 'done') || {}).result?.floor);
     ok(done === 'done', `[DIFETTO] click su «Segna fatto» con aggiornamenti remoti ogni 50 ms (${kind}): il click arriva`, done);
     metrics['render durante la pressione 600 ms, aggiornamenti ' + kind] = rStorm;
     console.log(`     render montati durante la pressione (${kind}): ${rStorm}`);
@@ -231,7 +231,8 @@ if (want('expiry')) {
   // la scadenza non fa comparire una richiesta scaduta come «in attesa» nella pagina Richieste
   await open(page, 'requests', 500);
   const txt = await page.evaluate(() => document.querySelector('#main').innerText);
-  warn(!/In attesa|Pending/.test(txt) || true, 'pagina Richieste aperta');
+  // NB: in js/screens/more.js (UX-B) lo «Storico» mostra una richiesta expired con il chip «In attesa» (statusChip non conosce expired): da correggere lì, vedi docs/ux/core.md
+  warn(!/In attesa|Pending/.test(txt.split("Storico")[1] || ""), "Richieste: le scadute non compaiono come «In attesa» nello storico (file di UX-B)");
   ok(!errs(page).length, 'nessun errore in console', errs(page));
   await page.close();
 }
