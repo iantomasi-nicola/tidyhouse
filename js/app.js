@@ -12,7 +12,7 @@ import { feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_H
 registerStrings(coreIt, coreEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 let pushMod = null;
 // all'avvio controlla il browser (permesso + sottoscrizione) PRIMA di decidere se chiedere le notifiche: evita il falso "non attive"
 const pushReady = import('./push.js').then(async (m) => { await Promise.race([m.probe(), new Promise((r) => setTimeout(r, 1500))]); pushMod = m; }).catch(() => {});
@@ -611,7 +611,7 @@ async function startFromHash() {
 
 // (l'avviso periodico «aggiorna la pagina» è stato tolto: restano il tasto Aggiorna nella Home e l'avviso di nuova versione)
 function setupRefreshPrompt() {
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { check(); registerDevice(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { registerDevice(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
   window.addEventListener('focus', flushDeferred);
   document.addEventListener('focusout', () => { setTimeout(flushDeferred, 60); });
 }
@@ -620,6 +620,7 @@ async function registerSW() {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
   try {
     const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    if (!reg) return;   // service worker non disponibile (bloccato o non supportato)
     // nuova versione pronta: NON si applica da sola; il tasto nella Home diventa "Aggiorna" (colore accento) e un toast lo propone
     const offer = (w) => { if (!w) return; S.waitingSW = w; ctx.markUpdateReady(); toast(t('update.available'), 8000, { action: { label: t('update.apply'), onClick: () => ctx.applyUpdate() } }); };
     const check = () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); };
