@@ -618,7 +618,7 @@ await scenario('hub: voci, badge, admin/non admin, feature spente', async () => 
   await goto(p2, '/more');
   const t2 = await body(p2);
   assert.doesNotMatch(t2, /Scorte e spesa/); assert.doesNotMatch(t2, /Registro attività/); assert.doesNotMatch(t2, /Ultimo che esce/);
-  assert.doesNotMatch(t2, /Invita coinquilini/); assert.equal(await p2.locator('.mx-ai').count(), 0);
+  assert.match(t2, /Invita coinquilini/); assert.doesNotMatch(t2, /Esporta dati/); assert.equal(await p2.locator('.mx-ai').count(), 0);   // UX-B: il codice è visibile a tutti, la pagina dati è solo admin
   await goto(p2, '/needs');
   assert.match(await body(p2), /Funzione disattivata/);
   await done(p2);
@@ -819,7 +819,7 @@ await scenario('requests: in arrivo, inviate, storico', async () => {
     r1: { week: '2026-11-01', from: 'bruno', to: 'anna', fromChore: 'floor', toChore: 'bathroom', status: 'pending', at: '2026-10-27T10:00:00.000Z' },
     r2: { week: '2026-11-01', from: 'anna', to: 'carla', fromChore: 'bathroom', toChore: 'kitchen', status: 'pending', at: '2026-10-27T11:00:00.000Z' },
     r3: { week: '2026-10-25', from: 'carla', to: 'anna', fromChore: 'kitchen', toChore: 'floor', status: 'accepted', at: '2026-10-20T11:00:00.000Z', answeredAt: '2026-10-21T11:00:00.000Z' },
-    r4: { week: '2026-10-25', from: 'carla', to: 'bruno', fromChore: 'kitchen', toChore: 'floor', status: 'pending', at: '2026-10-20T12:00:00.000Z' },
+    r4: { week: '2026-11-01', from: 'carla', to: 'bruno', fromChore: 'kitchen', toChore: 'floor', status: 'pending', at: '2026-10-20T12:00:00.000Z' },   // UX-B: una pendente su settimana chiusa ora finisce in «Scadute»
     n1: { kind: 'nudge', to: 'anna', from: 'bruno', text: 'ciao', status: 'pending', at: '2026-10-27T10:00:00.000Z' },
   };
   const page = await open({ seed: s });

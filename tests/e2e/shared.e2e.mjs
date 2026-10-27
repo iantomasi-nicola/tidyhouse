@@ -122,6 +122,7 @@ await scenario('shared: gestione admin, digitazione senza perdere caratteri, sug
   await page.waitForFunction(() => (window.__app.house.shared || []).length === 3);
   let st = await store(page);
   assert.deepEqual(st.house.shared.map((x) => [x.text, x.every]).sort(), [['Empty the dishwasher', 2], ['Take out the recycling', 7], ['Take out the trash', 3]]);
+  await page.waitForFunction(() => !document.querySelector('[data-testid=shared-addall]'));   // il rerender arriva dopo lo store (race)
   assert.equal(await page.locator('[data-testid=shared-addall]').count(), 0);
   // nuovo compito: si digita lentamente mentre arrivano aggiornamenti remoti
   await page.getByRole('button', { name: /New task/ }).click();

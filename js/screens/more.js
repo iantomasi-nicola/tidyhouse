@@ -10,12 +10,14 @@ import { it as it3, en as en3 } from '../strings/more3.js';
 import { it as itHow, en as enHow } from '../strings/howto.js';
 import { normNeed, frequentNeeds, distinctNeeds, starterNeeds, splitPasted } from '../needs-suggest.js';
 import { it as itFlow, en as enFlow } from '../strings/flow.js';   // flow.shared.* (testi condivisi con la Home)
+import { it as itB, en as enB } from '../strings/uxb.js';
 
 registerStrings(it, en);
 registerStrings(it2, en2);
 registerStrings(it3, en3);
 registerStrings(itHow, enHow);
 registerStrings(itFlow, enFlow);
+registerStrings(itB, enB);
 
 const REPO = 'https://github.com/iantomasi-nicola/tidyhouse';
 const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -64,6 +66,36 @@ const shell = (...kids) => {
 const reduceMotion = () => document.documentElement.classList.contains('no-motion') || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 // ================================================================ hub
+/** «Da fare ora»: richieste che aspettano me e compiti condivisi che toccano a me, con il pulsante giusto già nell'hub (1 tap invece di 3). */
+function todoBlock(ctx) {
+  const reqs = awaitingMe(ctx).slice(0, 3);
+  let shared = [];
+  try { if (ctx.feature('shared') && ctx.me) shared = sharedList(ctx).filter((x) => x.due && x.suggested === ctx.me).slice(0, 2); } catch { /* ignore */ }
+  if (!reqs.length && !shared.length) return null;
+  const lock = (btn, fn) => { btn.disabled = true; Promise.resolve(fn()).then((ok) => { if (ok === false) btn.disabled = false; }, () => { btn.disabled = false; }); };
+  const reqRow = (r) => {
+    const open = reqKind(r) === 'cover' && !r.to;
+    const yes = h('button', { type: 'button', class: 'btn sm', 'data-testid': 'hub-req-accept-' + r.id, onclick: () => lock(yes, () => answerRequest(ctx, r, true)) }, icon('check'), reqKind(r) === 'cover' ? t('moreY.req.takeIt') : t('req.accept'));
+    const no = open ? null : h('button', { type: 'button', class: 'btn soft sm', 'data-testid': 'hub-req-decline-' + r.id, onclick: () => lock(no, () => answerRequest(ctx, r, false)) }, icon('x'), t('req.decline'));
+    return h('div', { class: 'li mx-todo-row', 'data-testid': 'hub-req-' + r.id, 'data-req': r.id },
+      avatar(ctx.name(r.from), ctx.color(r.from), 'sm'),
+      h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r)), h('div', { class: 't' }, reqLine(ctx, r)), h('div', { class: 'btn-row mx-todo-act' }, no, yes)));
+  };
+  const sharedRow = (x) => {
+    const id = x.task.id;
+    const b = h('button', { type: 'button', class: 'btn sm', 'data-testid': 'hub-shared-done-' + id, onclick: () => lock(b, async () => {
+      const ok = await attempt(ctx, async () => { await ctx.actions.completeShared(id); return true; });
+      if (ok) ctx.toast(t('flow.shared.doneToast', { text: x.task.text }), 7000, { action: { label: t('flow.undo'), onClick: () => attempt(ctx, () => ctx.actions.undoShared(id)) } });
+      return !!ok;
+    }) }, icon('check'), t('flow.shared.done'));
+    return h('div', { class: 'li mx-todo-row', 'data-testid': 'hub-shared-' + id },
+      h('i', { class: 'mx-ct shared' }, icon('refresh')),
+      h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text), h('div', { class: 'd' }, t('uxb.hub.sharedMine')), h('div', { class: 'btn-row mx-todo-act' }, b)));
+  };
+  return h('section', { 'data-testid': 'hub-todo' }, h('div', { class: 'eyebrow' }, t('uxb.hub.todo'), chip('bad', String(reqs.length + shared.length))),
+    h('div', { class: 'list' }, reqs.map(reqRow), shared.map(sharedRow)));
+}
+
 function hub(ctx) {
   const f = (k) => ctx.feature(k);
   const house = ctx.house;
@@ -76,10 +108,11 @@ function hub(ctx) {
   const group = (title, rows) => (rows.filter(Boolean).length ? h('section', null, title ? h('div', { class: 'eyebrow' }, title) : null, h('div', { class: 'list' }, rows.filter(Boolean))) : null);
 
   const me = ctx.me ? ctx.meName : null;
-  const profile = h('section', { class: 'card mx-me' },
+  const profile = h('a', { class: 'card mx-me', href: '#/settings/profile', 'data-testid': 'hub-me', 'aria-label': `${t('set.profile')}: ${me || ''}` },
     avatar(me || '?', ctx.me ? ctx.color(ctx.me) : '#888', 'lg'),
     h('div', { class: 'grow' }, h('div', { class: 'mx-me-name' }, me || t('misc.person')), h('div', { class: 'muted small' }, house.name || 'Tidy House'),
-      h('div', { class: 'mx-me-chips' }, ctx.isAdmin ? chip('acc', icon('shield'), t('misc.admin')) : null, chip('', icon(ctx.cloud ? 'users' : 'device'), ctx.cloud ? t('moreX.cloud') : t('misc.localOnly')))));
+      h('div', { class: 'mx-me-chips' }, ctx.isAdmin ? chip('acc', icon('shield'), t('misc.admin')) : null, chip('', icon(ctx.cloud ? 'users' : 'device'), ctx.cloud ? t('moreX.cloud') : t('misc.localOnly')))),
+    icon('chevron'));
 
   const ai = ctx.isAdmin && house.ai && house.ai.enabled
     ? h('button', { type: 'button', class: 'btn tonal block mx-ai', onclick: async () => {
@@ -90,6 +123,7 @@ function hub(ctx) {
   return shell(
     h('h1', { class: 'title' }, t('more.title')),
     profile,
+    todoBlock(ctx),
     group(t('moreX.g.house'), [
       f('needs') ? row({ ic: 'cart', tone: 'o', title: t('more.needs'), desc: needsOpen ? t('moreX.needsOpen', { n: needsOpen }) : t('needs.empty'), end: badge(needsOpen, 'warn'), href: '#/needs' }) : null,
       f('requests') ? row({ ic: 'swap', tone: 'p', title: t('more.requests'), desc: inReq ? t('moreY.hub.awaiting', { n: inReq }) : t('moreY.hub.requests'), end: badge(inReq), href: '#/requests' }) : null,
@@ -101,8 +135,8 @@ function hub(ctx) {
     ]),
     ai,
     group(t('moreX.g.manage'), [
-      ctx.isAdmin ? row({ ic: 'users', tone: 'g', title: t('more.invite'), desc: t('moreX.d.invite'), href: '#/settings/invite' }) : null,
-      row({ ic: 'download', tone: '', title: t('more.export'), desc: t('moreX.d.export'), href: '#/settings/data' }),
+      row({ ic: 'users', tone: 'g', title: t('more.invite'), desc: t('moreX.d.invite'), href: '#/settings/invite' }),   // il codice è visibile a tutti; la rotazione resta all'admin
+      ctx.isAdmin ? row({ ic: 'download', tone: '', title: t('more.export'), desc: t('moreX.d.export'), href: '#/settings/data' }) : null,   // la pagina dati è solo admin
       row({ ic: 'settings', tone: '', title: t('more.settings'), desc: t('moreX.d.settings'), href: '#/settings' }),
     ]),
     group(t('moreX.g.app'), [
@@ -837,8 +871,23 @@ function canAnswer(ctx, r, adminToo) {
   if (k === 'cover') return !!me && r.from !== me && (!r.to || r.to === me);
   return (!!me && r.to === me) || (!!adminToo && ctx.isAdmin);
 }
-/** Richieste in attesa di una mia risposta (il badge dell'hub è calcolato da qui: ctx.badges() non conta le sostituzioni aperte a tutti). */
-const awaitingMe = (ctx) => (ctx.me ? allRequests(ctx).filter((r) => r.status === 'pending' && canAnswer(ctx, r, false)) : []);
+/** Richiesta in attesa su una settimana ormai chiusa (o passata): non ha più senso accettarla. */
+function isStale(ctx, r) {
+  if (r.status !== 'pending' || !r.week) return false;
+  try { const row = ctx.calc.out.rows.find((x) => x.sunday === r.week); if (row) return !!row.closed; } catch { /* ignore */ }
+  return r.week < ctx.today();
+}
+/** Richieste in attesa di una mia risposta, escluse le scadute. Stessa regola di ctx.badges() in app.js (che però conta anche le scadute: vedi docs/ux/more-settings.md). */
+const awaitingMe = (ctx) => (ctx.me ? allRequests(ctx).filter((r) => r.status === 'pending' && !isStale(ctx, r) && canAnswer(ctx, r, false)) : []);
+/** Accetta o rifiuta una richiesta (usata dall'hub e dalla pagina Richieste). Ritorna true se riuscita. */
+async function answerRequest(ctx, r, ok) {
+  const k = reqKind(r); const me = ctx.me;
+  return (await attempt(ctx, async () => {
+    if (k === 'swap') { await ctx.actions.answerSwap(r.id, ok); ctx.toast(ok ? t('req.accepted') : t('req.declined')); }
+    else { await ctx.actions.answerCover(r.id, ok); ctx.toast(ok ? t('moreY.req.agreedToast', { name: ctx.name(k === 'cover' ? me : r.from), chore: choreLow(r.chore) }) : t('req.declined')); }
+    return true;
+  })) === true;
+}
 const wkLabel = (r) => (r.week ? fmtWeekRange(r.week) : '');
 const choreLow = (c) => (c ? t('chore.' + c).toLowerCase() : '');
 
@@ -888,7 +937,10 @@ function requestsPage(ctx) {
   if (!ctx.feature('requests')) return offPage(t('req.title'));
   const me = ctx.me; const admin = ctx.isAdmin;
   const all = allRequests(ctx);
-  const pending = all.filter((r) => r.status === 'pending');
+  const pendingAll = all.filter((r) => r.status === 'pending');
+  const pending = pendingAll.filter((r) => !isStale(ctx, r));
+  // scadute: le vede e le toglie chi le ha create o è coinvolto (l'admin tutte)
+  const stale = pendingAll.filter((r) => isStale(ctx, r) && (admin || r.from === me || r.to === me));
   const incoming = pending.filter((r) => canAnswer(ctx, r, false));
   const sent = pending.filter((r) => r.from === me);
   const others = admin ? pending.filter((r) => r.from !== me && !incoming.includes(r)) : [];
@@ -898,14 +950,7 @@ function requestsPage(ctx) {
     .sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 10);
 
   const lock = (btn, fn) => { btn.disabled = true; Promise.resolve(fn()).then((ok) => { if (ok === false) btn.disabled = false; }, () => { btn.disabled = false; }); };
-  const answer = async (r, ok) => {
-    const k = reqKind(r);
-    return attempt(ctx, async () => {
-      if (k === 'swap') { await ctx.actions.answerSwap(r.id, ok); ctx.toast(ok ? t('req.accepted') : t('req.declined')); }
-      else { await ctx.actions.answerCover(r.id, ok); ctx.toast(ok ? t('moreY.req.agreedToast', { name: ctx.name(k === 'cover' ? me : r.from), chore: choreLow(r.chore) }) : t('req.declined')); }
-      return true;
-    }).then((v) => v === true);
-  };
+  const answer = (r, ok) => answerRequest(ctx, r, ok);
   const cancel = async (r) => attempt(ctx, async () => {
     if (reqKind(r) === 'swap') await ctx.actions.cancelSwap(r.id);
     else { if (!(admin || r.from === me)) throw new Error('permission'); await ctx.store.delDoc('requests', r.id); }
@@ -931,15 +976,28 @@ function requestsPage(ctx) {
     cancelable ? btnCancel(r) : null,
     answerable ? h('div', { class: 'btn-row mx-req-actions' }, btnDecline(r), btnAccept(r)) : null);
 
+  /** Toglie le scadute con un tap; Annulla le rimette. */
+  async function clearStale(btn) {
+    btn.disabled = true;
+    const copies = stale.map((r) => { const { id, ...rest } = r; return { id, rest }; });
+    const ok = await attempt(ctx, async () => { for (const r of stale) { if (reqKind(r) === 'swap') await ctx.actions.cancelSwap(r.id); else await ctx.store.delDoc('requests', r.id); } return true; });
+    if (!ok) { btn.disabled = false; return; }
+    ctx.toast(t('uxb.req.stale.cleared', { n: copies.length }), 6000, { action: { label: t('moreY.undo'), onClick: () => attempt(ctx, async () => { for (const c of copies) await ctx.store.setDoc('requests', c.id, c.rest, true); }) } });
+  }
   const kids = [head(t('req.title'), { right: me ? h('button', { type: 'button', class: 'btn sm', onclick: () => askSwap(ctx) }, icon('plus'), t('req.new')) : null })];
-  if (incoming.length) kids.push(h('section', { class: 'stack tight' }, h('div', { class: 'eyebrow' }, t('moreX.reqForMe'), chip('bad', String(incoming.length))), incoming.map(incomingCard)));
+  if (incoming.length) kids.push(h('section', { class: 'stack tight', 'data-testid': 'req-incoming' }, h('div', { class: 'eyebrow' }, t('moreX.reqForMe'), chip('bad', String(incoming.length))), incoming.map(incomingCard)));
   if (sent.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqSent')), h('div', { class: 'list' }, sent.map((r) => listRow(r, { cancelable: true })))));
   if (others.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqAll')),
     h('div', { class: 'list' }, others.map((r) => listRow(r, { cancelable: true, answerable: reqKind(r) !== 'cover' && canAnswer(ctx, r, true) })))));
   if (notices.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreY.req.notices')),
     h('div', { class: 'list', 'data-testid': 'notices' }, notices.map((r) => h('div', { class: 'li mx-req mx-notice' }, h('div', { class: 'ico o' }, icon('bell')),
       h('div', { class: 'grow' }, h('div', { class: 't' }, noticeText(ctx, r)), h('div', { class: 'd' }, `${whenLabel(ctx, r.at)} · ${t('moreY.req.noticeInfo')}`)))))));
-  if (!incoming.length && !sent.length && !others.length && !notices.length) kids.push(h('div', { class: 'card' }, empty('swap', t('req.empty'), t('moreY.req.emptyHint'))));
+  if (stale.length) kids.push(h('section', { 'data-testid': 'req-stale' }, h('div', { class: 'eyebrow' }, t('uxb.req.stale.title'), chip('', String(stale.length))),
+    h('p', { class: 'small muted mx-stalehint' }, t('uxb.req.stale.hint')),
+    h('div', { class: 'list' }, stale.map((r) => h('div', { class: 'li mx-req mx-stale', 'data-testid': 'req-' + r.id }, avatar(ctx.name(r.from), ctx.color(r.from), 'sm'),
+      h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), chip('', icon('clock'), t('uxb.req.stale.chip'))), h('div', { class: 't' }, reqPlain(ctx, r)))))),
+    h('button', { type: 'button', class: 'btn soft block mx-stalebtn', 'data-testid': 'req-stale-clear', onclick: (e) => clearStale(e.currentTarget) }, icon('trash'), t('uxb.req.stale.clear'))));
+  if (!incoming.length && !sent.length && !others.length && !notices.length && !stale.length) kids.push(h('div', { class: 'card' }, empty('swap', t('req.empty'), t('moreY.req.emptyHint'))));
   if (history.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreX.reqHistory')),
     h('div', { class: 'list', 'data-testid': 'req-history' }, history.map((r) => listRow(r, { hist: true })))));
   return shell(...kids);
@@ -949,12 +1007,13 @@ function requestsPage(ctx) {
 let actLimit = 60;
 // tipo di log -> [icona, tono]. Le frasi sono `act.<tipo>` (nucleo) oppure `moreY.act.<tipo>` per i tipi aggiunti dopo.
 const ACT_ICON = { done: ['check', 'g'], cover: ['swap', 'p'], skipped: ['x', 'r'], reset: ['refresh', ''], away: ['plane', 'o'], back: ['home', 'g'], trip: ['plane', 'o'], plan: ['calendar', ''], swap: ['swap', 'p'], need: ['cart', 'o'], task: ['list', 'g'], settings: ['settings', ''], roommates: ['users', ''], import: ['upload', ''],
-  incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'], shared: ['refresh', 'g'] };
+  incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'], shared: ['refresh', 'g'], assign: ['calendar', 'p'] };
 const ACT_NEW = new Set(['incomplete', 'volunteer', 'delay', 'agreed', 'shared']);
 const agreedKey = (p) => 'moreY.act.agreed' + (p.terms === 'gift' ? 'Gift' : p.terms === 'repay' ? 'Repay' : '');
 function actText(ctx, e) {
   const p = e.p || {};
   if (!ACT_ICON[e.type]) return t('act.generic', { name: personName(ctx, e.by), text: p.text || e.type || '' });
+  if (e.type === 'assign') return t(Number(p.n) > 0 ? 'uxb.act.assign' : 'uxb.act.assign0', { name: personName(ctx, e.by), week: p.week ? fmtWeekRange(p.week, ctx.lang) : '' });
   const key = e.type === 'agreed' ? agreedKey(p) : ACT_NEW.has(e.type) ? 'moreY.act.' + e.type + (e.type === 'incomplete' && Number(p.n) === 1 ? '1' : '') : 'act.' + e.type;
   return t(key, {
     name: personName(ctx, e.by), chore: p.chore ? t('chore.' + p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '',
