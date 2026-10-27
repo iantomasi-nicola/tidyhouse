@@ -11,19 +11,20 @@ La lista di cose da fare, in ordine di priorità, è in [`TODO.md`](TODO.md). Le
 - Nome app: "Tidy House". Colore predefinito `#1a73e8`. Stile: **Apple minimale + Material (Google)**, colori Material, **niente gradienti, niente scintille, niente effetto "IA"**, forme arrotondate, tipografia grande, movimento sobrio.
 
 ## Stato (cosa è fatto e verificato)
-- **Motore dei turni** (`js/engine.js`): porting fedele delle formule dell'Excel (rotazione, recuperi, riposi, restituzione diretta, 3 notti, TR/CDM). Verificato: 0 differenze su 36 scenari casuali ricalcolati con LibreOffice + file reale (`tests/fixtures`, `tests/run_xl_scenarios.sh`, `tests/make_scenarios.py`). La turnazione **non va cambiata** (l'utente: "deve essere come nelle regole").
-- **Dati/cloud** (`js/store.js`, `js/actions.js`): backend memoria/locale/Firestore con interfaccia unica; permessi; codice casa (12 caratteri, = id del documento) con **rotazione** (copia tutto in un nuovo id e cancella il vecchio); cambio admin con "epoca"; PIN admin (PBKDF2).
-- **Verificato con l'emulatore ufficiale di Firestore** (`tests/e2e/cloud-emulator.e2e.mjs`): creazione casa, join da link, 2 dispositivi in sync, regole (elenco vietato / get consentito), rotazione codice, eliminazione.
-- **Schermate** (`js/screens/*`, `js/choresheet.js`): onboarding (landing/crea/entra/chi sei/regole obbligatorie), Home a widget personalizzabile, calendario, assenze/viaggi, classifica/statistiche, Altro (spesa, regole, ultimo che esce, checklist ricorrenti, richieste, registro attività, compiti condivisi, guida installazione), Impostazioni (15 sezioni), flusso turno (gate checklist, annulla, volontari, sostituzioni con recupero/regalo, ritardo annunciato).
-- **Notifiche**: logica in `js/extras.js` (`planNotifications`) + server in `scripts/notify-core.mjs` / `scripts/notify.mjs` + workflow `.github/workflows/notify.yml`. Testato con DB e sender finti.
-- **Test**: `node --test tests/*.test.mjs` → **111 verdi**. E2E Playwright per modulo in `tests/e2e/*.e2e.mjs` (usano `tests/e2e/helpers.mjs`: server statico, `seed()`, orologio finto).
+- **Motore dei turni** (`js/engine.js`): porting fedele dell'Excel, 0 differenze su 36 scenari. **Non va cambiato.**
+- **Dati/cloud** (`js/store.js`, `js/actions.js`): backend memoria/locale/Firestore, permessi, codice casa con rotazione, cambio admin, PIN admin. Verificato con l'emulatore Firestore (`tests/e2e/cloud-emulator.e2e.mjs`).
+- **Turni**: segna fatto con checklist obbligatoria e Annulla, volontari, sostituzioni «con recupero»/«regalo», **«Non posso questa settimana»** (sostituto automatico = `autoSub` in `js/extras.js`, `Actions.autoCover`; chi non può resta l'assegnato e recupera dopo), ritardo annunciato, scambi, assegnazione manuale della settimana (admin, `js/weekassign.js`, `Actions.setWeekAssignments`) anche da IA (`js/ai.js`).
+- **Notifiche**: server `scripts/notify-core.mjs` (un solo avviso per dispositivo se ci sono più novità; spesa solo a chi è a casa e non l'ha aggiunta; «comprato» solo a chi aveva aggiunto la voce; assenti esclusi; azioni «Segna fatto»/«Accetta»/«Rifiuta» via `js/doaction.js` e `sw.js`), avvio immediato opzionale con token GitHub (`js/kick.js`), gate di attivazione in `js/app.js`, diagnosi in Impostazioni → Notifiche. Più case: stesso progetto Firebase e **stessa chiave VAPID**.
+- **Spesa veloce** (`js/needs-suggest.js`, pagina Spesa), **onboarding in due passi**, **spiegazione in app** (Altro → Regole → «Come funziona nella pratica»).
+- **Audit di usabilità** fatto: `UX_AUDIT.md` + `docs/ux/*.md` (criticità, correzioni, metriche prima/dopo).
+- **Test**: `npm test` (unitari, ~155) e `npm run e2e` (tutti i `tests/e2e/*.e2e.mjs` UNO ALLA VOLTA; in parallelo danno falsi errori). `npm run check` = test + smoke. CI GitHub: `.github/workflows/ci.yml`.
 
 ## Cosa NON è stato verificato (rischio reale)
-1. **Notifiche push reali su telefono** (Android/iPhone). Il browser di test non può registrarsi al servizio push. Va provato su dispositivi veri.
-2. **Schermata notifiche obbligatorie su mobile** (gate): testata solo per sintassi/logica, non su telefono.
-3. **Aspetto su telefono vero** (solo screenshot/emulazione Playwright).
-4. Il **QA di usabilità non è stato completato** (vedi `TODO.md` §1): è il prossimo lavoro principale.
-5. `tests/e2e/settings.e2e.mjs` e `tests/e2e/onboarding-more.e2e.mjs`: risultato non confermato dopo le ultime modifiche (lo scenario "tasks: CRUD…" ha una race nel test: aggiungere `await page.waitForFunction(() => !document.querySelector('.sheet'))` dopo il primo "Salva"). Rilanciarli e sistemarli.
+1. **Notifiche push reali su telefono** (Android/iPhone), compresi i bottoni sulle notifiche (su iPhone non esistono: il tocco sul corpo apre l'app) e l'arrivo su iPad.
+2. **Token GitHub per l'avvio immediato** con GitHub vero (provato solo con GitHub simulato) e **due case reali** sullo stesso server.
+3. **IA con una chiave vera** (assegnazioni e correzioni da testo): provata solo con risposte simulate.
+4. **Aspetto/tastiera su telefono vero** (solo emulazione Playwright), Firestore reale con due dispositivi insieme.
+5. **Import del foglio Excel reale** nei test: il file non è nell'ambiente (`XLSX_FILE`).
 
 ## Stato di configurazione lato utente (da non rifare)
 - Firebase: progetto creato, Firestore creato con le regole di `firestore.rules`, chiave API ristretta ai referrer del sito (fatto dall'utente).
@@ -55,7 +56,9 @@ python3 -m http.server 8080                # prova in locale
 - **Emulatore Firestore**: `npm i firebase-tools@13` in una cartella a parte, `firebase.json` con `{"firestore":{"rules":"firestore.rules"},"emulators":{"firestore":{"host":"127.0.0.1","port":8080},"ui":{"enabled":false},"singleProjectMode":true}}`, avvio `firebase emulators:start --only firestore --project tidyhouse-ef92b`; poi `node tests/e2e/cloud-emulator.e2e.mjs`. L'app accetta `?emu=127.0.0.1:8080` (solo host locali).
 - **Parità con Excel**: `tests/make_scenarios.py` + `tests/run_xl_scenarios.sh` (LibreOffice; nota: `MAXIFS` va scritto `_xlfn.MAXIFS`; LibreOffice ha un'anomalia nella *prima riga* con "Everyone": non è un bug del motore).
 - Stringhe: ogni modulo ha `js/strings/<modulo>.js` (IT+EN) registrato con `registerStrings`; `tests/strings.test.mjs` verifica allineamento e assenza di duplicati. Tutto il testo visibile passa da `t()`.
-- Dopo ogni modifica: test verdi, **commit e push** (Pages si aggiorna in 1–2 minuti; il service worker `sw.js` va rialzato di `VERSION` se cambiano asset).
+- Dopo ogni modifica: `npm test`, smoke e gli e2e dei moduli toccati, **commit e push**. `VERSION` (in `sw.js` e `js/app.js`) si alza solo in un commit `Release x.y.z`. **Dopo aver rimosso o rinominato codice cerca i riferimenti rimasti (grep): `node --check` non basta** (una chiamata a una funzione rimossa è già arrivata in produzione).
+- Nei test e2e aspetta ~400 ms tra due click vicini sullo stesso punto: l'app ignora il secondo (anti doppio tocco).
+- Il repository è **pubblico**: mai codici casa, chiavi o JSON di account di servizio nei commit o nei log (i log del server usano «casa N»).
 - Non fare operazioni distruttive su Firebase/GitHub dell'utente senza chiedere. Non committare mai il JSON dell'account di servizio.
 
 ## Mappa del codice
