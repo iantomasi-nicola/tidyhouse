@@ -67,8 +67,9 @@ test('IA: estrazione JSON e validazione di output ostili o sbagliati', () => {
   }, house, ctx);
   assert.equal(v.trips.length, 2); assert.equal(v.trips[0].personId, 'a'); assert.equal(v.trips[1].note.length, 60);
   assert.deepEqual(v.results.map((r) => r.value), ['by:b', 'skipped', 'done']);
-  assert.deepEqual(validateAiOutput(null, house, ctx), { trips: [], results: [] });
-  assert.deepEqual(validateAiOutput({ trips: 'x', results: 5 }, house, ctx), { trips: [], results: [] });
+  const none = { trips: [], results: [], assignments: [], rejected: [] };
+  assert.deepEqual(validateAiOutput(null, house, ctx), none);
+  assert.deepEqual(validateAiOutput({ trips: 'x', results: 5, assignments: 'y' }, house, ctx), none);
 });
 
 test('IA: richieste ai tre provider (URL, intestazioni, corpo) e gestione errori', async () => {
@@ -88,4 +89,60 @@ test('IA: richieste ai tre provider (URL, intestazioni, corpo) e gestione errori
   await assert.rejects(callAi({ provider: 'openai', key: '', system: '', user: '', fetchFn: mk({}) }), /no-key/);
   await assert.rejects(callAi({ provider: 'boh', key: 'k', system: '', user: '', fetchFn: mk({}) }), /provider/);
   await assert.rejects(callAi({ provider: 'openai', key: 'k', system: '', user: '', fetchFn: mk({ error: { message: 'Quota' } }, false, 429) }), (e) => e.status === 429 && /Quota/.test(e.message));
+});
+
+// ---- assegnazioni manuali proposte dall'IA (input del modello simulati, nessuna rete) ----
+const H3 = { startSunday: '2026-10-04', settings: {}, trips: [], weeks: { '2026-11-08': { away: ['c'] } },
+  roommates: [{ id: 'a', name: 'Anna', slot: 1 }, { id: 'b', name: 'Bruno', slot: 2 }, { id: 'c', name: 'Carla', slot: 3 }] };
+const TODAY = '2026-10-28';   // settimana corrente: domenica 2026-11-01
+const rowsH3 = compute(H3, TODAY, 14).rows;
+const vctx = { today: TODAY, firstSunday: H3.startSunday, rows: rowsH3 };
+
+test('IA: il prompt descrive assignments, il nome dell\'admin ("io") e la domenica di questa settimana', () => {
+  const p = buildPrompt({ text: 'questa settimana io pavimenti', house: H3, today: TODAY, rows: rowsH3.slice(3, 7), admin: 'Bruno' });
+  assert.match(p.system, /"assignments":\[\{"week"/); assert.match(p.system, /"io", "me", "mi" = Bruno/);
+  assert.match(p.system, /Questa settimana finisce domenica 2026-11-01/); assert.match(p.system, /"la prossima" finisce 2026-11-08/);
+  assert.match(p.system, /2026-11-08: .*\(assenti: Carla\)/);
+  assert.ok(!/Chi scrive i messaggi/.test(buildPrompt({ text: 'x', house: H3, today: TODAY, rows: [] }).system), 'senza admin non inventa chi scrive');
+});
+
+test('IA: assignments valide (nome senza maiuscole, 3 mansioni) e results restano separati', () => {
+  const v = validateAiOutput({
+    assignments: [{ week: '2026-11-01', chore: 'floor', person: 'bruno' }, { week: '2026-11-01', chore: 'bathroom', person: 'Carla' }, { week: '2026-11-01', chore: 'kitchen', person: 'Anna' }],
+    results: [{ week: '2026-10-25', chore: 'bathroom', outcome: 'by', by: 'Anna' }],
+  }, H3, vctx);
+  assert.deepEqual(v.assignments, [{ week: '2026-11-01', chore: 'floor', personId: 'b' }, { week: '2026-11-01', chore: 'bathroom', personId: 'c' }, { week: '2026-11-01', chore: 'kitchen', personId: 'a' }]);
+  assert.deepEqual(v.results, [{ week: '2026-10-25', chore: 'bathroom', value: 'by:a' }]);
+  assert.deepEqual(v.rejected, []);
+});
+
+test('IA: assignments scartate con il motivo (persona, data, mansione, assente, finestra, doppioni)', () => {
+  const v = validateAiOutput({ assignments: [
+    { week: '2026-11-01', chore: 'floor', person: 'Zoe' },              // person
+    { week: '2026-11-02', chore: 'floor', person: 'Anna' },              // week (non e' domenica)
+    { week: '2026-13-45', chore: 'floor', person: 'Anna' },              // week (data impossibile)
+    { week: '2026-11-01', chore: 'tetto', person: 'Anna' },              // chore
+    { week: '2026-11-08', chore: 'floor', person: 'Carla' },             // absent (Carla e' via)
+    { week: '2026-09-27', chore: 'floor', person: 'Anna' },              // range (prima di 4 settimane fa)
+    { week: '2027-01-03', chore: 'floor', person: 'Anna' },              // range (oltre 8 settimane)
+    { week: '2026-11-01', chore: 'floor', person: 'Anna' },              // ok
+    { week: '2026-11-01', chore: 'floor', person: 'Bruno' },             // dup
+    null, 'x', { week: 5, chore: 3, person: {} },                        // spazzatura
+  ] }, H3, vctx);
+  assert.deepEqual(v.assignments, [{ week: '2026-11-01', chore: 'floor', personId: 'a' }]);
+  assert.deepEqual(v.rejected.map((r) => r.reason), ['person', 'week', 'week', 'chore', 'absent', 'range', 'range', 'dup', 'week']);
+  assert.equal(v.rejected[0].person, 'Zoe');
+});
+
+test('IA: finestra settimane (4 indietro, 8 avanti) e massimo 3 assegnazioni per settimana', () => {
+  const ok = (week) => validateAiOutput({ assignments: [{ week, chore: 'floor', person: 'Anna' }] }, H3, vctx).assignments.length;
+  assert.equal(ok('2026-10-04'), 1);   // 4 settimane indietro
+  assert.equal(ok('2026-09-27'), 0);   // sotto l'inizio e oltre la finestra
+  assert.equal(ok('2026-12-27'), 1);   // 8 settimane avanti
+  assert.equal(ok('2027-01-03'), 0);
+  const many = validateAiOutput({ assignments: ['floor', 'bathroom', 'kitchen', 'floor', 'kitchen'].map((chore, i) => ({ week: '2026-11-15', chore, person: ['Anna', 'Bruno', 'Carla', 'Bruno', 'Anna'][i] })) }, H3, vctx);
+  assert.equal(many.assignments.length, 3); assert.deepEqual(many.rejected.map((r) => r.reason), ['dup', 'dup']);
+  // senza le righe del motore nessuna assegnazione puo' essere verificata: tutte scartate
+  const norows = validateAiOutput({ assignments: [{ week: '2026-11-01', chore: 'floor', person: 'Anna' }] }, H3, { today: TODAY, firstSunday: H3.startSunday });
+  assert.deepEqual(norows.assignments, []); assert.equal(norows.rejected[0].reason, 'range');
 });

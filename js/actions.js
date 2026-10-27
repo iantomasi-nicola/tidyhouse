@@ -2,6 +2,7 @@
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
 import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners } from './extras.js';
 import { engineHouse } from './store.js';
+import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
 
 // ---------- PIN admin ----------
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -211,6 +212,28 @@ export class Actions {
   async setNote(sunday, text) { this.need(this.admin || !!this.me); await this.s.setDoc('weeks', sunday, { note: text || null }); }
   async setSwap(sunday, swap) { this.need(this.admin); await this.s.setDoc('weeks', sunday, { swap }); }
   async clearSwap(sunday) { this.need(this.admin); await this.s.setDoc('weeks', sunday, { swap: null }); }
+  /**
+   * Assegnazione manuale della settimana (solo admin): `wanted` = { floor|bathroom|kitchen: personId | '' | null }.
+   * Senza `merge` sostituisce tutto lo swap della settimana (le mansioni non indicate tornano «come da regole»);
+   * con `merge` tocca solo le mansioni indicate. Una persona uguale a quella delle regole non crea override (salvo `explicit`).
+   * Valida gli id (devono essere persone attive in quella settimana). Ritorna { prev, swap, changes } (prev serve per Annulla).
+   */
+  async setWeekAssignments(sunday, wanted, { merge = false, explicit = false, logText = '' } = {}) {
+    this.need(this.admin);
+    const eh = engineHouse(this.s.state);
+    const row = compute(eh, this.today(), 26).rows.find((r) => r.sunday === sunday);
+    if (!row) throw new Error('invalid');
+    const active = new Set(row.nm.filter(Boolean));
+    const w = wanted && typeof wanted === 'object' ? wanted : {};
+    for (const c of CHORES) if (w[c] && (typeof w[c] !== 'string' || !active.has(w[c]))) throw new Error('invalid');
+    const prev = { ...(this.weekDoc(sunday).swap || {}) };
+    const ruled = ruleAssigned(eh, this.today(), sunday);
+    const { patch, swap } = finalSwap({ existing: prev, ruled, wanted: w, merge, explicit });
+    const changes = diffAssign(row.assigned, applySwap(ruled, swap));
+    await this.s.setDoc('weeks', sunday, { swap: Object.keys(swap).length ? patch : null });
+    await this.log('assign', { week: sunday, text: logText || changes.map((x) => `${x.chore}: ${x.to}`).join(', ') || sunday, n: changes.length });
+    return { prev, swap, changes };
+  }
   async toggleTask(sunday, taskId, chore, done) {
     this.need(this.canTask(sunday, chore));
     await this.s.setDoc('weeks', sunday, { tasksDone: { [taskId]: done ? { by: this.me || 'admin', at: this.ctx.now().toISOString() } : null } });
