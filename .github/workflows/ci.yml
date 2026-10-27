@@ -1,0 +1,41 @@
+name: CI
+
+# Su ogni push e pull request verso main: test unitari + smoke test nel browser.
+# (I test e2e completi si lanciano in locale con `npm run e2e`: richiedono qualche minuto.)
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Non c'è package-lock.json: `npm ci` non è possibile, si usa `npm install`.
+      # Playwright è una devDependency (versione fissata in package.json) e i test lo risolvono con require('playwright').
+      - name: Installa dipendenze
+        run: npm install --no-audit --no-fund
+
+      - name: Test unitari e di integrazione
+        run: npm test
+
+      - name: Installa Chromium per Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke test (ogni rotta si apre senza errori)
+        run: node tests/e2e/smoke.e2e.mjs

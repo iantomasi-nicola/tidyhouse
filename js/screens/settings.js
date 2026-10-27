@@ -15,8 +15,10 @@ import * as push from '../push.js';
 import { openAiImportSheet, readAiConfig, writeAiConfig } from '../ai-ui.js';
 import { PROVIDERS, callAi } from '../ai.js';
 import { it, en } from '../strings/set.js';
+import { it as itB, en as enB } from '../strings/uxb.js';
 import { renderViewsLog } from './more.js';   // registro ingressi (raggruppato per giorno)
 registerStrings(it, en);
+registerStrings(itB, enB);
 loadCss('css/settings.css');
 
 const README = 'https://github.com/iantomasi-nicola/tidyhouse#readme';
@@ -25,8 +27,20 @@ const README = 'https://github.com/iantomasi-nicola/tidyhouse#readme';
 // Stato effimero (sopravvive ai rerender; si azzera cambiando sezione)
 // ============================================================================
 let curSub = null;
-const S = { rm: null, rmBase: '', rmColor: null, fresh: null, rot: null, homeBusy: false, open: {} };
-function resetDrafts() { S.rm = null; S.rmBase = ''; S.rmColor = null; S.fresh = null; S.rot = null; S.open = {}; }
+const S = { rm: null, rmBase: '', rmColor: null, fresh: null, rot: null, homeBusy: false, open: {}, err: {} };
+function resetDrafts() { S.rm = null; S.rmBase = ''; S.rmColor = null; S.fresh = null; S.rot = null; S.open = {}; S.err = {}; }
+let searchQ = '';   // testo cercato nell'indice: sopravvive ai rerender
+/** Messaggio d'errore di un modulo: ricordato in S.err, così un rerender (dati in arrivo da un altro telefono) non lo cancella. */
+function errLine(key, attrs = {}) {
+  const el = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', ...attrs });
+  el.textContent = S.err[key] || '';
+  return [el, (m) => { S.err[key] = m || ''; el.textContent = m || ''; }];
+}
+// sezioni aperte spesso (solo su questo dispositivo)
+const FREQ_KEY = 'cp:setfreq';
+const freqRead = () => { try { const v = JSON.parse(localStorage.getItem(FREQ_KEY)); return v && typeof v === 'object' ? v : {}; } catch { return {}; } };
+function freqBump(sub) { try { const f = freqRead(); f[sub] = (f[sub] || 0) + 1; localStorage.setItem(FREQ_KEY, JSON.stringify(f)); } catch { /* ignore */ } }
+const fold_ = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 // ============================================================================
 // Helper UI
@@ -66,7 +80,7 @@ function stepRow({ title, desc, value, min, max, step = 1, fmt, onchange, id }) 
     stepper(value, { min, max, step, fmt, onchange }));
 }
 function textRow({ title, desc, value, placeholder, onchange, type = 'text', id, inputmode, autocomplete = 'off', maxlength }) {
-  const inp = h('input', { class: 'input', type, value: value ?? '', placeholder, 'data-testid': id, inputmode, autocomplete, autocapitalize: type === 'text' ? 'sentences' : 'off', spellcheck: 'false', maxlength, 'aria-label': title });
+  const inp = h('input', { class: 'input', type, value: value ?? '', placeholder, 'data-testid': id, inputmode, autocomplete, autocapitalize: type === 'text' ? 'sentences' : 'off', spellcheck: 'false', enterkeyhint: 'done', maxlength, 'aria-label': title });
   inp.addEventListener('change', () => onchange(inp.value, inp));
   return h('label', { class: 'li st-text' }, h('div', { class: 'grow' }, h('div', { class: 't' }, title), desc ? h('div', { class: 'd' }, desc) : null), inp);
 }
@@ -146,8 +160,8 @@ const INDEX = [
 
 export async function render(ctx, params = {}) {
   const sub = String(params.sub || '').trim();
-  if (sub !== curSub) { resetDrafts(); curSub = sub; }
   const def = SECTIONS[sub];
+  if (sub !== curSub) { resetDrafts(); curSub = sub; if (def) freqBump(sub); }
   if (!sub || !def) return indexPage(ctx);
   if (def.admin && !def.open && !ctx.isAdmin) return page(ctx, t(def.title), h('div', { class: 'empty', 'data-testid': 'admin-only' }, icon('lock'), h('div', { style: { fontWeight: 650, color: 'var(--text)' } }, t('ai.adminOnly')), h('div', { class: 'small' }, t('setX.adminOnly.hint'))), sub);
   let body;
@@ -163,17 +177,67 @@ function page(ctx, title, body, sub) {
     body);
 }
 
+/** Sezioni visibili a chi guarda (le admin solo all'admin). */
+const visibleSections = (ctx) => Object.entries(SECTIONS).filter(([, d]) => !d.admin || d.open || ctx.isAdmin).map(([k]) => k);
+const sectionSum = (ctx, k) => { try { return SECTIONS[k].sum(ctx); } catch { return ''; } };
+const sectionRow = (ctx, k) => { const d = SECTIONS[k]; return liRow({ ic: d.ic, tone: d.tone, title: t(d.title), desc: sectionSum(ctx, k), href: '#/settings/' + k }); };
+
+/** Impostazioni rapide: tema e notifiche, senza aprire nessuna sezione. */
+function quickCard(ctx) {
+  const theme = seg([['auto', t('set.theme.auto')], ['light', t('set.theme.light')], ['dark', t('set.theme.dark')]], ctx.prefs.theme || 'auto', (v) => { ctx.savePrefs({ theme: v }); saved(ctx); });
+  theme.setAttribute('data-testid', 'quick-theme'); theme.setAttribute('aria-label', t('set.theme'));
+  const s = push.status(ctx).state;
+  let nrow;
+  if (s === 'off') {
+    nrow = h('div', { class: 'row-between st-quick-row' }, h('div', { class: 'grow' }, h('div', { class: 't' }, t('uxb.set.quickNotif')), h('div', { class: 'small muted' }, t('set.notif.status.off'))),
+      btn(t('uxb.set.quickEnable'), async () => {
+        try { const r = await push.enable(ctx); if (r && r.ok) saved(ctx, t('push.enabled')); else ctx.toast(r && r.reason === 'denied' ? t('set.notif.status.denied') : r && r.reason === 'dismissed' ? t('push.dismissed') : t('push.err')); ctx.rerender(); } catch (e) { fail(ctx, e); }
+      }, { cls: '', ic: 'bell', id: 'quick-notif-enable' }));
+  } else {
+    nrow = h('a', { class: 'row-between st-quick-row st-quick-link', href: '#/settings/notifications', 'data-testid': 'quick-notif' }, h('div', { class: 'grow' }, h('div', { class: 't' }, t('uxb.set.quickNotif')), h('div', { class: 'small muted' }, sectionSum(ctx, 'notifications'))), icon('chevron'));
+  }
+  return h('section', { class: 'card st-card stack tight st-quick', 'data-testid': 'st-quick' }, h('div', { class: 'eyebrow' }, t('uxb.set.quick')), theme, nrow);
+}
+
+/** Cerca nelle sezioni (titolo, riepilogo e parole chiave) senza aprire nulla. */
+function searchResults(ctx, q) {
+  const toks = fold_(q).split(/\s+/).filter(Boolean);
+  const hits = toks.length ? visibleSections(ctx).filter((k) => {
+    const hay = fold_([t(SECTIONS[k].title), sectionSum(ctx, k), t('uxb.kw.' + k)].join(' '));
+    return toks.every((x) => hay.includes(x));
+  }) : [];
+  return hits;
+}
+
 function indexPage(ctx) {
   const hs = ctx.house; const me = ctx.me;
   const meCard = h('a', { class: 'st-me', href: '#/settings/profile', 'data-testid': 'st-me' },
     avatar(ctx.meName || '?', me ? ctx.color(me) : '#888', 'lg'),
     h('div', { class: 'grow' }, h('div', { class: 'st-me-name' }, ctx.meName || t('setX.noWho')), h('div', { class: 'small muted' }, `${hs.name || ''} · ${ctx.cloud ? t('misc.synced') : t('misc.localOnly')}${(hs.adminIds || []).length ? ' · ' + t('misc.admin') + ': ' + (hs.adminIds || []).map((i) => ctx.name(i)).join(', ') : ''}`)),
     ctx.isAdmin ? chip(t('misc.admin'), 'acc', 'shield') : null, icon('chevron'));
-  const groups = INDEX.filter(([, , adm]) => !adm || ctx.isAdmin).map(([label, keys]) =>
-    group(t(label), keys.map((k) => { const d = SECTIONS[k]; let sum = ''; try { sum = d.sum(ctx); } catch { /* ignore */ } return liRow({ ic: d.ic, tone: d.tone, title: t(d.title), desc: sum, href: '#/settings/' + k }); })));
+  const groups = h('div', { class: 'stack', 'data-testid': 'settings-groups' }, INDEX.filter(([, , adm]) => !adm || ctx.isAdmin).map(([label, keys]) => group(t(label), keys.map((k) => sectionRow(ctx, k)))));
+  // le più usate su questo dispositivo (almeno 2 aperture)
+  const f = freqRead();
+  const freq = visibleSections(ctx).filter((k) => (f[k] || 0) >= 2).sort((a, b) => f[b] - f[a]).slice(0, 3);
+  const freqBox = freq.length ? h('section', { class: 'st-freq', 'data-testid': 'st-freq' }, h('div', { class: 'eyebrow' }, t('uxb.set.freq')),
+    h('div', { class: 'st-freq-chips' }, freq.map((k) => h('a', { class: 'chip st-freq-chip', href: '#/settings/' + k }, icon(SECTIONS[k].ic), t(SECTIONS[k].title))))) : null;
+  // ricerca: i risultati si aggiornano sul posto; il testo cercato resta in searchQ
+  const results = h('div', { class: 'stack tight', 'data-testid': 'st-results' });
+  const inp = h('input', { class: 'input st-search', type: 'search', 'data-testid': 'st-search', placeholder: t('uxb.set.search'), 'aria-label': t('uxb.set.search'), autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'search', inputmode: 'search' });
+  inp.value = searchQ;
+  const body = h('div', { class: 'stack' }, quickCard(ctx), freqBox, groups);
+  const paint = () => {
+    const q = inp.value.trim(); searchQ = inp.value;
+    body.hidden = !!q; results.hidden = !q; results.replaceChildren();
+    if (!q) return;
+    const hits = searchResults(ctx, q);
+    if (!hits.length) { results.append(h('p', { class: 'muted center', role: 'status' }, t('uxb.set.noResult', { q }))); return; }
+    results.append(h('div', { class: 'list' }, hits.map((k) => sectionRow(ctx, k))));
+  };
+  inp.addEventListener('input', paint); paint();
   return h('div', { class: 'st-page stack', 'data-testid': 'settings-index' },
     h('h1', { class: 'title' }, t('set.title')),
-    meCard, groups,
+    meCard, inp, results, body,
     h('div', { class: 'st-about' }, h('div', null, `${t('app.name')} · ${t('misc.version', { v: ctx.VERSION || '' })}`), h('a', { href: '#/guide' }, t('guide.title'))));
 }
 
@@ -235,7 +299,7 @@ function appearance(ctx) {
     group(t('set.theme'), [h('div', { class: 'li' }, theme)]),
     card(h('div', { class: 'lbl' }, t('set.accent')), sw,
       h('div', { class: 'btn-row', style: { marginTop: '12px' } },
-        ctx.isAdmin ? h('button', { type: 'button', class: 'btn tonal sm', 'data-testid': 'accent-house', onclick: async () => { try { await ctx.actions.setHouse({ accent }); ctx.toast(t('saved')); } catch { ctx.toast(t('error')); } } }, t('setX.accent.all')) : null,
+        ctx.isAdmin ? h('button', { type: 'button', class: 'btn tonal sm', 'data-testid': 'accent-house', onclick: async () => { try { await ctx.actions.setHouse({ accent }); ctx.savePrefs({ accent: null }); ctx.toast(t('saved')); } catch { ctx.toast(t('error')); } } }   /* poi l'admin segue il colore della casa, come gli altri */, t('setX.accent.all')) : null,
         p.accent ? h('button', { type: 'button', class: 'btn soft sm', onclick: () => { ctx.savePrefs({ accent: null }); saved(ctx); } }, t('setX.accent.house')) : null)),
     card(h('div', { class: 'row-between' }, h('div', { class: 'lbl' }, t('set.textSize')), sizeVal),
       h('div', { class: 'st-range' }, h('span', { class: 'small', 'aria-hidden': 'true' }, 'A'), range, h('span', { style: { fontSize: '1.25rem' }, 'aria-hidden': 'true' }, 'A')),
@@ -414,9 +478,9 @@ function rulesSection(ctx) {
     note('', 'info', t('setX.rules.recalc')),
     group(t('set.turnRules'), [
       st('grace', t('set.grace'), t('set.graceHint'), 0, 7),
-      st('minRest', t('set.minRest'), t('setX.rules.minRestHint'), 1, 4),
-      st('startPriority', t('set.startPriority'), t('setX.rules.startPriorityHint'), 0, 12),
-      st('window', t('set.window'), t('setX.rules.windowHint'), 0, 260, 4, (v) => (v === 0 ? t('setX.rules.always') : String(v))),
+      st('minRest', t('uxb.rules.minRest'), t('setX.rules.minRestHint'), 1, 4),
+      st('startPriority', t('uxb.rules.startPriority'), t('setX.rules.startPriorityHint'), 0, 12),
+      st('window', t('uxb.rules.window'), t('uxb.rules.windowHint'), 0, 260, 4, (v) => (v === 0 ? t('setX.rules.always') : String(v))),
       st('minNights', t('set.minNights'), t('setX.rules.minNightsHint'), 1, 7),
     ]),
     group(t('moreY.pen.group'), [stepRow({ title: t('moreY.pen.setting'), desc: t('moreY.pen.settingHint'), value: Number(S_.taskPenalty !== undefined ? S_.taskPenalty : DEFAULT_TASK_PENALTY), min: 0, max: 3, step: 0.5, id: 'step-taskPenalty', fmt: (v) => Number(v).toLocaleString(ctx.lang, { maximumFractionDigits: 1 }), onchange: (v) => setHouse(ctx, { settings: { taskPenalty: v } }) })], t('moreY.pen.settingFoot')),
@@ -482,7 +546,7 @@ function roommatesSection(ctx) {
   function personCard(r, i) {
     const [st, kind] = statusOf(r);
     const color = r.color || PALETTE[i % PALETTE.length];
-    const name = h('input', { class: 'input', value: r.name || '', placeholder: t('set.roommates.name'), 'aria-label': t('set.roommates.name'), 'data-testid': 'rm-name-' + i, maxlength: 30, autocomplete: 'off' });
+    const name = h('input', { class: 'input', value: r.name || '', placeholder: t('set.roommates.name'), 'aria-label': t('set.roommates.name'), 'data-testid': 'rm-name-' + i, maxlength: 30, autocomplete: 'off', autocapitalize: 'words', enterkeyhint: 'done' });
     name.addEventListener('input', () => { r.name = name.value; refresh(); });
     const dateIn = (key, label, testid) => { const el = h('input', { class: 'input', type: 'date', value: r[key] || '', 'aria-label': label, 'data-testid': testid }); el.addEventListener('change', () => { r[key] = el.value || null; if (key === 'to' && r.to) r.expectedTo = null; draw(); }); return h('label', { class: 'field' }, h('span', { class: 'lbl' }, label), el); };
     const pal = S.rmColor === r._k ? h('div', { class: 'swatches st-pal' }, PALETTE.map((c) => h('button', { type: 'button', style: { background: c }, 'aria-label': c, 'aria-pressed': String(c === r.color), onclick: () => { r.color = c; S.rmColor = null; draw(); } })),
@@ -553,9 +617,9 @@ function roommatesSection(ctx) {
 // ============================================================================
 // FEATURES
 // ============================================================================
-const FEAT_IC = { needs: 'cart', stats: 'chart', tasks: 'list', lastout: 'lock', requests: 'swap', planDay: 'calendar', whatsapp: 'whatsapp', activity: 'history', trips: 'plane', rules: 'book', ranking: 'trophy', ics: 'calendar', refresh: 'refresh', selfDone: 'check', selfAway: 'plane', coverOthers: 'users' };
+const FEAT_IC = { shared: 'refresh', needs: 'cart', stats: 'chart', tasks: 'list', lastout: 'lock', requests: 'swap', planDay: 'calendar', whatsapp: 'whatsapp', activity: 'history', trips: 'plane', rules: 'book', ranking: 'trophy', ics: 'calendar', refresh: 'refresh', selfDone: 'check', selfAway: 'plane', coverOthers: 'users' };
 function featuresSection(ctx) {
-  const mk = (k) => switchRow({ ic: FEAT_IC[k], title: t('set.feat.' + k), checked: ctx.feature(k), id: 'feat-' + k, onchange: (v) => setHouse(ctx, { features: { [k]: v } }) });
+  const mk = (k) => switchRow({ ic: FEAT_IC[k] || 'list', title: t('set.feat.' + k), desc: t('uxb.featd.' + k), checked: ctx.feature(k), id: 'feat-' + k, onchange: (v) => setHouse(ctx, { features: { [k]: v } }) });
   const keys = Object.keys(DEFAULT_FEATURES);
   const perm = ['selfDone', 'selfAway', 'coverOthers'];
   return h('div', { class: 'stack' },
@@ -587,7 +651,7 @@ function linksSection(ctx) {
     h('div', { class: 'st-custom-head' },
       h('input', { class: 'input', value: c.label || '', placeholder: t('set.linkLabel'), 'aria-label': t('set.linkLabel'), 'data-testid': 'custom-label-' + i, maxlength: 30, onchange: (e) => { const arr = custom.map((x) => ({ ...x })); arr[i].label = e.target.value.trim().slice(0, 30); setCustom(arr); } }),
       h('button', { class: 'icon-btn st-del', type: 'button', 'aria-label': t('delete'), 'data-testid': 'custom-del-' + i, onclick: () => { setCustom(custom.filter((_, j) => j !== i)); } }, icon('trash'))),
-    h('input', { class: 'input', type: 'url', inputmode: 'url', value: c.url || '', placeholder: 'https://', 'aria-label': t('set.linkUrl'), 'data-testid': 'custom-url-' + i, onchange: (e) => { const u = normUrl(e.target.value); if (!u) { ctx.toast(t('setX.links.https')); e.target.value = c.url || ''; return; } const arr = custom.map((x) => ({ ...x })); arr[i].url = u; setCustom(arr); } }),
+    h('input', { class: 'input', type: 'url', inputmode: 'url', value: c.url || '', placeholder: 'https://', enterkeyhint: 'done', autocapitalize: 'off', 'aria-label': t('set.linkUrl'), 'data-testid': 'custom-url-' + i, onchange: (e) => { const u = normUrl(e.target.value); if (!u) { ctx.toast(t('setX.links.https')); e.target.value = c.url || ''; return; } const arr = custom.map((x) => ({ ...x })); arr[i].url = u; setCustom(arr); } }),
     switchRow({ title: t('set.showOnHome'), checked: c.show !== false, id: 'custom-show-' + i, onchange: (v) => { const arr = custom.map((x) => ({ ...x })); arr[i].show = v; setCustom(arr); } })));
   const addSheet = () => {
     const lab = h('input', { class: 'input', placeholder: t('set.linkLabel'), 'aria-label': t('set.linkLabel'), maxlength: 30, 'data-testid': 'add-label' });
@@ -674,11 +738,11 @@ export function validVapidPublic(v) {
 function useKeyForm(ctx) {
   const hs = ctx.house;
   const input = h('input', { class: 'input', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: t('setX.sched.useKeyPh'), 'aria-label': t('setX.sched.useKey'), 'data-testid': 'vapid-existing' });
-  const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', 'data-testid': 'vapid-existing-err' });
+  const [err, setErr] = errLine('vapid', { 'data-testid': 'vapid-existing-err' });
   return h('form', { class: 'stack tight', 'data-testid': 'vapid-use', onsubmit: async (e) => {
-    e.preventDefault(); err.textContent = '';
+    e.preventDefault(); setErr('');
     const v = validVapidPublic(input.value);
-    if (!v) { err.textContent = t('setX.sched.keyInvalid'); return; }
+    if (!v) { setErr(t('setX.sched.keyInvalid')); return; }
     if (v === hs.vapidPublic) { input.value = ''; return; }
     if (hs.vapidPublic && !(await confirmDialog({ title: t('setX.sched.useKey'), text: t('setX.sched.useKeyWarn'), ok: t('setX.sched.useKeySave'), danger: true }))) return;
     S.open.keys = true;   // la sezione resta aperta dopo il salvataggio
@@ -1027,7 +1091,7 @@ function dataSection(ctx) {
 function aiSection(ctx) {
   const cfg = readAiConfig(); const prov = PROVIDERS[cfg.provider] ? cfg.provider : 'anthropic';
   const upd = (patch) => { const cur = readAiConfig(); if (!writeAiConfig({ ...cur, provider: PROVIDERS[cur.provider] ? cur.provider : 'anthropic', ...patch })) ctx.toast(t('error')); else saved(ctx); };
-  const keyIn = h('input', { class: 'input', type: 'password', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: cfg.key ? '••••••••••••' : 'API key', 'aria-label': t('ai.key'), 'data-testid': 'ai-key' });
+  const keyIn = h('input', { class: 'input', type: 'password', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: cfg.key ? '••••••••••••' : t('uxb.ai.keyPh'), enterkeyhint: 'done', 'aria-label': t('ai.key'), 'data-testid': 'ai-key' });
   keyIn.addEventListener('change', () => { const v = keyIn.value.trim(); if (!v) return; upd({ key: v }); keyIn.value = ''; ctx.rerender(); });
   const testBtn = btn(t('ai.test'), async () => {
     const c = readAiConfig(); if (!c.key) { ctx.toast(t('ai.noKey')); return; }
@@ -1055,27 +1119,31 @@ function aiSection(ctx) {
 // SECURITY
 // ============================================================================
 function adminChangeForm(ctx) {
-  const sel = h('select', { class: 'input', 'aria-label': t('setX.admin.who'), 'data-testid': 'newadmin-who' }, (ctx.house.roommates || []).map((r) => h('option', { value: r.id, selected: (ctx.house.adminIds || [])[0] !== r.id && r.id !== ctx.me ? null : null }, r.name)));
-  const pin = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: t('sec.newPin'), 'aria-label': t('sec.newPin'), 'data-testid': 'newadmin-pin' });
-  const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite' });
+  const today = ctx.today(); const admins = ctx.house.adminIds || [];
+  // candidati: chi è ancora in casa; il primo della lista non deve essere un admin già in carica (un tap sbagliato lo lascerebbe uguale)
+  const cand = (ctx.house.roommates || []).filter((r) => !(r.to && r.to < today));
+  const list = [...cand.filter((r) => !admins.includes(r.id)), ...cand.filter((r) => admins.includes(r.id))];
+  const sel = h('select', { class: 'input', 'aria-label': t('setX.admin.who'), 'data-testid': 'newadmin-who' }, list.map((r) => h('option', { value: r.id }, r.name)));
+  const pin = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', enterkeyhint: 'done', placeholder: t('sec.newPin'), 'aria-label': t('sec.newPin'), 'data-testid': 'newadmin-pin' });
+  const [err, setErr] = errLine('admin');
   return h('form', { class: 'stack tight', onsubmit: async (e) => {
-    e.preventDefault(); err.textContent = '';
-    if (pin.value.length < 4) { err.textContent = t('setX.sec.short', { n: 4 }); return; }
+    e.preventDefault(); setErr('');
+    if (pin.value.length < 4) { setErr(t('setX.sec.short', { n: 4 })); return; }
     if (!(await confirmDialog({ title: t('setX.admin.title'), text: t('setX.admin.confirm'), danger: true }))) return;
     try { await ctx.actions.changeAdmin({ personId: sel.value, pin: pin.value }); pin.value = ''; ctx.toast(t('setX.admin.done')); ctx.rerender(); } catch (ex) { fail(ctx, ex); }
   } }, h('div', { class: 't', style: { fontWeight: 700 } }, t('setX.admin.title')), h('p', { class: 'small muted' }, t('setX.admin.hint')), h('div', { class: 'field' }, h('label', null, t('setX.admin.who')), sel), pin, err, btn(t('setX.admin.title'), null, { cls: '', type: 'submit', id: 'admin-change' }));
 }
 function securitySection(ctx) {
-  const cur = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'off', placeholder: t('join.adminPin'), 'aria-label': t('join.adminPin'), 'data-testid': 'pin-old' });
-  const n1 = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: t('sec.newPin'), 'aria-label': t('sec.newPin'), 'data-testid': 'pin-new' });
-  const n2 = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: t('setX.sec.repeat'), 'aria-label': t('setX.sec.repeat'), 'data-testid': 'pin-new2' });
-  const err = h('div', { class: 'small', style: { color: 'var(--bad)' }, 'aria-live': 'polite', 'data-testid': 'pin-error' });
+  const cur = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'off', enterkeyhint: 'next', placeholder: t('join.adminPin'), 'aria-label': t('join.adminPin'), 'data-testid': 'pin-old' });
+  const n1 = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', enterkeyhint: 'next', placeholder: t('sec.newPin'), 'aria-label': t('sec.newPin'), 'data-testid': 'pin-new' });
+  const n2 = h('input', { class: 'input', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', enterkeyhint: 'done', placeholder: t('setX.sec.repeat'), 'aria-label': t('setX.sec.repeat'), 'data-testid': 'pin-new2' });
+  const [err, setErr] = errLine('pin', { 'data-testid': 'pin-error' });
   const form = h('form', { class: 'stack tight', onsubmit: async (e) => {
-    e.preventDefault(); err.textContent = '';
+    e.preventDefault(); setErr('');
     try {
-      if (!(await verifyPin(ctx.house, cur.value))) { err.textContent = t('join.wrongPin'); cur.select(); return; }
-      if (n1.value.length < 4) { err.textContent = t('setX.sec.short', { n: 4 }); return; }
-      if (n1.value !== n2.value) { err.textContent = t('setX.sec.mismatch'); return; }
+      if (!(await verifyPin(ctx.house, cur.value))) { setErr(t('join.wrongPin')); cur.select(); return; }
+      if (n1.value.length < 4) { setErr(t('setX.sec.short', { n: 4 })); return; }
+      if (n1.value !== n2.value) { setErr(t('setX.sec.mismatch')); return; }
       const salt = newSalt(); const hash = await hashPin(n1.value, salt);
       if (await save(ctx, () => ctx.actions.setHouse({ adminSalt: salt, adminHash: hash }), t('sec.pinChanged'))) { cur.value = n1.value = n2.value = ''; }
     } catch (ex) { fail(ctx, ex); }
