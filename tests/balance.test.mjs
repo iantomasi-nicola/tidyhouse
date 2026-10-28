@@ -120,3 +120,20 @@ test('assegnare una mansione a una persona assente: accettato, il motore la asse
   assert.equal(row.away.includes(away), true);
   assert.equal(row.assigned[0], away);
 });
+
+test('correggere il risultato di una settimana passata: nessuno ha pulito / ha pulito X / skipped:X cambiano debiti e Annulla', async () => {
+  const { s, ids, admin } = await setup();
+  const LASTW = '2026-11-01';
+  const r0 = admin.out().rows.find((r) => r.sunday === LASTW);
+  const who = r0.assigned[0]; const other = ids.find((id) => id !== who);
+  await admin.setResult(LASTW, 'floor', 'skipped');
+  assert.equal(debtOf(admin, who, 0), 1);
+  await admin.setResult(LASTW, 'floor', `by:${other}`);
+  assert.equal(debtOf(admin, who, 0), 1);
+  assert.ok(creditOf(admin, other) >= 1, 'chi ha pulito al posto di un altro guadagna un riposo');
+  await admin.setResult(LASTW, 'floor', 'done');
+  assert.equal(debtOf(admin, who, 0), 0);
+  await admin.setResult(LASTW, 'floor', `skipped:${other}`);
+  assert.equal(debtOf(admin, other, 0), 1);
+  assert.equal(s.state.weeks[LASTW].result.floor, `skipped:${other}`);
+});

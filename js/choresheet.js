@@ -9,6 +9,7 @@ import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
 import { it as itCant, en as enCant } from './strings/cantdo.js';
 import { it as itReason, en as enReason } from './strings/reason.js';
+import { it as itRez, en as enRez } from './strings/resultedit.js';
 import { openAssignWeekSheet } from './weekassign.js';
 import { ruleAssigned } from './assignlogic.js';
 import { it as itUxa, en as enUxa } from './strings/uxa.js';
@@ -18,6 +19,7 @@ registerStrings(itUxa, enUxa);
 registerStrings(itFlow, enFlow);
 registerStrings(itCant, enCant);
 registerStrings(itReason, enReason);
+registerStrings(itRez, enRez);
 loadCss('css/calendar.css');
 
 export const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -693,6 +695,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
         arows.push(actRow('users', '', t('flow.assignBtn'), agreed ? t('flow.agreedWith', { name: ctx.name(agreed) }) : t('flow.assignHint'), { 'data-act': 'assign' }, () => openAssignSheet(ctx, sunday, chore)));
         if (agreed) arows.push(actRow('x', 'r', t('flow.assignClear'), null, { 'data-act': 'assign-clear-quick' }, () => clearAssignment(ctx, sunday, chore)));
       }
+      if (!row.isFut) arows.push(actRow('check', '', t('rez.btn'), t('rez.btnHint'), { 'data-act': 'result-edit' }, async () => { try { (await import('./resultedit.js')).openResultEditSheet(ctx, sunday, chore); } catch (e) { console.warn(e); ctx.toast(t('error')); } }));
       if (arows.length) out.push(section(t('flow.sec.admin'), h('div', { class: 'list' }, arows)));
       out.push(section(t('chore.swap'), h('div', { class: 'btn-row' },
         h('button', { type: 'button', class: 'btn soft', 'data-act': 'swap', onclick: () => go('swap') }, icon('swap'), t('chore.swapWith')),
