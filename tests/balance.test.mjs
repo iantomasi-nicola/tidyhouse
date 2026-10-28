@@ -108,3 +108,15 @@ test('«Nessuno» in una settimana chiusa non crea recuperi per nessuno', async 
   for (const d of curRow(admin).debts) assert.equal(d[0], 0);
   assert.ok(before && ids);
 });
+
+test('assegnare una mansione a una persona assente: accettato, il motore la assegna a lei', async () => {
+  const { s, ids, admin } = await setup();
+  const FUTW = '2026-11-15';
+  const before = admin.out().rows.find((r) => r.sunday === FUTW);
+  const away = ids.find((id) => id !== before.assigned[0]);
+  await s.setDoc('weeks', FUTW, { awayMap: { [away]: true } });
+  await admin.setWeekAssignments(FUTW, { floor: away });
+  const row = admin.out().rows.find((r) => r.sunday === FUTW);
+  assert.equal(row.away.includes(away), true);
+  assert.equal(row.assigned[0], away);
+});

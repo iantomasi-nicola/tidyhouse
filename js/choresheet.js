@@ -742,7 +742,7 @@ export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
   })));
 
   // assegnazione manuale della settimana (solo admin; vedi js/weekassign.js)
-  if (ctx.isAdmin && row.npres > 0) out.push(h('div', { class: 'list wd-assignweek' }, actRow('users', '', ctx.t('assign.btn'), ctx.t('assign.btnHint'), { 'data-act': 'assign-week' }, () => openAssignWeekSheet(ctx, sunday))));
+  if (ctx.isAdmin && row.nm.some(Boolean)) out.push(h('div', { class: 'list wd-assignweek' }, actRow('users', '', ctx.t('assign.btn'), ctx.t('assign.btnHint'), { 'data-act': 'assign-week' }, () => openAssignWeekSheet(ctx, sunday))));
 
   // riposo
   if (row.rest.length) out.push(h('div', { class: 'wd-rest' }, h('div', { class: 'tile rest' }, icon('moon')), h('div', { class: 'grow' }, h('div', { class: 'lbl' }, ctx.t('cal.rest')), h('div', { class: 'wd-names' }, row.rest.map((id) => h('span', { class: 'wd-name' }, person(ctx, id, 'sm'), ctx.name(id)))))));

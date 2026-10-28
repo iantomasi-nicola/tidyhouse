@@ -3,7 +3,7 @@
 import { h, icon, avatar, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange } from './i18n.js';
 import { CHORES, NOBODY } from './engine.js';
-import { presentIds, ruleAssigned, diffAssign, loadOf } from './assignlogic.js';
+import { presentIds, activeIds, ruleAssigned, diffAssign, loadOf } from './assignlogic.js';
 import { it, en } from './strings/assign.js';
 
 registerStrings(it, en);
@@ -60,7 +60,7 @@ export function openAssignWeekSheet(ctx, sunday) {
   function card(c, i) {
     const cur = row.assigned[i];
     // persone selezionabili: presenti (+ chi è assegnato oggi se fosse assente, così resta visibile)
-    const ids = [...pres];
+    const ids = [...pres, ...activeIds(row).filter((id) => !pres.includes(id))];   // anche gli assenti: l'admin può assegnare a chi è via
     for (const x of [cur, picks[c]]) if (x && x !== NOBODY && !ids.includes(x)) ids.push(x);
     const rulesLabel = ruled[i] ? t('assign.rulesWho', { name: ctx.name(ruled[i]) }) : t('assign.rulesNone');
     return h('section', { class: 'wa-card', 'data-chore-card': c },
@@ -127,7 +127,7 @@ export function openAssignWeekSheet(ctx, sunday) {
     const after = CHORES.map((c) => effective(c));
     const { box, changes, agreedChanges } = preview(after);
     const kids = [h('div', { class: 'wa-week', 'data-testid': 'wa-week' }, fmtWeekRange(sunday, ctx.lang)), h('p', { class: 'muted small wa-intro' }, t('assign.intro'))];
-    if (!pres.length) kids.push(h('div', { class: 'note warn' }, icon('home2'), t('assign.noPeople')));
+    if (!activeIds(row).length) kids.push(h('div', { class: 'note warn' }, icon('home2'), t('assign.noPeople')));
     if (row.closed) kids.push(h('div', { class: 'note warn', 'data-testid': 'wa-closed' }, icon('alert'), t('assign.closedWarn')));
     CHORES.forEach((c, i) => kids.push(card(c, i)));
     kids.push(box);

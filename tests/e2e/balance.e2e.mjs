@@ -350,6 +350,21 @@ await scenario('Assegna la settimana: «Nessuno questa settimana» (solo admin),
   noErrors(page, 'nessuno'); await page.close();
 });
 
+await scenario('Assegna la settimana: si può assegnare anche a un assente', async () => {
+  const page = await mk({ path: '#/' });
+  const before = await rowOf(page);
+  const away = ['anna', 'bruno', 'carla'].find((x) => x !== before.assigned[0]);
+  await page.evaluate(([w, id]) => window.__app.actions.setAway(w, id, true), [CUR, away]);
+  await page.waitForTimeout(400);
+  assert.ok((await page.evaluate((s) => window.__app.calc.out.rows.find((x) => x.sunday === s).away, CUR)).includes(away));
+  await openAssign(page);
+  assert.match(await chip(page, 'floor', away).innerText(), /assente/);
+  await chip(page, 'floor', away).click(); await page.waitForTimeout(300);
+  await page.click('[data-act="wa-save"]'); await page.waitForTimeout(700);
+  assert.equal((await rowOf(page)).assigned[0], away);
+  noErrors(page, 'assente'); await page.close();
+});
+
 await scenario('Assegna la settimana: persona uguale alle regole → nessuna scelta; da «Senza» a «Con recupero» toglie lo scambio', async () => {
   const page = await mk({ path: '#/' });
   const before = await rowOf(page);

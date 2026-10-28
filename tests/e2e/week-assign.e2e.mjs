@@ -125,10 +125,11 @@ await scenario('«Come da regole» azzera l\'override, una persona può avere pi
   noErrors(page, 'regole'); await page.close();
 });
 
-await scenario('solo persone presenti nella lista; settimana conclusa chiede conferma', async () => {
+await scenario('anche gli assenti nella lista (segnati «assente»); settimana conclusa chiede conferma', async () => {
   const page = await mk({ weeks: { [FUT]: { awayMap: { carla: true } } } });
   await openAssign(page, FUT);
-  assert.equal(await page.locator('.wa-opt[data-chore="floor"][data-who="carla"]').count(), 0, 'Carla è via: non selezionabile');
+  assert.equal(await page.locator('.wa-opt[data-chore="floor"][data-who="carla"]').count(), 1, 'Carla è via ma selezionabile');
+  assert.match(await page.locator('.wa-opt[data-chore="floor"][data-who="carla"]').innerText(), /assente/);
   assert.equal(await page.locator('.wa-opt[data-chore="floor"][data-who="bruno"]').count(), 1);
   await page.keyboard.press('Escape'); await page.waitForTimeout(500); await page.keyboard.press('Escape'); await page.waitForTimeout(500);
   // settimana conclusa
