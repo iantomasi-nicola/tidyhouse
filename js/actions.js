@@ -1,5 +1,5 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
-import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
+import { CHORES, NOBODY, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
 import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, cleanNote, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
 import { engineHouse } from './store.js';
 import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
@@ -275,7 +275,7 @@ export class Actions {
     if (!row) throw new Error('invalid');
     const active = new Set(row.nm.filter(Boolean));
     const w = wanted && typeof wanted === 'object' ? wanted : {};
-    for (const c of CHORES) if (w[c] && (typeof w[c] !== 'string' || !active.has(w[c]))) throw new Error('invalid');
+    for (const c of CHORES) if (w[c] && w[c] !== NOBODY && (typeof w[c] !== 'string' || !active.has(w[c]))) throw new Error('invalid');
     const prev = { ...(this.weekDoc(sunday).swap || {}) };
     const ruled = ruleAssigned(eh, this.today(), sunday);
     const { patch, swap } = finalSwap({ existing: prev, ruled, wanted: w, merge, explicit });

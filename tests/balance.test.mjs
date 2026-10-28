@@ -83,3 +83,28 @@ test('solo admin; persona sconosciuta rifiutata; settimana con risultati sposta 
   const r = await admin.adjustBalance(ids[2], { kitchen: 1 });
   assert.equal(r.week, '2026-11-15');
 });
+
+test('«Nessuno questa settimana»: solo admin, la mansione resta vuota, nessun debito e Annulla', async () => {
+  const { s, ids, admin, user } = await setup();
+  const FUTW = '2026-11-15';
+  const before = compute(engineHouse(s.state), NOW, 12).rows.find((r) => r.sunday === FUTW);
+  await assert.rejects(() => user.setWeekAssignments(FUTW, { floor: '-' }), /permission/);
+  const res = await admin.setWeekAssignments(FUTW, { floor: '-' });
+  const row = admin.out().rows.find((r) => r.sunday === FUTW);
+  assert.equal(row.assigned[0], '');
+  assert.equal(row.swapped[0], true);
+  assert.equal(row.assigned[1], before.assigned[1]);
+  await admin.setWeekAssignments(FUTW, res.prev, { explicit: true });
+  assert.equal(admin.out().rows.find((r) => r.sunday === FUTW).assigned[0], before.assigned[0]);
+  assert.ok(ids.length);
+});
+
+test('«Nessuno» in una settimana chiusa non crea recuperi per nessuno', async () => {
+  const { s, ids, admin } = await setup();
+  const before = compute(engineHouse(s.state), NOW, 12).rows.find((r) => r.sunday === '2026-11-01');
+  await s.setDoc('weeks', '2026-11-01', { result: { floor: null }, swap: { floor: '-' } });
+  const row = admin.out().rows.find((r) => r.sunday === '2026-11-01');
+  assert.equal(row.assigned[0], '');
+  for (const d of curRow(admin).debts) assert.equal(d[0], 0);
+  assert.ok(before && ids);
+});

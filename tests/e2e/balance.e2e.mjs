@@ -326,6 +326,30 @@ await scenario('Assegna la settimana: due mansioni con scelte diverse; EN; 320px
   noErrors(page, 'due mansioni'); await page.close();
 });
 
+await scenario('Assegna la settimana: «Nessuno questa settimana» (solo admin), nessun debito, riapertura e ritorno alle regole', async () => {
+  const page = await mk({ path: '#/' });
+  const before = await rowOf(page);
+  await openAssign(page);
+  assert.match(await chip(page, 'kitchen', '-').innerText(), /Nessuno questa settimana/);
+  await chip(page, 'kitchen', '-').click(); await page.waitForTimeout(300);
+  assert.equal(await chip(page, 'kitchen', '-').getAttribute('aria-checked'), 'true');
+  assert.equal(await page.locator('.wa-terms').count(), 0, 'niente con/senza recupero per «nessuno»');
+  assert.match(await page.locator('[data-testid="wa-preview"]').innerText(), /nessuno/i);
+  await page.click('[data-act="wa-save"]');
+  await page.waitForFunction(() => document.querySelectorAll('#layer .sheet.on').length === 0, null, { timeout: 4000 });
+  await page.waitForTimeout(400);
+  assert.deepEqual((await wkDoc(page)).swap, { kitchen: '-' });
+  const after = await rowOf(page);
+  assert.equal(after.assigned[2], ''); assert.equal(after.assigned[0], before.assigned[0]);
+  for (const d of after.debts.filter(Boolean)) assert.deepEqual(d, [0, 0, 0]);
+  await openAssign(page);
+  assert.equal(await chip(page, 'kitchen', '-').getAttribute('aria-checked'), 'true', 'riaperto: «nessuno» preselezionato');
+  await chip(page, 'kitchen', '').click(); await page.waitForTimeout(300);
+  await page.click('[data-act="wa-save"]'); await page.waitForTimeout(700);
+  assert.equal((await rowOf(page)).assigned[2], before.assigned[2]);
+  noErrors(page, 'nessuno'); await page.close();
+});
+
 await scenario('Assegna la settimana: persona uguale alle regole → nessuna scelta; da «Senza» a «Con recupero» toglie lo scambio', async () => {
   const page = await mk({ path: '#/' });
   const before = await rowOf(page);

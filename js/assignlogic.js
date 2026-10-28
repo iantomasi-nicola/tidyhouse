@@ -1,6 +1,6 @@
 // Logica pura (nessun DOM) dell'assegnazione manuale della settimana: usata da Actions, dal foglio «Assegna la settimana»
 // e dall'anteprima IA. NON tocca il motore: scrive solo `swap` (le «celle grigie» del foglio Excel).
-import { CHORES, compute } from './engine.js';
+import { CHORES, NOBODY, compute } from './engine.js';
 
 /** Persone presenti (a casa) in una riga del motore. */
 export const presentIds = (row) => (row ? row.nm.filter((id, s) => id && row.pr[s] === 1) : []);
@@ -40,7 +40,7 @@ export function diffAssign(before, after) {
 }
 
 /** Assegnati dopo aver applicato `swap` alle regole. */
-export const applySwap = (ruled, swap) => CHORES.map((c, i) => (swap && swap[c]) || ruled[i] || '');
+export const applySwap = (ruled, swap) => CHORES.map((c, i) => (swap && swap[c] ? (swap[c] === NOBODY ? '' : swap[c]) : ruled[i]) || '');
 
 /** Mansioni per persona in un'assegnazione: { id: [chore, …] }. */
 export function loadOf(assigned) {

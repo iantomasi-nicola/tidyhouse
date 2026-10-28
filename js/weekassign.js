@@ -2,7 +2,7 @@
 // Scrive solo `swap` (come le celle grigie del foglio) tramite ctx.actions.setWeekAssignments: il motore non cambia.
 import { h, icon, avatar, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange } from './i18n.js';
-import { CHORES } from './engine.js';
+import { CHORES, NOBODY } from './engine.js';
 import { presentIds, ruleAssigned, diffAssign, loadOf } from './assignlogic.js';
 import { it, en } from './strings/assign.js';
 
@@ -28,7 +28,7 @@ export function openAssignWeekSheet(ctx, sunday) {
   // terms[c]: 'free' = senza recupero (la persona prende il turno al posto dell'assegnato, nessun debito: swap) | 'repay' = con recupero (l'assegnato resta tale e recupera)
   const terms = {};
   CHORES.forEach((c, i) => {
-    if (row.swapped[i]) { picks[c] = row.assigned[i]; terms[c] = 'free'; }
+    if (row.swapped[i]) { picks[c] = (wkd.swap || {})[c] || row.assigned[i]; terms[c] = 'free'; }
     else if (oldAgreed[c] && oldAgreed[c] !== row.assigned[i] && !row.res[i].kind) { picks[c] = oldAgreed[c]; terms[c] = 'repay'; }
     else { picks[c] = ''; terms[c] = 'free'; }
   });
@@ -36,7 +36,7 @@ export function openAssignWeekSheet(ctx, sunday) {
 
   const nameOr = (id) => (id ? ctx.name(id) : t('assign.nobody'));
   // «con recupero»: per il motore l'assegnato resta quello delle regole (chi pulisce segna «ha pulito»)
-  const effective = (c) => (picks[c] && terms[c] === 'free' ? picks[c] : ruled[CHORES.indexOf(c)]) || '';
+  const effective = (c) => (picks[c] === NOBODY ? '' : (picks[c] && terms[c] === 'free' ? picks[c] : ruled[CHORES.indexOf(c)])) || '';
   const repayOf = (c) => (picks[c] && terms[c] === 'repay' && picks[c] !== ruled[CHORES.indexOf(c)] ? picks[c] : '');
 
   const s = ctx.sheet({ title: t('assign.title'), full: true, body: h('div') });
@@ -45,12 +45,12 @@ export function openAssignWeekSheet(ctx, sunday) {
     const on = (picks[c] || '') === id;
     return h('button', { type: 'button', class: 'wa-opt' + (id ? '' : ' rules'), role: 'radio', 'aria-checked': String(on), 'data-chore': c, 'data-who': id, 'data-testid': `wa-${c}-${id || 'rules'}`,
       onclick: () => { if (busy) return; picks[c] = id && id === ruled[CHORES.indexOf(c)] ? '' : id; confirming = false; draw(`${c}|${picks[c]}`); } },
-    id ? avatar(ctx.name(id), ctx.color(id), 'sm') : null, h('span', { class: 'wa-lbl' }, label), sub ? h('span', { class: 'wa-sub' }, sub) : null);
+    id && id !== NOBODY ? avatar(ctx.name(id), ctx.color(id), 'sm') : id === NOBODY ? icon('x') : null, h('span', { class: 'wa-lbl' }, label), sub ? h('span', { class: 'wa-sub' }, sub) : null);
   }
 
   /** «Senza recupero / Con recupero»: compare solo se la persona scelta non è quella delle regole. */
   function termsPick(c, i) {
-    if (!picks[c] || picks[c] === ruled[i] || !ruled[i]) return null;
+    if (!picks[c] || picks[c] === NOBODY || picks[c] === ruled[i] || !ruled[i]) return null;
     const opt = (k) => h('button', { type: 'button', class: 'wa-term', role: 'radio', 'aria-checked': String(terms[c] === k), 'data-terms': k, 'data-chore': c, 'data-testid': `wa-terms-${c}-${k}`,
       onclick: () => { if (busy) return; terms[c] = k; confirming = false; draw(); } },
     h('span', { class: 'wa-tt' }, t('assign.terms.' + k)), h('span', { class: 'wa-td' }, t('assign.terms.' + k + 'D', { who: ctx.name(picks[c]), from: ctx.name(ruled[i]) })));
@@ -61,12 +61,13 @@ export function openAssignWeekSheet(ctx, sunday) {
     const cur = row.assigned[i];
     // persone selezionabili: presenti (+ chi è assegnato oggi se fosse assente, così resta visibile)
     const ids = [...pres];
-    for (const x of [cur, picks[c]]) if (x && !ids.includes(x)) ids.push(x);
+    for (const x of [cur, picks[c]]) if (x && x !== NOBODY && !ids.includes(x)) ids.push(x);
     const rulesLabel = ruled[i] ? t('assign.rulesWho', { name: ctx.name(ruled[i]) }) : t('assign.rulesNone');
     return h('section', { class: 'wa-card', 'data-chore-card': c },
       h('div', { class: 'wa-head' }, h('div', { class: 'tile sm ' + c }, icon(CHORE_ICON[c])), h('div', { class: 'grow' }, h('div', { class: 't' }, t('chore.' + c)))),
       h('div', { class: 'wa-opts', role: 'radiogroup', 'aria-label': t('assign.group', { chore: t('chore.' + c) }) },
         chipOpt(c, '', rulesLabel),
+        chipOpt(c, NOBODY, t('assign.none')),
         ids.filter((id) => id !== '').map((id) => chipOpt(c, id, ctx.name(id), pres.includes(id) ? '' : t('assign.absent')))),
       termsPick(c, i));
   }

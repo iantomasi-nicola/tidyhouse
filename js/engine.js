@@ -9,6 +9,8 @@
 // Persone identificate per id (nel foglio erano i nomi). Chore: 0=floor 1=bathroom 2=kitchen.
 
 export const CHORES = ['floor', 'bathroom', 'kitchen'];
+/** Valore speciale di `swap[chore]`: l'admin ha deciso che quella mansione, quella settimana, non la fa nessuno (non crea debiti né crediti). */
+export const NOBODY = '-';
 export const DEFAULT_SETTINGS = {
   grace: 1,          // giorni dopo la domenica per registrare i risultati
   minRest: 3,        // minimo di persone a casa per spendere un riposo
@@ -181,7 +183,7 @@ export function compute(house, today, horizon = 12) {
     // swap manuale (celle grigie sovrascritte a mano nel foglio)
     const swap = wk.swap || {};
     const assigned = [0, 1, 2].map((c) => {
-      if (swap[CHORES[c]]) return swap[CHORES[c]];
+      if (swap[CHORES[c]]) return swap[CHORES[c]] === NOBODY ? '' : swap[CHORES[c]];
       return finalAsl[c] ? nm[finalAsl[c] - 1] : '';
     }); // F:H
     const restName = rslot ? nm[rslot - 1] : ''; // BE
