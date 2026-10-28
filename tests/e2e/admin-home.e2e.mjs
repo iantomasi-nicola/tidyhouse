@@ -40,6 +40,7 @@ await test('cambio admin: il dispositivo si blocca e il nuovo PIN sblocca dalla 
   const page = await mk();
   await page.click('[data-testid=home-admin]'); await page.fill('[data-testid=home-admin-pin]', '1111'); await page.press('[data-testid=home-admin-pin]', 'Enter');
   await page.waitForFunction(() => window.__app.isAdmin === true);
+  await page.waitForFunction(() => !document.querySelector('.sheet'), null, { timeout: 4000 });
   await page.goto(env.url + '/#/settings/security'); await page.waitForSelector('[data-testid=newadmin-who]');
   await pause(page);
   await page.selectOption('[data-testid=newadmin-who]', 'bruno'); await page.fill('[data-testid=newadmin-pin]', '2222'); await page.press('[data-testid=newadmin-pin]', 'Enter');
