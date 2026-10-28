@@ -106,7 +106,7 @@ export function planOf(house, sunday, chore) {
   if (!d) return '';
   const e = dayNum(sunday);
   const n = dayNum(d);
-  return n >= e - 6 && n <= e ? d : ''; // deve ricadere nella settimana
+  return n >= e - 6 && n <= e + PLAN_EXTRA_DAYS ? d : ''; // nella settimana o, al più, fino a martedì dopo
 }
 
 // ============ Checklist ricorrenti ============
