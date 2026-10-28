@@ -52,7 +52,10 @@ async function scenario(name, fn) {
 await scenario('elenco: card, corrente evidenziata, scroll automatico, stati', async () => {
   const page = await mk();
   assert.equal(await page.locator('.cal .title').innerText(), 'Settimane');
-  assert.equal(await page.locator('.cal .week').count(), 17, 'da max(0,cur-6) a cur+12');
+  assert.equal(await page.locator('.cal .week').count(), 6, 'corrente + 4 prossime per esteso + la settimana scorsa compatta (le altre passate stanno nei mesi chiusi)');
+  assert.equal(await page.locator('.cal .week.compact').count(), 1);
+  assert.equal(await page.locator('.cal [data-act=month]').count(), 1, 'ottobre: le altre 3 passate');
+  assert.equal(await page.locator('.cal [data-act=month]').getAttribute('aria-expanded'), 'false');
   assert.equal(await page.locator('.week.cur').count(), 1);
   assert.equal(await page.locator('.week.cur').getAttribute('data-sunday'), CUR);
   await page.waitForFunction(() => { const r = document.querySelector('.week.cur').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }, null, { timeout: 3000 }).catch(() => {});   // lo scroll automatico parte dopo due frame
@@ -445,19 +448,25 @@ await scenario('admin: sollecita', async () => {
   await page.close();
 });
 
-await scenario('storico: "Mostra precedenti" mantiene la posizione', async () => {
+await scenario('storico: aprire un mese non sposta la corrente; «Mostra altre» per il futuro', async () => {
   const page = await mk({ houseExtra: { startSunday: '2026-06-07' } });
   assert.equal(await page.locator('.week.cur').getAttribute('data-sunday'), CUR);
   const n0 = await page.locator('.cal .week').count();
-  assert.equal(n0, 19, '6 passate + corrente + 12 prossime');
-  await page.locator('[data-act=show-prev]').scrollIntoViewIfNeeded();
+  assert.equal(n0, 6, 'corrente + 4 prossime + settimana scorsa');
   const topBefore = await page.locator('.week.cur').evaluate((el) => el.getBoundingClientRect().top);
-  await page.locator('[data-act=show-prev]').click();
-  await page.waitForFunction((n) => document.querySelectorAll('.cal .week').length > n, n0);
+  await page.locator('[data-act=month]').first().evaluate((e) => e.scrollIntoView({ block: 'center' }));
+  await page.locator('[data-act=month]').first().click();
   await page.waitForTimeout(300);
-  assert.equal(await page.locator('.cal .week').count(), n0 + 8);
+  assert.ok(await page.locator('.week.compact').count() > 1);
+  await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(200);
   const topAfter = await page.locator('.week.cur').evaluate((el) => el.getBoundingClientRect().top);
   assert.ok(Math.abs(topAfter - topBefore) < 4, `posizione mantenuta (${topBefore} -> ${topAfter})`);
+  await page.locator('[data-act=show-next]').evaluate((e) => e.scrollIntoView({ block: 'center' }));
+  assert.match(await page.locator('[data-act=show-next]').innerText(), /Mostra altre 10 settimane/);
+  await page.locator('[data-act=show-next]').click();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.cal .week.fut').count(), 14, 'tutte le future (4 + 10)');
+  assert.equal(await page.locator('[data-act=show-next]').count(), 0);
   noErrors(page, 'storico');
   await page.close();
 });
@@ -488,7 +497,10 @@ await scenario('inglese', async () => {
   assert.equal(await page.locator('.cal .title').innerText(), 'Weeks');
   assert.match(await page.locator('.week.cur').innerText(), /In progress/);
   assert.match(await page.locator('.week.cur').innerText(), /Floor/i);
-  assert.ok(await page.locator('[data-act=today]').innerText().then((t) => /Go to today/.test(t)));
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); await page.waitForTimeout(300);
+  assert.equal(await page.locator('[data-act=today]').getAttribute('aria-label'), 'Go to today');
+  assert.match(await page.locator('[data-act=today]').innerText(), /Today/);
+  await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(200);
   await openWeek(page);
   assert.match(await topSheet(page).innerText(), /Week 5/);
   await topSheet(page).locator('[data-chore=bathroom]').click();

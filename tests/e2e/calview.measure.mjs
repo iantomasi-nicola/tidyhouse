@@ -36,12 +36,12 @@ let taps = 0, scrollPx = 0;
 for (let guard = 0; guard < 6; guard++) {
   const el = page2.locator(`.week[data-sunday="${TARGET}"]`);
   if (await el.count()) break;
-  const more = page2.locator('[data-act="show-prev"]');
-  if (await more.count()) { await more.first().scrollIntoViewIfNeeded(); await more.first().click(); taps++; await page2.waitForTimeout(450); }
+  const more = page2.locator('[data-act="show-prev"], [data-act="month"][data-month="2026-07"][aria-expanded="false"]');   // prima «Mostra precedenti», dopo il gruppo del mese (giovedì 30 lug)
+  if (await more.count()) { await more.first().evaluate((e) => e.scrollIntoView({ block: 'center' })); await more.first().click(); taps++; await page2.waitForTimeout(450); }
 }
 const t = page2.locator(`.week[data-sunday="${TARGET}"]`);
 const y0 = await page2.evaluate(() => window.scrollY);
-await t.scrollIntoViewIfNeeded();
+await t.evaluate((e) => e.scrollIntoView({ block: 'center' }));
 scrollPx = Math.abs((await page2.evaluate(() => window.scrollY)) - y0);
 await t.click(); taps++;
 await page2.waitForSelector('#layer .sheet.on');
@@ -50,9 +50,9 @@ await page2.keyboard.press('Escape'); await page2.waitForTimeout(500);
 await page2.evaluate(() => window.scrollTo(0, 0));
 const expand = async () => {
   for (let i = 0; i < 40; i++) {
-    const more = page2.locator('[data-act="show-prev"], [data-act="month"][aria-expanded="false"]');
+    const more = page2.locator('[data-act="show-prev"], [data-act="show-months"], [data-act="month"][aria-expanded="false"]');
     if (!(await more.count())) break;
-    await more.first().scrollIntoViewIfNeeded(); await more.first().click({ force: true }); await page2.waitForTimeout(420);
+    await more.first().evaluate((e) => e.scrollIntoView({ block: 'center' })); await more.first().click(); await page2.waitForTimeout(420);
   }
 };
 await expand();

@@ -18,7 +18,7 @@ const MEM_KEY = 'cp:calview';
 
 // stato del modulo (la schermata viene ricostruita a ogni cambio dati)
 let openMonths = loadOpen();   // mesi aperti 'YYYY-MM' (ricordati anche in sessionStorage)
-let futExtra = 0;              // quante tranche «Mostra altre» del futuro sono aperte
+let futExtra = 0;              // quante settimane future in più (dopo le prime) sono mostrate
 let monthsShown = MONTHS_STEP; // quanti mesi passati sono elencati
 let selected = null;           // settimana selezionata nel pannello desktop
 let prevNode = null;           // nodo dell'ultimo render: se non è più nel DOM siamo a una nuova visita
@@ -192,7 +192,7 @@ export async function render(ctx) {
   if (dl) {
     selected = dl;
     const fi = fut.findIndex((r) => r.sunday === dl);
-    if (fi >= FUT_FULL) futExtra = Math.max(futExtra, Math.ceil((fi + 1 - FUT_FULL) / FUT_STEP));
+    if (fi >= FUT_FULL) futExtra = Math.max(futExtra, fi + 1 - FUT_FULL);
     const mk = monthOf(dl);
     if (byMonth.has(mk) && older.some((r) => r.sunday === dl)) {
       openMonths.add(mk); saveOpen();
@@ -212,15 +212,15 @@ export async function render(ctx) {
   // futuro lontano: righe compatte + «Mostra altre N settimane»
   const extraList = h('div', { class: 'list cal-compact', hidden: true });
   let futBtn = null;
-  const futRemaining = () => fut.length - FUT_FULL - futExtra * FUT_STEP;
+  const futRemaining = () => fut.length - FUT_FULL - futExtra;
   const syncFut = () => {
     const rem = futRemaining();
     if (futBtn) { futBtn.remove(); futBtn = null; }
     if (rem > 0) {
-      const k = Math.min(FUT_STEP, rem);
+      const k = rem <= FUT_STEP + 4 ? rem : FUT_STEP;   // niente coda di 1–4 settimane in un altro tocco
       futBtn = h('button', { type: 'button', class: 'btn tonal block cal-more', 'data-act': 'show-next', onclick: () => {
-        const from = FUT_FULL + futExtra * FUT_STEP; futExtra++;
-        extraList.append(...fut.slice(from, from + FUT_STEP).map((r) => weekRow(ctx, r, ropts)));
+        const from = FUT_FULL + futExtra; futExtra += k;
+        extraList.append(...fut.slice(from, from + k).map((r) => weekRow(ctx, r, ropts)));
         extraList.hidden = false;
         syncFut();
       } }, icon('chevron', 'cal-down'), k === 1 ? ctx.t('calview.moreWeeks1') : ctx.t('calview.moreWeeks', { n: k }));
@@ -228,7 +228,7 @@ export async function render(ctx) {
     }
   };
   if (fut.length > FUT_FULL) {
-    extraList.append(...fut.slice(FUT_FULL, FUT_FULL + futExtra * FUT_STEP).map((r) => weekRow(ctx, r, ropts)));
+    extraList.append(...fut.slice(FUT_FULL, FUT_FULL + futExtra).map((r) => weekRow(ctx, r, ropts)));
     extraList.hidden = false;
     list.append(extraList);
   }
