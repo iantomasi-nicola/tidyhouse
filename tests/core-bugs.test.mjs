@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compute, addDays } from '../js/engine.js';
 import { planNotifications, notifMessage } from '../js/extras.js';
-import { MemoryHub, MemoryBackend, Store } from '../js/store.js';
-import { Actions, buildHouse } from '../js/actions.js';
+import { MemoryHub, MemoryBackend, Store, CloudBackend } from '../js/store.js';
+import { Actions, buildHouse, exportBackup, importBackupOps } from '../js/actions.js';
 
 const START = '2026-10-04';
 const wk = (i) => addDays(START, 7 * i);
@@ -135,4 +135,44 @@ test('correggere chi ha pulito: il segno «volontario» non resta su un risultat
   assert.equal((s.state.weeks[W].volunteer || {}).floor, undefined);
   await admin.setResult(W, 'floor', `by:${v}`);
   assert.equal((s.state.weeks[W].volunteer || {}).floor, undefined, 'non si reinventa');
+});
+
+// ---------- cloud: scritture grandi (import di un backup) ----------
+/** Finto Firestore: come quello vero, un batch accetta al massimo 500 scritture e deleteField() solo con merge. */
+function fakeFs() {
+  const DEL = { del: true }; const commits = [];
+  const hasDel = (v) => v === DEL || (!!v && typeof v === 'object' && Object.values(v).some(hasDel));
+  return {
+    commits,
+    deleteField: () => DEL,
+    doc: (db, ...p) => p.join('/'),
+    writeBatch: () => {
+      const ops = [];
+      return {
+        set(ref, data, opt) { if (!(opt && opt.merge) && hasDel(data)) throw new Error('deleteField in set senza merge'); ops.push(['set', ref]); },
+        delete(ref) { ops.push(['del', ref]); },
+        async commit() { if (ops.length > 500) throw new Error('batch > 500'); commits.push(ops.length); },
+      };
+    },
+  };
+}
+const cloudWith = (fs) => { const b = new CloudBackend({}); b.fs = fs; b.db = {}; b.id = 'H'; return b; };
+
+test('cloud: importare un backup grande (più di 500 scritture) non fallisce', async () => {
+  const fs = fakeFs(); const b = cloudWith(fs);
+  const weeks = {}; const log = {};
+  for (let i = 0; i < 120; i++) weeks[addDays(START, 7 * i)] = { result: { floor: 'done' } };
+  for (let i = 0; i < 450; i++) log['L' + i] = { at: '2026-10-01T00:00:00Z', type: 'done', p: {} };
+  const bk = exportBackup({ house: house(), weeks, trips: {}, needs: {}, log, requests: {}, members: {}, views: {} });
+  const ops = importBackupOps(bk, 'H');
+  assert.ok(ops.length > 500);
+  await b.write(ops);
+  assert.equal(fs.commits.reduce((x, n) => x + n, 0), ops.length);
+  assert.ok(fs.commits.every((n) => n <= 500));
+});
+
+test('cloud: una scrittura «set» con valori null non usa deleteField (Firestore lo rifiuta)', async () => {
+  const fs = fakeFs(); const b = cloudWith(fs);
+  await b.write([{ coll: 'house', data: { ...house(), rules: null, ai: { enabled: null } }, set: true }]);
+  assert.equal(fs.commits.length, 1);
 });
