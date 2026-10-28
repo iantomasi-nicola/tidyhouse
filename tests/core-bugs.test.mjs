@@ -137,6 +137,20 @@ test('correggere chi ha pulito: il segno «volontario» non resta su un risultat
   assert.equal((s.state.weeks[W].volunteer || {}).floor, undefined, 'non si reinventa');
 });
 
+test('recuperi e riposi: con risultati nella settimana corrente la correzione vale dalla prossima e balanceRow() lo dice', async () => {
+  const { s, ids, admin, rowAt } = await setupHouse('2026-10-28');
+  const CUR = wk(4), NEXT = wk(5);
+  await s.setDoc('weeks', CUR, { result: { kitchen: 'done' } });
+  const A = ids[1];
+  const shownBefore = admin.balanceRow(); assert.equal(shownBefore.sunday, NEXT);
+  const before = shownBefore.debts[shownBefore.nm.indexOf(A)][0];
+  const r = await admin.adjustBalance(A, { floor: 1 });
+  assert.equal(r.week, NEXT);
+  const cur = rowAt(admin, CUR); const shown = admin.balanceRow();
+  assert.equal(cur.debts[cur.nm.indexOf(A)][0], rowAt(admin, CUR).debts[cur.nm.indexOf(A)][0], 'la settimana corrente non cambia');
+  assert.equal(shown.debts[shown.nm.indexOf(A)][0], before + 1, 'la riga da mostrare sì');
+});
+
 // ---------- cloud: scritture grandi (import di un backup) ----------
 /** Finto Firestore: come quello vero, un batch accetta al massimo 500 scritture e deleteField() solo con merge. */
 function fakeFs() {

@@ -308,13 +308,20 @@ export class Actions {
    * Si scrive in `weeks/{domenica}.adj` (vedi engine.js) sulla settimana corrente se non ha ancora risultati, altrimenti sulla prossima: vale da lì in poi,
    * la storia non cambia. I totali non scendono sotto zero. Ritorna { week, applied, prev } (`applied` = delta davvero applicato, `prev` serve per Annulla).
    */
-  async adjustBalance(personId, delta = {}, { logText = '' } = {}) {
-    this.need(this.admin);
-    const out = this.out(); const rows = out.rows;
+  /**
+   * Riga del motore su cui si scrivono le correzioni (la corrente se non ha risultati, altrimenti la prossima): i numeri da MOSTRARE nel pannello
+   * «Recuperi e riposi» sono i suoi `debts`/`credits`, altrimenti dopo un «+» il numero non cambia (la correzione vale dalla settimana dopo).
+   */
+  balanceRow(out = this.out()) {
+    const rows = out.rows;
     let i = rows.findIndex((r) => r.isCur);
     if (i < 0) i = Math.max(0, rows.findIndex((r) => !r.closed));
     if (rows[i] && rows[i].res.some((x) => x.kind)) i++;
-    const row = rows[i]; if (!row) throw new Error('invalid');
+    return rows[i] || null;
+  }
+  async adjustBalance(personId, delta = {}, { logText = '' } = {}) {
+    this.need(this.admin);
+    const row = this.balanceRow(); if (!row) throw new Error('invalid');
     const slot = row.nm.indexOf(personId); if (slot < 0) throw new Error('invalid');
     const cur = { ...((this.weekDoc(row.sunday).adj || {})[personId] || {}) };
     const applied = {}; const next = { ...cur };
