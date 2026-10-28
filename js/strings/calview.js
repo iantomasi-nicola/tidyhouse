@@ -12,6 +12,9 @@ export const it = {
   'calview.moreWeeks': 'Mostra altre {n} settimane',
   'calview.moreWeeks1': 'Mostra 1 altra settimana',
   'calview.moreMonths': 'Mostra mesi precedenti',
+  'calview.prevWeek': 'Settimana precedente',
+  'calview.nextWeek': 'Settimana successiva',
+  'calview.keyHint': 'Frecce su/giù per scorrere le settimane',
 };
 
 export const en = {
@@ -26,4 +29,7 @@ export const en = {
   'calview.moreWeeks': 'Show {n} more weeks',
   'calview.moreWeeks1': 'Show 1 more week',
   'calview.moreMonths': 'Show earlier months',
+  'calview.prevWeek': 'Previous week',
+  'calview.nextWeek': 'Next week',
+  'calview.keyHint': 'Up/down arrow keys move between weeks',
 };

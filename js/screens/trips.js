@@ -78,8 +78,9 @@ export async function render(ctx) {
 
   const today = ctx.today();
   const minN = minNightsOf(ctx);
+  // prima l'azione (nuova assenza), poi la regola che la spiega
+  page.append(h('div', { class: 'trips-cta' }, h('button', { class: 'btn lg block', type: 'button', 'data-act': 'trip-add', onclick: () => openTripSheet(ctx) }, icon('plus'), t('trips.add'))));
   page.append(h('div', { class: 'note' }, icon('info'), h('div', null, t('trips.rule', { n: minN }), ' ', h('span', { class: 'muted' }, t('trips.deadlineFri')))));
-  page.append(h('div', { class: 'trips-cta' }, h('button', { class: 'btn lg block', type: 'button', onclick: () => openTripSheet(ctx) }, icon('plus'), t('trips.add'))));
 
   const trips = Object.entries(ctx.state.trips || {}).map(([id, tr]) => ({ id, ...tr })).filter((tr) => validDate(tr.from));
   const groups = { now: [], upcoming: [], past: [] };
