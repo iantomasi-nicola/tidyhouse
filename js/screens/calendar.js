@@ -21,7 +21,9 @@ let openMonths = loadOpen();   // mesi aperti 'YYYY-MM' (ricordati anche in sess
 let futExtra = 0;              // quante settimane future in più (dopo le prime) sono mostrate
 let monthsShown = MONTHS_STEP; // quanti mesi passati sono elencati
 let selected = null;           // settimana selezionata nel pannello desktop
-let prevNode = null;           // nodo dell'ultimo render: se non è più nel DOM siamo a una nuova visita
+let prevNode = null;           // nodo dell'ultimo render: se era montato e non lo è più siamo a una nuova visita
+let prevMounted = false;       // il nodo dell'ultimo render è arrivato nel DOM (un render scartato dall'app non conta come visita)
+let visit = null;              // visita in corso finché il suo nodo non è montato: {back}
 let lastY = 0;                 // ultimo scroll visto sul calendario (per il ritorno con «indietro»)
 let popAt = -1e9;              // quando è partito l'ultimo popstate (tasto indietro)
 let mq = null, io = null;
@@ -176,9 +178,13 @@ export async function render(ctx) {
   const wide = window.matchMedia(WIDE).matches;
   if (!mq) { mq = window.matchMedia(WIDE); mq.addEventListener('change', () => { if (document.querySelector('.cal')) ctx.rerender(); }); }
 
-  const newVisit = !prevNode || !prevNode.isConnected;
-  const back = newVisit && performance.now() - popAt < 1500;   // ritorno con «indietro»: si mantengono mesi aperti, tranche e scroll
-  if (newVisit) { selected = null; if (!back) { futExtra = 0; monthsShown = MONTHS_STEP; } }
+  // nuova visita = prima volta, oppure il nodo precedente era montato e ora non c'è più. Un render scartato dall'app (mai montato) non la azzera.
+  if (!prevNode || (prevMounted && !prevNode.isConnected)) {
+    visit = { back: performance.now() - popAt < 800 };   // ritorno con «indietro» (o dal menu: anche lì scatta popstate): si mantengono mesi aperti, tranche e scroll
+    if (!visit.back) { futExtra = 0; monthsShown = MONTHS_STEP; }
+    selected = null;
+  }
+  const back = !!(visit && visit.back);
   if (!selected || !rows.some((r) => r.sunday === selected)) selected = cur >= 0 ? rows[cur].sunday : (rows[0] || {}).sunday;
 
   const fut = cur >= 0 ? rows.slice(cur + 1) : rows.slice();
@@ -267,12 +273,13 @@ export async function render(ctx) {
 
   const panel = wide && selected ? h('aside', { class: 'cal-panel card', 'aria-label': ctx.t('cal.title') }, renderWeekDetail(ctx, selected, { heading: true })) : null;
   const node = h('div', { class: 'cal' }, head, legend, notStarted, h('div', { class: 'cal-layout' }, list, panel), todayBtn ? h('div', { class: 'cal-today-wrap' }, todayBtn) : null);
-  prevNode = node;
+  prevNode = node; prevMounted = false;
   syncFut();   // «Mostra altre N settimane» va subito dopo la lista compatta del futuro
 
   // dopo l'inserimento nel DOM: ritorno con «indietro» (scroll), deep link, pulsante «Oggi»
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if (!node.isConnected) return;
+    if (prevNode === node) { prevMounted = true; visit = null; }   // solo se è ancora l'ultimo nodo creato
     if (dl) {
       clearDeepLink();
       const el = node.querySelector(`.week[data-sunday="${dl}"]`);
