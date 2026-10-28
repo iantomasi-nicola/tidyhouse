@@ -65,6 +65,23 @@ test('notifiche: turno passato a un altro (agreed) → i promemoria vanno a chi 
   assert.ok(!late.some((x) => x.personId === X && x.chores.includes('floor')));
 });
 
+test('notifiche: «Nessuno questa settimana» non genera promemoria né solleciti; l\'assegnato assente li riceve', () => {
+  const h = house({ adminIds: ['A'], notif: { adminDigest: { on: true } } });
+  const W = wk(4);
+  const base = compute({ ...h, weeks: {} }, '2026-10-31', 2).rows[4];
+  const weeks = { [W]: { swap: { floor: '-' } } };
+  const all = [...planNotifications({ house: h, weeks, now: new Date('2026-10-31T09:15:00Z') }), ...planNotifications({ house: h, weeks, now: new Date('2026-11-02T09:10:00Z') })];
+  assert.ok(all.length > 0);
+  assert.ok(all.every((x) => !(x.chores || []).includes('floor')), 'nessuna notifica per la mansione senza nessuno');
+  assert.ok(all.every((x) => x.personId), 'nessuna notifica senza destinatario');
+  const dig = planNotifications({ house: h, weeks, now: new Date('2026-11-02T08:40:00Z') }).find((x) => x.type === 'adminDigest');
+  assert.equal(dig.n, 2, 'il riepilogo non conta la mansione senza nessuno');
+  // assegnata a mano a chi è via: il promemoria arriva comunque a lei (è il suo turno)
+  const away = ['A', 'B', 'C'].find((id) => id !== base.assigned[1]);
+  const w2 = { [W]: { away: [away], swap: { bathroom: away } } };
+  assert.ok(planNotifications({ house: h, weeks: w2, now: new Date('2026-10-31T09:15:00Z') }).some((x) => x.type === 'satDuty' && x.personId === away && x.chores.includes('bathroom')));
+});
+
 // ---------- azioni: recupero programmato, correzione dei risultati ----------
 async function setupHouse(now) {
   const hub = new MemoryHub();
@@ -149,6 +166,37 @@ test('recuperi e riposi: con risultati nella settimana corrente la correzione va
   const cur = rowAt(admin, CUR); const shown = admin.balanceRow();
   assert.equal(cur.debts[cur.nm.indexOf(A)][0], rowAt(admin, CUR).debts[cur.nm.indexOf(A)][0], 'la settimana corrente non cambia');
   assert.equal(shown.debts[shown.nm.indexOf(A)][0], before + 1, 'la riga da mostrare sì');
+});
+
+test('permessi: tutte le azioni riservate all\'admin rifiutano chi non è admin, senza scrivere nulla', async () => {
+  const { s, ids, as } = await setupHouse('2026-10-28');
+  const u = as(ids[1]); const W = wk(4);
+  const before = JSON.stringify(s.state);
+  const calls = [
+    () => u.setWeekAssignments(W, { floor: '-' }), () => u.adjustBalance(ids[0], { floor: 1 }), () => u.restoreAdjust(W, ids[0], {}),
+    () => u.setBadgeOff(ids[0], 'tr', true), () => u.setResult(W, 'floor', 'skipped'), () => u.setResult(wk(3), 'floor', `skipped:${ids[2]}`),
+    () => u.assignCover(W, 'floor', ids[2]), () => u.setSwap(W, { floor: ids[2] }), () => u.clearSwap(W), () => u.setEveryoneAway(W, true),
+    () => u.setHouse({ name: 'x' }), () => u.setRoommates([]), () => u.changeAdmin({ personId: ids[1], pin: '9999' }), () => u.testAll(),
+    () => u.expireStaleRequests(), () => u.saveShared([]), () => u.rotateCode(),
+  ];
+  for (const f of calls) await assert.rejects(f, /permission/);
+  assert.equal(JSON.stringify(s.state), before);
+});
+
+test('scambio di turno: non si accetta due volte, né se è già stato rifiutato, né se nel frattempo i turni sono cambiati', async () => {
+  const { s, ids, admin, as, rowAt } = await setupHouse('2026-10-28');
+  const W = wk(5);
+  const r = rowAt(admin, W); const A = r.assigned[0], B = r.assigned[1];
+  const id = await as(A).requestSwap({ week: W, myChore: 'floor', otherId: B, otherChore: 'bathroom' });
+  await as(B).answerSwap(id, false);
+  await assert.rejects(() => as(B).answerSwap(id, true), /permission|expired/, 'rifiutato: non si può più accettare (es. vecchia notifica)');
+  assert.equal(rowAt(admin, W).assigned[0], A);
+  const id2 = await as(A).requestSwap({ week: W, myChore: 'floor', otherId: B, otherChore: 'bathroom' });
+  const C = ids.find((x) => x !== A && x !== B);
+  await admin.setWeekAssignments(W, { floor: C, bathroom: B, kitchen: rowAt(admin, W).assigned[2] });   // l'admin ha dato pavimenti a C
+  await assert.rejects(() => as(B).answerSwap(id2, true), /expired/, 'A non ha più pavimenti: lo scambio non vale più');
+  assert.equal(rowAt(admin, W).assigned[0], C, 'C non perde il turno per uno scambio vecchio');
+  assert.ok(s.state.requests[id2]);
 });
 
 // ---------- cloud: scritture grandi (import di un backup) ----------

@@ -366,8 +366,11 @@ export class Actions {
   }
   async answerSwap(reqId, accept) {
     const rq = this.s.state.requests[reqId]; this.need(rq && (rq.to === this.me || this.admin));
+    this.need(rq.status === 'pending');                       // già accettato/rifiutato (es. vecchia notifica, doppio tocco)
     if (!accept) return this.s.setDoc('requests', reqId, { status: 'declined', answeredAt: this.ctx.now().toISOString() });
     const row = this.row(rq.week); this.need(!!row);
+    // settimana chiusa, o nel frattempo i turni sono cambiati (l'admin ha riassegnato): lo scambio toglierebbe il turno a un terzo
+    if (isRequestStale(rq, this.out().rows, this.today()) || row.assigned[CHORES.indexOf(rq.fromChore)] !== rq.from || row.assigned[CHORES.indexOf(rq.toChore)] !== rq.to) throw new Error('expired');
     const patch = swapPatch(row, { chore: rq.fromChore, personId: rq.from }, { chore: rq.toChore, personId: rq.to });
     await this.s.setDoc('weeks', rq.week, { swap: patch });
     await this.s.setDoc('requests', reqId, { status: 'accepted', answeredAt: this.ctx.now().toISOString() });
