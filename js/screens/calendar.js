@@ -2,7 +2,7 @@
 // richiudibili (chiuse di default) con riepilogo di una riga; «Mostra altre» per il futuro lontano; pulsante «Oggi».
 // Su desktop (>=1180px) affianca alla lista il dettaglio della settimana selezionata.
 // Deep link: #/calendar?week=YYYY-MM-DD (qualsiasi giorno della settimana) apre il mese giusto, scorre fin lì e apre la scheda.
-import { h, icon, avatar } from '../ui.js';
+import { h, icon, avatar, loadCss } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES } from '../engine.js';
 import { planOf } from '../extras.js';
@@ -11,7 +11,8 @@ import { it as itV, en as enV } from '../strings/calview.js';
 registerStrings(itV, enV);
 
 const WIDE = '(min-width: 1180px)';
-const FUT_FULL = 4;        // prossime settimane mostrate per esteso (dopo la corrente)
+const FUT_FULL = 4;        // prossime settimane mostrate per esteso (dopo la corrente); su desktop 0: righe compatte, ne stanno di più
+const FUT_WIDE = 8;        // su desktop le prossime settimane compaiono subito come righe compatte
 const FUT_STEP = 8;        // «Mostra altre N settimane»
 const MONTHS_STEP = 6;     // mesi passati mostrati per volta
 const MEM_KEY = 'cp:calview';
@@ -21,6 +22,9 @@ let openMonths = loadOpen();   // mesi aperti 'YYYY-MM' (ricordati anche in sess
 let futExtra = 0;              // quante settimane future in più (dopo le prime) sono mostrate
 let monthsShown = MONTHS_STEP; // quanti mesi passati sono elencati
 let selected = null;           // settimana selezionata nel pannello desktop
+let needShow = null;           // settimana da portare in vista dopo un rifacimento (frecce del pannello)
+let selectFn = null;           // selezione sul posto (senza rifare la pagina) dell'ultimo render
+let panelY = 0, panelFor = null;   // scroll interno del pannello desktop (si ripristina se si ridisegna la stessa settimana)
 let prevNode = null;           // nodo dell'ultimo render: se era montato e non lo è più siamo a una nuova visita
 let prevMounted = false;       // il nodo dell'ultimo render è arrivato nel DOM (un render scartato dall'app non conta come visita)
 let visit = null;              // visita in corso finché il suo nodo non è montato: {back}
@@ -63,7 +67,7 @@ export function summarize(rows) {
 
 const openOrSelect = (ctx, sunday) => {
   ctx.haptic(ctx.prefs.haptics, 6);
-  if (window.matchMedia(WIDE).matches) { selected = sunday; ctx.rerender(); } else openWeekSheet(ctx, sunday);
+  if (window.matchMedia(WIDE).matches) { if (selectFn) selectFn(sunday); else { selected = sunday; ctx.rerender(); } } else openWeekSheet(ctx, sunday);
 };
 
 /** Scheda completa (corrente e prossime). */
@@ -71,7 +75,7 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
   const stat = weekStatus(ctx, row);
   const wkDoc = (ctx.state.weeks || {})[row.sunday] || {};
   const range = fmtWeekRange(row.sunday, ctx.lang);
-  const isSel = wide && selectedSunday === row.sunday;
+  const isSel = wide && selected === row.sunday;
   const house = { ...ctx.house, weeks: ctx.state.weeks || {} };
   const empty = row.status === 'empty' || row.status === 'none';
 
@@ -102,7 +106,7 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
 
   return h('button', {
     type: 'button', class: 'week' + (row.isCur ? ' cur' : '') + (row.closed ? ' past' : '') + (row.isFut ? ' fut' : '') + (isSel ? ' sel' : '') + (empty ? ' empty' : ''),
-    'data-sunday': row.sunday, 'aria-label': `${range}, ${stat.label}`, 'aria-current': row.isCur ? 'date' : null,
+    'data-sunday': row.sunday, 'aria-label': `${range}, ${stat.label}`, 'aria-current': row.isCur ? 'date' : null, 'aria-pressed': wide ? String(isSel) : null,
     onclick: () => openOrSelect(ctx, row.sunday),
   },
   h('span', { class: 'wk-head' },
@@ -129,6 +133,7 @@ function weekRow(ctx, row, { wide, selectedSunday }) {
       h('i', { class: 'dot ' + chore }),
       h('span', { class: 'n' + (id ? '' : ' none') }, id ? ctx.name(id) : (empty ? '' : ctx.t('chore.noOne'))),
       oc ? h('span', { class: 'ind ' + oc.tone, title: oc.label }, icon(oc.ic)) : (id && row.isMakeup[c] ? h('span', { class: 'ind acc', title: ctx.t('st.makeup') }, icon('refresh')) : null),
+      id && row.swapped[c] ? h('span', { class: 'ind acc', title: ctx.t('st.swapped') }, icon('swap')) : null,
       fl.filter((f) => f.key !== 'incomplete').map((f) => h('span', { class: 'ind ' + f.tone, title: f.text, 'aria-label': f.text, 'data-flow': f.key }, icon(f.ic))));
   });
   const extra = [];
@@ -136,8 +141,8 @@ function weekRow(ctx, row, { wide, selectedSunday }) {
   if (row.away.length && !empty) extra.push(h('span', { class: 'ind', title: ctx.t('cal.awayNames', { names: row.away.map((id) => ctx.name(id)).join(', ') }) }, icon('plane')));
   if (incomplete.length) extra.push(h('span', { class: 'ind bad', 'data-flow': 'incomplete', title: ctx.t('flow.incompleteIn', { chores: incomplete.join(', ') }) }, icon('alert')));
   return h('button', {
-    type: 'button', class: 'week compact' + (row.isFut ? ' fut' : '') + (wide && selectedSunday === row.sunday ? ' sel' : '') + (empty ? ' empty' : ''),
-    'data-sunday': row.sunday, 'aria-label': `${range}, ${stat.label}`, title: ctx.t('cal.week', { n: row.P }),
+    type: 'button', class: 'week compact' + (row.isFut ? ' fut' : '') + (wide && selected === row.sunday ? ' sel' : '') + (empty ? ' empty' : ''),
+    'data-sunday': row.sunday, 'aria-label': `${range}, ${stat.label}`, title: ctx.t('cal.week', { n: row.P }), 'aria-pressed': wide ? String(selected === row.sunday) : null,
     onclick: () => openOrSelect(ctx, row.sunday),
   },
   h('span', { class: 'wk-head' }, h('span', { class: 'grow' }, h('span', { class: 'wk-title' }, range)), extra, h('span', { class: 'chip ' + stat.tone }, stat.label)),
@@ -172,6 +177,7 @@ function monthGroup(ctx, key, rowsAsc, ropts) {
 }
 
 export async function render(ctx) {
+  loadCss('css/calendar-screen.css');
   const { out } = ctx.calc;
   const rows = out.rows;
   const cur = out.cur;
@@ -184,6 +190,8 @@ export async function render(ctx) {
     if (!visit.back) { futExtra = 0; monthsShown = MONTHS_STEP; }
     selected = null;
   }
+  const nFull = wide ? 0 : FUT_FULL;
+  if (wide && futExtra < FUT_WIDE) futExtra = FUT_WIDE;
   const back = !!(visit && visit.back);
   if (!selected || !rows.some((r) => r.sunday === selected)) selected = cur >= 0 ? rows[cur].sunday : (rows[0] || {}).sunday;
 
@@ -195,18 +203,18 @@ export async function render(ctx) {
   for (const r of older) { const k = monthOf(r.sunday); if (!byMonth.has(k)) byMonth.set(k, []); byMonth.get(k).push(r); }
   const monthKeys = [...byMonth.keys()].sort().reverse();   // dal più recente
 
-  // deep link: apre quello che serve per rendere visibile la settimana
-  const dl = deepLinkWeek(rows);
-  if (dl) {
-    selected = dl;
-    const fi = fut.findIndex((r) => r.sunday === dl);
-    if (fi >= FUT_FULL) futExtra = Math.max(futExtra, fi + 1 - FUT_FULL);
-    const mk = monthOf(dl);
-    if (byMonth.has(mk) && older.some((r) => r.sunday === dl)) {
+  // apre quello che serve per rendere visibile una settimana (deep link, frecce del pannello)
+  const reveal = (d) => {
+    const fi = fut.findIndex((r) => r.sunday === d);
+    if (fi >= nFull) futExtra = Math.max(futExtra, fi + 1 - nFull);
+    const mk = monthOf(d);
+    if (byMonth.has(mk) && older.some((r) => r.sunday === d)) {
       openMonths.add(mk); saveOpen();
       monthsShown = Math.max(monthsShown, Math.ceil((monthKeys.indexOf(mk) + 1) / MONTHS_STEP) * MONTHS_STEP);
     }
-  }
+  };
+  const dl = deepLinkWeek(rows);
+  if (dl) { selected = dl; reveal(dl); }
 
   const ropts = { wide, selectedSunday: selected };
   const list = h('div', { class: 'cal-list' });
@@ -214,20 +222,20 @@ export async function render(ctx) {
   const grouped = cur >= 0;
 
   if (grouped) list.append(eyebrow('cal.current'), weekCard(ctx, rows[cur], ropts));
-  const nextFull = fut.slice(0, FUT_FULL);
+  const nextFull = fut.slice(0, nFull);
   if (nextFull.length) { if (grouped) list.append(eyebrow('cal.nextWeeks')); list.append(...nextFull.map((r) => weekCard(ctx, r, ropts))); }
 
   // futuro lontano: righe compatte + «Mostra altre N settimane»
   const extraList = h('div', { class: 'list cal-compact', hidden: true });
   let futBtn = null;
-  const futRemaining = () => fut.length - FUT_FULL - futExtra;
+  const futRemaining = () => fut.length - nFull - futExtra;
   const syncFut = () => {
     const rem = futRemaining();
     if (futBtn) { futBtn.remove(); futBtn = null; }
     if (rem > 0) {
       const k = rem <= FUT_STEP + 4 ? rem : FUT_STEP;   // niente coda di 1–4 settimane in un altro tocco
       futBtn = h('button', { type: 'button', class: 'btn tonal block cal-more', 'data-act': 'show-next', onclick: () => {
-        const from = FUT_FULL + futExtra; futExtra += k;
+        const from = nFull + futExtra; futExtra += k;
         extraList.append(...fut.slice(from, from + k).map((r) => weekRow(ctx, r, ropts)));
         extraList.hidden = false;
         syncFut();
@@ -235,9 +243,10 @@ export async function render(ctx) {
       extraList.after(futBtn);
     }
   };
-  if (fut.length > FUT_FULL) {
-    extraList.append(...fut.slice(FUT_FULL, FUT_FULL + futExtra).map((r) => weekRow(ctx, r, ropts)));
+  if (fut.length > nFull) {
+    extraList.append(...fut.slice(nFull, nFull + futExtra).map((r) => weekRow(ctx, r, ropts)));
     extraList.hidden = false;
+    if (!nextFull.length && grouped) list.append(eyebrow('cal.nextWeeks'));
     list.append(extraList);
   }
 
@@ -271,8 +280,43 @@ export async function render(ctx) {
   // «Oggi»: compare solo quando la settimana corrente non è in vista, ancorato in basso sopra la barra di navigazione
   const todayBtn = cur >= 0 ? h('button', { type: 'button', class: 'btn tonal cal-today', 'data-act': 'today', hidden: true, 'aria-label': ctx.t('cal.goToday'), onclick: () => goToday(ctx) }, icon('calendar'), ctx.t('today')) : null;
 
-  const panel = wide && selected ? h('aside', { class: 'cal-panel card', 'aria-label': ctx.t('cal.title') }, renderWeekDetail(ctx, selected, { heading: true })) : null;
-  const node = h('div', { class: 'cal' }, head, legend, notStarted, h('div', { class: 'cal-layout' }, list, panel), todayBtn ? h('div', { class: 'cal-today-wrap' }, todayBtn) : null);
+  // pannello desktop: intestazione fissa (settimana precedente/successiva) + dettaglio (renderWeekDetail, di choresheet.js) che scorre per conto suo
+  const panel = wide && selected ? h('aside', { class: 'cal-panel card', 'aria-label': ctx.t('cal.title') }) : null;
+  const panelHead = () => {
+    const i = rows.findIndex((r) => r.sunday === selected);
+    const step = (k) => h('button', { type: 'button', class: 'icon-btn cal-step', 'data-act': k < 0 ? 'wk-prev' : 'wk-next', disabled: !rows[i + k] || null, 'aria-label': ctx.t(k < 0 ? 'calview.prevWeek' : 'calview.nextWeek'), title: ctx.t(k < 0 ? 'calview.prevWeek' : 'calview.nextWeek'),
+      onclick: () => rows[i + k] && selectWeek(rows[i + k].sunday, { scroll: true }) }, icon('chevron', k < 0 ? 'cal-flip' : ''));
+    return h('div', { class: 'cal-panelhead' }, step(-1), h('h2', { class: 'wd-title' }, fmtWeekRange(selected, ctx.lang)), step(1));
+  };
+  const fillPanel = () => { if (panel) panel.replaceChildren(panelHead(), h('div', { class: 'cal-panelbody' }, renderWeekDetail(ctx, selected, { heading: false }))); };
+  if (panel) {
+    fillPanel();
+    panel.addEventListener('scroll', () => { panelY = panel.scrollTop; panelFor = selected; }, { passive: true });
+  }
+  /** Selezione sul posto (desktop): niente rifacimento della pagina, quindi scroll della lista e fuoco restano dove sono. */
+  const selectWeek = (sun, { focus = false, scroll = false } = {}) => {
+    if (!node.isConnected || !panel || !rows.some((r) => r.sunday === sun)) { selected = sun; ctx.rerender(); return; }
+    selected = sun; reveal(sun);
+    const el = node.querySelector(`.week[data-sunday="${sun}"]`);
+    if (!el) { needShow = sun; ctx.rerender(); return; }   // settimana in un gruppo chiuso o oltre quelle mostrate: la pagina si rifà con il gruppo aperto
+    node.querySelectorAll('.week.sel').forEach((x) => { x.classList.remove('sel'); x.setAttribute('aria-pressed', 'false'); });
+    el.classList.add('sel'); el.setAttribute('aria-pressed', 'true');
+    panelY = 0; panelFor = sun; fillPanel(); panel.scrollTop = 0;
+    if (focus) { try { el.focus({ preventScroll: true }); } catch { /* ignore */ } }
+    if (focus || scroll) el.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  };
+  selectFn = (sun) => selectWeek(sun);
+  // tastiera (desktop): frecce su/giù, Home/Fine tra le settimane visibili; la selezione segue il fuoco
+  list.addEventListener('keydown', (e) => {
+    if (!wide || e.altKey || e.ctrlKey || e.metaKey || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    const cur2 = e.target && e.target.closest ? e.target.closest('.week[data-sunday]') : null; if (!cur2) return;
+    const all = [...list.querySelectorAll('.week[data-sunday]')]; const i = all.indexOf(cur2);
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : i + (e.key === 'ArrowDown' ? 1 : -1);
+    if (!all[to]) return;
+    e.preventDefault(); selectWeek(all[to].dataset.sunday, { focus: true });
+  });
+  const keyHint = wide ? h('p', { class: 'cal-keyhint small muted' }, ctx.t('calview.keyHint')) : null;
+  const node = h('div', { class: 'cal' }, head, legend, keyHint, notStarted, h('div', { class: 'cal-layout' }, list, panel), todayBtn ? h('div', { class: 'cal-today-wrap' }, todayBtn) : null);
   prevNode = node; prevMounted = false;
   syncFut();   // «Mostra altre N settimane» va subito dopo la lista compatta del futuro
 
@@ -280,6 +324,7 @@ export async function render(ctx) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     if (!node.isConnected) return;
     if (prevNode === node) { prevMounted = true; visit = null; }   // solo se è ancora l'ultimo nodo creato
+    if (panel && panelFor === selected && panelY) panel.scrollTop = panelY;
     if (dl) {
       clearDeepLink();
       const el = node.querySelector(`.week[data-sunday="${dl}"]`);
@@ -288,6 +333,9 @@ export async function render(ctx) {
         el.classList.add('hl'); setTimeout(() => el.classList.remove('hl'), 2200);
         if (!wide && !document.querySelector('#layer .sheet')) openWeekSheet(ctx, dl);
       }
+    } else if (needShow) {
+      const el = node.querySelector(`.week[data-sunday="${needShow}"]`); needShow = null;
+      if (el) el.scrollIntoView({ block: 'center', behavior: 'auto' });
     } else if (back) window.scrollTo(0, lastY);
     if (io) { io.disconnect(); io = null; }
     const curEl = node.querySelector('.week.cur');
@@ -301,8 +349,8 @@ export async function render(ctx) {
 
 function goToday(ctx) {
   const cur = ctx.calc.out.cur; if (cur < 0) return;
-  selected = ctx.calc.out.rows[cur].sunday;
+  const sun = ctx.calc.out.rows[cur].sunday;
   const smooth = !ctx.prefs.reduceMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   window.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });
-  if (window.matchMedia(WIDE).matches) ctx.rerender();
+  if (window.matchMedia(WIDE).matches && selectFn) selectFn(sun); else { selected = sun; if (window.matchMedia(WIDE).matches) ctx.rerender(); }
 }

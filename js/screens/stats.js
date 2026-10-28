@@ -117,7 +117,8 @@ function rankingCard(ctx, st, view, mode, canSwitch, showStats, showRank) {
       h('button', { class: 'btn soft sm', type: 'button', id: 'stats-share', onclick: () => openShare(ctx, st, view, showRank) }, icon('share'), t('stats.share'))));
   const card = h('div', { class: 'card rank-card' }, head);
   if (mode === 'effort') card.append(h('p', { class: 'small muted' }, t('stats.effortHint', { f: st.effort.floor, b: st.effort.bathroom, k: st.effort.kitchen })), h('p', { class: 'small muted mx-pen', 'data-testid': 'pen-rule' }, t('moreY.pen.rule', { pts: penPts(ctx, ctx.house) })));
-  if (people.length >= 3 && max > 0) card.append(podium(ctx, people.slice(0, 3), unit));
+  // il podio ripete i primi tre della lista: lo si mostra solo se serve a distinguerli (a pari merito non dice nulla)
+  if (people.length >= 3 && max > 0 && new Set(people.slice(0, 3).map((p) => p.pos)).size > 1) card.append(podium(ctx, people.slice(0, 3), unit));
   const list = h('ol', { class: 'rank-list' });
   for (const p of people) {
     const pct = max > 0 ? Math.max(p.score > 0 ? 4 : 0, Math.round((100 * p.score) / max)) : 0;
