@@ -4,6 +4,9 @@ import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, cleanNo
 import { engineHouse } from './store.js';
 import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
 
+/** Patch completo di una correzione {floor,bathroom,kitchen,credit}: i campi assenti diventano null (con il merge profondo cancellano il valore). */
+const adjPatch = (o) => Object.fromEntries([...CHORES, 'credit'].map((k) => [k, Number(o[k]) || null]));
+
 // ---------- PIN admin ----------
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 export async function hashPin(pin, salt) {
@@ -280,6 +283,39 @@ export class Actions {
     await this.s.setDoc('weeks', sunday, { swap: Object.keys(swap).length ? patch : null });
     await this.log('assign', { week: sunday, text: logText || changes.map((x) => `${x.chore}: ${x.to}`).join(', ') || sunday, n: changes.length });
     return { prev, swap, changes };
+  }
+  /**
+   * Correzione manuale (solo admin) di recuperi e riposi di una persona: `delta` = { floor, bathroom, kitchen, credit } (interi, + aggiunge, − toglie).
+   * Si scrive in `weeks/{domenica}.adj` (vedi engine.js) sulla settimana corrente se non ha ancora risultati, altrimenti sulla prossima: vale da lì in poi,
+   * la storia non cambia. I totali non scendono sotto zero. Ritorna { week, applied, prev } (`applied` = delta davvero applicato, `prev` serve per Annulla).
+   */
+  async adjustBalance(personId, delta = {}, { logText = '' } = {}) {
+    this.need(this.admin);
+    const out = this.out(); const rows = out.rows;
+    let i = rows.findIndex((r) => r.isCur);
+    if (i < 0) i = Math.max(0, rows.findIndex((r) => !r.closed));
+    if (rows[i] && rows[i].res.some((x) => x.kind)) i++;
+    const row = rows[i]; if (!row) throw new Error('invalid');
+    const slot = row.nm.indexOf(personId); if (slot < 0) throw new Error('invalid');
+    const cur = { ...((this.weekDoc(row.sunday).adj || {})[personId] || {}) };
+    const applied = {}; const next = { ...cur };
+    const have = { ...Object.fromEntries(CHORES.map((c, k) => [c, row.debts[slot][k]])), credit: Math.max(0, row.credits[slot]) };
+    for (const k of [...CHORES, 'credit']) {
+      const d = Math.trunc(+delta[k]) || 0; if (!d) continue;
+      const a = Math.max(-have[k], Math.min(d, 99));        // non scendere sotto zero
+      if (!a) continue;
+      applied[k] = a; next[k] = (Number(cur[k]) || 0) + a;
+      if (!next[k]) delete next[k];
+    }
+    if (!Object.keys(applied).length) return { week: row.sunday, applied, prev: cur };
+    await this.s.setDoc('weeks', row.sunday, { adj: { [personId]: adjPatch(next) } });
+    await this.log('adjust', { week: row.sunday, who: personId, text: logText || Object.entries(applied).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(', ') });
+    return { week: row.sunday, applied, prev: cur };
+  }
+  /** Annulla un adjustBalance (ripristina la correzione precedente di quella persona in quella settimana). */
+  async restoreAdjust(week, personId, prev) {
+    this.need(this.admin);
+    await this.s.setDoc('weeks', week, { adj: { [personId]: adjPatch(prev || {}) } });
   }
   async toggleTask(sunday, taskId, chore, done) {
     this.need(this.canTask(sunday, chore));

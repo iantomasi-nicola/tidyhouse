@@ -89,6 +89,7 @@ export function compute(house, today, horizon = 12) {
     sbP: new Map(), sbB: new Map(), sbC: new Map(),     // FF FG FH  (debito da "Skipped (Name)")
     dpP: new Map(), dpB: new Map(), dpC: new Map(),     // FI FJ FK  (debito pagato)
     cov: new Map(),                                     // FO+FP+FQ  (volte che ha pulito per altri)
+    adjCr: new Map(),                                   // correzioni manuali dell'admin ai crediti di riposo (non è nel foglio)
     ru: new Map(),                                      // FR        (riposi usati)
   };
   const lastClean = [lastMap(), lastMap(), lastMap()];  // ultimo P in cui ha pulito (EZ/FA/FB)
@@ -100,7 +101,7 @@ export function compute(house, today, horizon = 12) {
 
   const debt = (chore, id) => {
     const [a, b, c] = [['daP', 'sbP', 'dpP'], ['daB', 'sbB', 'dpB'], ['daC', 'sbC', 'dpC']][chore];
-    return cnt(C[a], id) + cnt(C[b], id) - cnt(C[c], id);
+    return Math.max(0, cnt(C[a], id) + cnt(C[b], id) - cnt(C[c], id));   // il max(0) scatta solo con correzioni manuali (adj): nel foglio il debito non è mai negativo
   };
 
   for (let i = 0; i < n; i++) {
@@ -122,11 +123,21 @@ export function compute(house, today, horizon = 12) {
     const pr = nm.map((id) => (id && !wk.everyone && !awaySet.has(id) &&
       !awayFromTrips(trips, id, sunday, S.minNights) ? 1 : 0)); // AB:AE
     const npres = pr[0] + pr[1] + pr[2] + pr[3];
+    // correzioni manuali dell'admin (weeks/{domenica}.adj = {id:{floor,bathroom,kitchen,credit}}): + = recuperi/riposi in più, − = tolti; valgono da questa settimana in poi.
+    // Senza `adj` (tutti i dati del foglio) questo blocco non fa nulla: la logica di assegnazione resta quella del foglio.
+    for (const [id, a] of Object.entries(wk.adj || {})) {
+      if (!a || !nm.includes(id)) continue;
+      CHORES.forEach((ch, c) => {
+        const v = Math.trunc(+a[ch]) || 0;
+        if (v > 0) inc(C[['daP', 'daB', 'daC'][c]], id, v); else if (v < 0) inc(C[['dpP', 'dpB', 'dpC'][c]], id, -v);
+      });
+      inc(C.adjCr, id, Math.trunc(+a.credit) || 0);
+    }
     const jn = nm.map((id, s) => (id ? (prev && prev.nm[s] === id ? prev.jn[s] : P) : 0));
     const dbP = nm.map((id) => (id ? debt(0, id) : 0));
     const dbB = nm.map((id) => (id ? debt(1, id) : 0));
     const dbC = nm.map((id) => (id ? debt(2, id) : 0));
-    const cr = nm.map((id) => (id ? cnt(C.cov, id) - cnt(C.ru, id) : 0));
+    const cr = nm.map((id) => (id ? cnt(C.cov, id) - cnt(C.ru, id) + cnt(C.adjCr, id) : 0));
 
     // riposo: chi ha crediti, nessun debito, e abbastanza persone a casa
     const rsc = nm.map((id, s) => (pr[s] === 1 && cr[s] > 0 && dbP[s] + dbB[s] + dbC[s] === 0 && npres >= Math.max(2, S.minRest)
@@ -217,6 +228,7 @@ export function compute(house, today, horizon = 12) {
       swapped: [0, 1, 2].map((c) => !!swap[CHORES[c]]),
       debts: nm.map((id, s) => (id ? [dbP[s], dbB[s], dbC[s]] : null)),
       credits: cr,
+      adj: wk.adj || null,
     };
     rows.push(row);
 
@@ -248,6 +260,8 @@ export function summarize(house, rows, cur, S) {
     let cleaned = 0, skipped = 0, mk = [0, 0, 0], rests = 0;
     for (const r of rows) {
       if (r.P <= J2) {
+        const a = r.adj && r.adj[id];
+        if (a) { for (let c = 0; c < 3; c++) mk[c] += Math.trunc(+a[CHORES[c]]) || 0; rests += Math.trunc(+a.credit) || 0; }
         for (let c = 0; c < 3; c++) {
           if (r.da[c] === id) mk[c]++;
           if (r.daSub[c] === id) mk[c]++;
