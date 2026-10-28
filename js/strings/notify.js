@@ -5,6 +5,7 @@ export const it = {
   'n.need.many.body': '{name} ha aggiunto {n} voci: {text}', 'n.need.multi.body': '{n} nuove voci: {text}',
   'n.need.bought.many': '{name} ha comprato: {text}',
   'n.note': 'Motivo: {note}',
+  'n.notice.makeupFree.title': 'Questa settimana sei libero', 'n.notice.makeupFree.body': '{name} recupera {chore} {day}: lo fa lui, tu non devi farlo.',
 };
 export const en = {
   'n.multi.title': '{n} updates at home', 'n.multi.sep': ' · ',
@@ -12,4 +13,5 @@ export const en = {
   'n.need.many.body': '{name} added {n} items: {text}', 'n.need.multi.body': '{n} new items: {text}',
   'n.need.bought.many': '{name} bought: {text}',
   'n.note': 'Reason: {note}',
+  'n.notice.makeupFree.title': 'You\'re off the hook this week', 'n.notice.makeupFree.body': '{name} makes up {chore} {day}: they do it, you don\'t have to.',
 };

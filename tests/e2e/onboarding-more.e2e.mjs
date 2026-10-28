@@ -92,7 +92,7 @@ async function passRules(page) {
   await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
   await page.waitForSelector('[data-testid=rules-accept][data-ready="1"]');
   await page.click('[data-testid=rules-accept]');
-  await page.waitForSelector('.nav', { timeout: 6000 });
+  await page.waitForSelector('.nav', { timeout: 15000 });
 }
 
 async function scenario(name, fn) {

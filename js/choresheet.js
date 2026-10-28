@@ -151,6 +151,8 @@ export function flowChips(ctx, sunday, chore) {
   const open = !res.kind;
   const ag = (wk.agreed || {})[chore];
   if (ag && open && ag !== row.assigned[c]) out.push({ key: 'agreed', tone: 'acc', ic: 'users', text: t('flow.agreedWith', { name: ctx.name(ag) }) });
+  const am = (wk.autoMakeup || {})[chore];
+  if (am && open) out.push({ key: 'makeup', tone: 'acc', ic: 'refresh', text: t('cantdo.makeupSched', { name: ctx.name(am.by), day: dowLong(am.date, ctx.lang) }) });
   const nt = open ? noteFor(wk, ctx.state.requests, sunday, chore) : '';
   if (nt) out.push({ key: 'note', tone: '', ic: 'edit', text: ctx.t('reason.note', { note: nt }) });
   const dl = delayOf(houseW(ctx), sunday, chore);
@@ -511,6 +513,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
         back(ctx, () => go('main')),
         h('div', { class: 'cs-title' }, t('flow.delayTitle')),
         h('p', { class: 'muted small' }, t('uxa.delayHint')),
+        h('p', { class: 'muted small', 'data-testid': 'makeup-hint' }, t('cantdo.makeupHint')),
         free.length ? h('div', { class: 'fl-days daychips', role: 'group', 'aria-label': t('flow.delayPick') }, days.map((d) => h('button', {
           type: 'button', class: d < today ? 'past' : '', disabled: d < today ? true : null, 'data-day': d, 'aria-pressed': String(cur === d), 'aria-label': pickLabel(d),
           onclick: () => announce(d),

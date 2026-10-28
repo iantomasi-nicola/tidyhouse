@@ -11,6 +11,7 @@ export const it = {
   'uxb.req.stale.cleared': 'Rimosse {n} richieste scadute',
   // registro attività
   'uxb.act.assign': '{name} ha assegnato a mano i turni di {week}',
+  'uxb.act.makeup': '{who} recupera {chore} {day}: il turno di quella settimana è suo',
   'uxb.act.assign0': '{name} ha riportato i turni di {week} come da regole',
   // impostazioni: ricerca, rapide, usate spesso
   'uxb.set.search': 'Cerca un\'impostazione',
@@ -71,6 +72,7 @@ export const en = {
   'uxb.req.stale.chip': 'Expired',
   'uxb.req.stale.clear': 'Clear expired',
   'uxb.req.stale.cleared': 'Cleared {n} expired requests',
+  'uxb.act.makeup': '{who} makes up {chore} on {day}: that week\'s chore is theirs',
   'uxb.act.assign': '{name} set the shifts for {week} by hand',
   'uxb.act.assign0': '{name} put the shifts for {week} back to the rules',
   'uxb.set.search': 'Search settings',

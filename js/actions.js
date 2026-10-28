@@ -212,6 +212,37 @@ export class Actions {
     if (date && !(dayNum(date) > dayNum(sunday) && dayNum(date) <= dayNum(sunday) + 14)) throw new Error('invalid');
     await this.s.setDoc('weeks', sunday, { delay: { [chore]: date || null } });
     if (date) await this.log('delay', { week: sunday, chore, day: date });
+    await this.clearMakeup(sunday, chore);
+    if (date) await this.planMakeup(sunday, chore, date);
+  }
+
+  /**
+   * Recupero programmato: chi ha dimenticato un turno e annuncia «lo recupero il [data]» libera chi, nel frattempo, avrebbe dovuto farlo
+   * (inutile pulire due volte a pochi giorni). Se la data cade nel giorno di tolleranza dopo la fine di una settimana successiva, il turno di
+   * quella settimana viene assegnato a chi recupera (assegnazione manuale = per il motore è il suo turno di recupero: lo salda facendolo) e
+   * l'altra persona viene avvisata, senza debiti. Se chi recupera poi non pulisce, il suo debito resta.
+   */
+  async planMakeup(sunday, chore, date) {
+    const g = (this.house.settings && this.house.settings.grace) ?? DEFAULT_SETTINGS.grace;
+    const c = CHORES.indexOf(chore); const out = this.out();
+    const X = (out.rows.find((r) => r.sunday === sunday) || {}).assigned?.[c];
+    let target = '';
+    for (let k = 1; k <= Math.max(1, g); k++) { const s2 = addDays(date, -k); if (isSunday(s2) && dayNum(s2) > dayNum(sunday)) { target = s2; break; } }
+    if (!X || !target) return null;
+    const row = out.rows.find((r) => r.sunday === target);
+    const Y = row && row.assigned[c];
+    if (!row || !Y || Y === X || row.res[c].kind || row.swapped[c] || !row.nm.includes(X)) return null;
+    await this.s.setDoc('weeks', target, { swap: { [chore]: X }, autoMakeup: { [chore]: { by: X, from: sunday, date, prev: Y } } });
+    await this.log('makeup', { week: target, chore, who: X, day: date });
+    await this.notice(Y, 'makeupFree', { week: target, chore, who: X, date });
+    return { week: target, freed: Y };
+  }
+  /** Annulla i recuperi programmati creati da un annuncio di ritardo (data tolta o cambiata): il turno torna a chi lo aveva. */
+  async clearMakeup(sunday, chore) {
+    for (const [wk, w] of Object.entries(this.s.state.weeks || {})) {
+      const m = (w.autoMakeup || {})[chore];
+      if (m && m.from === sunday) await this.s.setDoc('weeks', wk, { swap: { [chore]: null }, autoMakeup: { [chore]: null } });
+    }
   }
 
   async setAway(sunday, personId, away) {

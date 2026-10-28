@@ -2,7 +2,7 @@
 // Eseguita ogni ora da GitHub Actions (vedi .github/workflows/notify.yml).
 import { planNotifications, targetsFor, notifMessage, notifCfg, nameOf, awayToday, localParts } from '../js/extras.js';
 import { engineHouse } from '../js/store.js';
-import { tr, registerStrings } from '../js/i18n.js';
+import { tr, registerStrings, dowLong } from '../js/i18n.js';
 import { it as nIt, en as nEn } from '../js/strings/notify.js';
 registerStrings(nIt, nEn);
 const CH = (l, c) => tr(l, 'chore.' + c);
@@ -91,7 +91,7 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
           after.push(async () => { await db.setDoc(hid, 'requests', rid, { notified: true }, true); });
         } else if (rq.kind === 'notice') {
           if (rq.notified || !reqOn) continue;
-          mark({ notified: true }, go({ type: 'requests', personId: rq.to, key: 'notice:' + rid, custom: (l) => ({ title: tr(l, `n.notice.${rq.code}.title`), body: tr(l, `n.notice.${rq.code}.body`, { name: name(rq.from), chore: CH(l, rq.chore) }) + (rq.note ? ' ' + tr(l, 'n.note', { note: rq.note }) : ''), url: '#/' }) }));
+          mark({ notified: true }, go({ type: 'requests', personId: rq.to, key: 'notice:' + rid, custom: (l) => ({ title: tr(l, `n.notice.${rq.code}.title`), body: tr(l, `n.notice.${rq.code}.body`, { name: name(rq.who || rq.from), chore: CH(l, rq.chore), day: rq.date ? dowLong(rq.date, l) : '' }) + (rq.note ? ' ' + tr(l, 'n.note', { note: rq.note }) : ''), url: '#/' }) }));
         } else if (rq.kind === 'cover' || rq.kind === 'offer') {
           if (!reqOn) continue;
           if (rq.status === 'pending' && !rq.notified) {
