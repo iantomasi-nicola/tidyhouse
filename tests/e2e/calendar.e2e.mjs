@@ -181,12 +181,11 @@ await scenario('giorno scelto: chip, passati attenuati, toggle e "Togli giorno"'
   await openChore(page, 'floor');
   const chips = topSheet(page).locator('.daychips button');
   assert.equal(await chips.count(), 7);
-  assert.equal(await chips.first().getAttribute('data-day'), '2026-10-26');
-  assert.equal(await chips.last().getAttribute('data-day'), '2026-11-01');
-  assert.match(await chips.first().getAttribute('class'), /past/);
-  assert.match(await chips.nth(1).getAttribute('class'), /past/);
-  assert.doesNotMatch(await chips.nth(2).getAttribute('class') || '', /past/);
-  await chips.nth(4).click(); // venerdì 30
+  // da oggi (mer 28) fino a martedì della settimana dopo (3 nov): i giorni passati non si offrono
+  assert.equal(await chips.first().getAttribute('data-day'), '2026-10-28');
+  assert.equal(await chips.last().getAttribute('data-day'), '2026-11-03');
+  assert.equal(await topSheet(page).locator('.daychips button.past').count(), 0);
+  await topSheet(page).locator('.daychips button[data-day="2026-10-30"]').click(); // venerdì 30
   await page.waitForFunction(() => (window.__app.state.weeks['2026-11-01'] || {}).plan?.floor === '2026-10-30');
   await page.waitForTimeout(150);
   assert.equal(await topSheet(page).locator('.daychips button[data-day="2026-10-30"]').getAttribute('aria-pressed'), 'true');
