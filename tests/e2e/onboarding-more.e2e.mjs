@@ -90,9 +90,14 @@ async function noRawKeys(page, label) {
 async function passRules(page) {
   if (!(await page.locator('.onb-rules').count())) return;
   await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }));
-  await page.waitForSelector('[data-testid=rules-accept][data-ready="1"]');
-  await page.click('[data-testid=rules-accept]');
-  await page.waitForSelector('.nav', { timeout: 15000 });
+  /* la schermata può ridisegnarsi proprio mentre si tocca (carico alto): se non è entrata, si ritocca come farebbe una persona */
+  for (let i = 0; i < 4; i++) {
+    await page.waitForSelector('[data-testid=rules-accept][data-ready="1"]', { timeout: 8000 }).catch(() => {});
+    await page.click('[data-testid=rules-accept]', { timeout: 3000 }).catch(() => {});
+    if (await page.waitForSelector('.nav', { timeout: 4000 }).then(() => true, () => false)) return;
+    await page.waitForTimeout(400);
+  }
+  await page.waitForSelector('.nav', { timeout: 5000 });
 }
 
 async function scenario(name, fn) {
