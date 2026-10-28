@@ -82,7 +82,7 @@ async function run(ctx, fn, okMsg) {
  * `build(sheet, redraw)` ritorna il nodo del corpo. Il ridisegno: salta se i dati rilevanti non sono cambiati (niente sfarfallio),
  * e' rimandato durante la digitazione, mantiene scroll e focus (per chiave del controllo).
  */
-function liveSheet(ctx, { title, full = false, build }) {
+export function liveSheet(ctx, { title, full = false, build }) {
   const api = ctx.sheet({ title: '', full, body: h('div') });
   let off = () => {}; let pending = false; let dead = false; let last = '';
   const sig = () => { try { return JSON.stringify([ctx.me, ctx.isAdmin, ctx.lang, ctx.today(), ctx.state.weeks, ctx.state.requests, ctx.house]); } catch { return String(Math.random()); } };

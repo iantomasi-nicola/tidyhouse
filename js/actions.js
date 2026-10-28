@@ -309,7 +309,7 @@ export class Actions {
     }
     if (!Object.keys(applied).length) return { week: row.sunday, applied, prev: cur };
     await this.s.setDoc('weeks', row.sunday, { adj: { [personId]: adjPatch(next) } });
-    await this.log('adjust', { week: row.sunday, who: personId, text: logText || Object.entries(applied).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(', ') });
+    await this.log('adjust', { week: row.sunday, who: personId, d: applied, text: logText || Object.entries(applied).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(', ') });
     return { week: row.sunday, applied, prev: cur };
   }
   /** Annulla un adjustBalance (ripristina la correzione precedente di quella persona in quella settimana). */

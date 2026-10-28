@@ -12,10 +12,12 @@ import { it as itReason, en as enReason } from '../strings/reason.js';
 import { normNeed, frequentNeeds, distinctNeeds, starterNeeds, splitPasted } from '../needs-suggest.js';
 import { it as itFlow, en as enFlow } from '../strings/flow.js';   // flow.shared.* (testi condivisi con la Home)
 import { it as itB, en as enB } from '../strings/uxb.js';
+import { it as itBal, en as enBal } from '../strings/balance.js';
 
 registerStrings(it, en);
 registerStrings(it2, en2);
 registerStrings(it3, en3);
+registerStrings(itBal, enBal);
 registerStrings(itHow, enHow);
 registerStrings(itReason, enReason);
 registerStrings(itFlow, enFlow);
@@ -138,6 +140,7 @@ function hub(ctx) {
     ai,
     group(t('moreX.g.manage'), [
       row({ ic: 'users', tone: 'g', title: t('more.invite'), desc: t('moreX.d.invite'), href: '#/settings/invite' }),   // il codice è visibile a tutti; la rotazione resta all'admin
+      ctx.isAdmin ? row({ ic: 'refresh', tone: 'p', title: t('bal.btn'), desc: t('bal.btnHint'), onclick: async () => { try { (await import('../balance.js')).openBalanceSheet(ctx); } catch (e) { console.warn(e); ctx.toast(t('error')); } } }) : null,
       ctx.isAdmin ? row({ ic: 'download', tone: '', title: t('more.export'), desc: t('moreX.d.export'), href: '#/settings/data' }) : null,   // la pagina dati è solo admin
       row({ ic: 'settings', tone: '', title: t('more.settings'), desc: t('moreX.d.settings'), href: '#/settings' }),
     ]),
@@ -1009,13 +1012,17 @@ function requestsPage(ctx) {
 let actLimit = 60;
 // tipo di log -> [icona, tono]. Le frasi sono `act.<tipo>` (nucleo) oppure `moreY.act.<tipo>` per i tipi aggiunti dopo.
 const ACT_ICON = { done: ['check', 'g'], cover: ['swap', 'p'], skipped: ['x', 'r'], reset: ['refresh', ''], away: ['plane', 'o'], back: ['home', 'g'], trip: ['plane', 'o'], plan: ['calendar', ''], swap: ['swap', 'p'], need: ['cart', 'o'], task: ['list', 'g'], settings: ['settings', ''], roommates: ['users', ''], import: ['upload', ''],
-  incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'], shared: ['refresh', 'g'], assign: ['calendar', 'p'], makeup: ['refresh', 'p'] };
+  incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'], shared: ['refresh', 'g'], assign: ['calendar', 'p'], makeup: ['refresh', 'p'], adjust: ['refresh', 'p'] };
 const ACT_NEW = new Set(['incomplete', 'volunteer', 'delay', 'agreed', 'shared']);
 const agreedKey = (p) => 'moreY.act.agreed' + (p.terms ? 'Repay' : '');
 function actText(ctx, e) {
   const p = e.p || {};
   if (!ACT_ICON[e.type]) return t('act.generic', { name: personName(ctx, e.by), text: p.text || e.type || '' });
   if (e.type === 'makeup') return t('uxb.act.makeup', { chore: p.chore ? t('chore.' + p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '', day: p.day ? dowLong(p.day, ctx.lang) : '' });
+  if (e.type === 'adjust') {
+    const text = Object.entries(p.d || {}).map(([k, v]) => `${k === 'credit' ? t('bal.rest') : t('chore.' + k)} ${v > 0 ? '+' : '−'}${Math.abs(v)}`).join(', ');
+    return t('bal.act', { name: p.who ? ctx.name(p.who) : '', text });
+  }
   if (e.type === 'assign') return t(Number(p.n) > 0 ? 'uxb.act.assign' : 'uxb.act.assign0', { name: personName(ctx, e.by), week: p.week ? fmtWeekRange(p.week, ctx.lang) : '' });
   const key = e.type === 'agreed' ? agreedKey(p) : ACT_NEW.has(e.type) ? 'moreY.act.' + e.type + (e.type === 'incomplete' && Number(p.n) === 1 ? '1' : '') : 'act.' + e.type;
   return t(key, {

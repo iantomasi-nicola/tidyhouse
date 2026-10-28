@@ -1,0 +1,13 @@
+/* Pannello admin «Recuperi e riposi» (js/balance.js). */
+.bal { gap: 14px; }
+.bal-intro { margin: 0; }
+.bal-card { background: var(--surface); border-radius: var(--r-lg); padding: 14px; display: grid; gap: 10px; box-shadow: var(--shadow-1); min-width: 0; }
+.bal-who { display: flex; align-items: center; gap: 12px; font-weight: 700; min-width: 0; }
+.bal-row { display: flex; align-items: center; gap: 12px; min-height: 48px; min-width: 0; }
+.bal-row .grow { min-width: 0; overflow-wrap: anywhere; }
+.bal-step { display: inline-flex; align-items: center; gap: 4px; }
+.bal-step button { width: 44px; height: 44px; border-radius: 999px; background: var(--surface-2); color: var(--text); display: inline-grid; place-items: center; }
+.bal-step button:disabled { opacity: .4; }
+.bal-step button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bal-n { min-width: 28px; text-align: center; font-weight: 750; font-variant-numeric: tabular-nums; }
+.bal-clear { display: flex; flex-wrap: wrap; gap: 8px; }

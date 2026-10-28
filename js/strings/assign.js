@@ -42,6 +42,13 @@ export const it = {
   'assign.ai.rej.absent': '{person} non è a casa quella settimana',
   'assign.ai.rej.dup': 'mansione già indicata per quella settimana',
   'assign.ai.rej.limit': 'troppe assegnazioni per quella settimana',
+  'assign.terms.group': '{chore}: con o senza recupero',
+  'assign.terms.free': 'Senza recupero',
+  'assign.terms.freeD': '{who} prende il turno al posto di {from}: nessun debito per nessuno.',
+  'assign.terms.repay': 'Con recupero',
+  'assign.terms.repayD': '{who} pulisce al posto di {from} e segna «ha pulito»: {from} recupera, {who} guadagna un riposo.',
+  'assign.repayLine': '{who} pulisce {chore} al posto di {from}, con recupero',
+  'assign.logRepay': '{chore}: {name} (con recupero)',
 };
 export const en = {
   'assign.btn': 'Assign the week',
@@ -85,4 +92,11 @@ export const en = {
   'assign.ai.rej.absent': '{person} is not home that week',
   'assign.ai.rej.dup': 'chore already listed for that week',
   'assign.ai.rej.limit': 'too many assignments for that week',
+  'assign.terms.group': '{chore}: with or without make-up',
+  'assign.terms.free': 'Without make-up',
+  'assign.terms.freeD': '{who} takes the chore instead of {from}: nobody owes anything.',
+  'assign.terms.repay': 'With make-up',
+  'assign.terms.repayD': '{who} cleans instead of {from} and logs «cleaned»: {from} makes it up, {who} earns a rest.',
+  'assign.repayLine': '{who} cleans {chore} instead of {from}, with make-up',
+  'assign.logRepay': '{chore}: {name} (with make-up)',
 };
