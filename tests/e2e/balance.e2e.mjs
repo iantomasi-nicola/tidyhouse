@@ -389,6 +389,30 @@ await scenario('Correggi chi ha pulito: settimana passata → ha pulito X / ness
   noErrors(page, 'correggi'); await page.close();
 });
 
+await scenario('Classifica: l\'admin toglie e rimette il badge TR (non admin non vede i bottoni)', async () => {
+  const page = await mk({ path: '#/stats' });
+  await page.waitForSelector('[data-person]', { timeout: 8000 });
+  const trRow = page.locator('[data-person]').filter({ has: page.locator('.chip:has-text("TR")') }).first();
+  assert.ok(await trRow.count(), 'qualcuno ha il TR');
+  const who = await trRow.getAttribute('data-person');
+  await trRow.click(); await page.waitForSelector('#layer .sheet.on [data-act="badge-tr"]'); await page.waitForTimeout(450);
+  assert.match(await page.locator('#layer .sheet [data-act="badge-tr"]').innerText(), /Togli TR/);
+  await page.click('#layer .sheet [data-act="badge-tr"]'); await page.waitForTimeout(700);
+  const off = await page.evaluate((id) => (window.__app.house.badgeOff || {})[id], who);
+  assert.deepEqual(off, { tr: true });
+  assert.equal(await page.locator(`[data-person="${who}"] .chip:has-text("TR")`).count(), 0, 'badge tolto dalla classifica');
+  await page.locator(`[data-person="${who}"]`).first().click(); await page.waitForSelector('#layer .sheet.on [data-act="badge-tr"]'); await page.waitForTimeout(450);
+  assert.match(await page.locator('#layer .sheet [data-act="badge-tr"]').innerText(), /Rimetti TR/);
+  await page.click('#layer .sheet [data-act="badge-tr"]'); await page.waitForTimeout(700);
+  assert.equal(await page.locator(`[data-person="${who}"] .chip:has-text("TR")`).count() > 0, true, 'badge rimesso');
+  noErrors(page, 'badge'); await page.close();
+  const np = await mk({ path: '#/stats', admin: false, me: 'bruno' });
+  await np.waitForSelector('[data-person]', { timeout: 8000 });
+  await np.locator('[data-person]').first().click(); await np.waitForTimeout(600);
+  assert.equal(await np.locator('[data-act^="badge-"]').count(), 0);
+  await np.close();
+});
+
 await scenario('Assegna la settimana: persona uguale alle regole → nessuna scelta; da «Senza» a «Con recupero» toglie lo scambio', async () => {
   const page = await mk({ path: '#/' });
   const before = await rowOf(page);
