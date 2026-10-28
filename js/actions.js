@@ -79,11 +79,26 @@ export class Actions {
   // ---- turni ----
   async setResult(sunday, chore, value) {
     this.need(this.canResult(sunday, chore, value));
+    this.validResult(sunday, chore, value);
     const at = this.ctx.now().toISOString();
-    await this.s.setDoc('weeks', sunday, { result: { [chore]: value || null }, resultAt: { [chore]: value ? at : null }, resultBy: { [chore]: value ? (this.me || 'admin') : null } });
+    const vol = (this.weekDoc(sunday).volunteer || {})[chore];
+    const keepVol = vol && value === 'by:' + vol;      // il segno «volontario» vale solo finché il risultato dice che ha pulito lui
+    await this.s.setDoc('weeks', sunday, { result: { [chore]: value || null }, resultAt: { [chore]: value ? at : null }, resultBy: { [chore]: value ? (this.me || 'admin') : null }, ...(vol && !keepVol ? { volunteer: { [chore]: null } } : {}) });
     const p = parseResult(value);
     const type = p.kind === 'done' ? 'done' : p.kind === 'by' ? 'cover' : p.kind === '' ? 'reset' : 'skipped';
     await this.log(type, { week: sunday, chore, who: p.id || null });
+  }
+  /**
+   * Valori ammessi per un risultato: '' (togli), 'done', 'skipped', 'by:ID', 'skipped:ID' con ID coinquilino; serve una persona assegnata
+   * (con «Nessuno questa settimana» non c'è nulla da registrare) e «saltato anche ID» non può essere l'assegnato (conterebbe due volte il debito).
+   */
+  validResult(sunday, chore, value) {
+    const c = CHORES.indexOf(chore); if (c < 0) throw new Error('invalid');
+    if (!value) return;
+    const p = parseResult(value);
+    if (!p.kind || (p.id !== undefined && !personById(this.house, p.id))) throw new Error('invalid');
+    const row = this.row(sunday); const a = row && row.assigned[c];
+    if (!a || (p.kind === 'skippedBy' && p.id === a)) throw new Error('invalid');
   }
   // ---- completamento con checklist, annulla, volontari, sostituzioni, ritardi ----
   weekDoc(sunday) { return (this.s.state.weeks || {})[sunday] || {}; }
@@ -244,7 +259,10 @@ export class Actions {
   async clearMakeup(sunday, chore) {
     for (const [wk, w] of Object.entries(this.s.state.weeks || {})) {
       const m = (w.autoMakeup || {})[chore];
-      if (m && m.from === sunday) await this.s.setDoc('weeks', wk, { swap: { [chore]: null }, autoMakeup: { [chore]: null } });
+      if (!m || m.from !== sunday) continue;
+      if ((w.result || {})[chore]) continue;                     // recupero già registrato: la storia non cambia
+      const mine = (w.swap || {})[chore] === m.by;               // se l'admin nel frattempo ha assegnato a mano, la sua scelta resta
+      await this.s.setDoc('weeks', wk, { ...(mine ? { swap: { [chore]: null } } : {}), autoMakeup: { [chore]: null } });
     }
   }
 

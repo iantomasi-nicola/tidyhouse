@@ -4,6 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compute, addDays } from '../js/engine.js';
 import { planNotifications, notifMessage } from '../js/extras.js';
+import { MemoryHub, MemoryBackend, Store } from '../js/store.js';
+import { Actions, buildHouse } from '../js/actions.js';
 
 const START = '2026-10-04';
 const wk = (i) => addDays(START, 7 * i);
@@ -61,4 +63,76 @@ test('notifiche: turno passato a un altro (agreed) → i promemoria vanno a chi 
   const late = planNotifications({ house: h, weeks, now: new Date('2026-11-02T09:10:00Z') }).filter((x) => x.type === 'late');
   assert.ok(late.some((x) => x.personId === Y && x.chores.includes('floor')));
   assert.ok(!late.some((x) => x.personId === X && x.chores.includes('floor')));
+});
+
+// ---------- azioni: recupero programmato, correzione dei risultati ----------
+async function setupHouse(now) {
+  const hub = new MemoryHub();
+  const h = await buildHouse({ id: 'H1', name: 'Casa', startSunday: START, roommates: ['Anna', 'Bruno', 'Carla'].map((n) => ({ name: n })), adminPersonId: 'Anna', pin: '1234' });
+  const b = new MemoryBackend(hub); await b.open('H1'); const s = new Store(b); await s.setHouse(h, true);
+  const ids = h.roommates.map((r) => r.id);
+  const mk = (ctx) => new Actions(s, { now: () => new Date(now + 'T10:00:00'), ...ctx });
+  return { s, ids, admin: mk({ isAdmin: true }), as: (id) => mk({ meId: id }), rowAt: (a, sun) => a.out().rows.find((r) => r.sunday === sun) };
+}
+/** X annuncia «recupero il lunedì dopo la settimana successiva»: il turno di quella settimana passa a X (autoMakeup). */
+async function makeupScenario() {
+  const W = wk(3), W2 = wk(4);                                           // 25/10 e 1/11
+  const env = await setupHouse(addDays(W, 1));                           // lunedì 26/10 (tolleranza)
+  const X = env.rowAt(env.admin, W).assigned[0]; const Y = env.rowAt(env.admin, W2).assigned[0];
+  assert.notEqual(X, Y, 'scenario: pavimenti a due persone diverse');
+  await env.as(X).setDelay(W, 'floor', addDays(W2, 1));                  // lunedì 2/11
+  assert.equal(env.rowAt(env.admin, W2).assigned[0], X, 'premessa: recupero programmato');
+  return { ...env, W, W2, X, Y };
+}
+
+test('recupero programmato: se l\'admin poi assegna a mano quella mansione, togliere il ritardo non cancella la sua scelta', async () => {
+  const { s, ids, admin, as, rowAt, W, W2, X, Y } = await makeupScenario();
+  const Z = ids.find((id) => id !== X && id !== Y);
+  const r2 = rowAt(admin, W2);
+  await admin.setWeekAssignments(W2, { floor: Z, bathroom: r2.assigned[1], kitchen: r2.assigned[2] });
+  assert.equal(rowAt(admin, W2).assigned[0], Z);
+  await as(X).setDelay(W, 'floor', null);
+  assert.equal(rowAt(admin, W2).assigned[0], Z, 'la scelta dell\'admin resta');
+  assert.equal(((s.state.weeks[W2].autoMakeup || {}).floor), undefined, 'il segno del recupero programmato se ne va');
+});
+
+test('recupero programmato già svolto: cambiare/togliere il ritardo non riscrive la storia', async () => {
+  const { s, admin, as, rowAt, W, W2, X } = await makeupScenario();
+  await s.setDoc('weeks', W2, { result: { floor: 'done' } });            // X ha fatto il recupero
+  assert.equal(rowAt(admin, W2).cleaner[0], X);
+  await as(X).setDelay(W, 'floor', null);
+  const after = rowAt(admin, W2);
+  assert.equal(after.assigned[0], X, 'resta di X: l\'ha fatto lui');
+  assert.equal(after.cleaner[0], X);
+});
+
+test('setResult: valori non validi rifiutati (chi non esiste, «saltato anche» dall\'assegnato, mansione senza nessuno)', async () => {
+  const { ids, admin, as, rowAt } = await setupHouse('2026-10-28');
+  const W = wk(3);
+  const a = rowAt(admin, W).assigned[0]; const other = ids.find((id) => id !== a);
+  const base = rowAt(admin, wk(4)).debts.map((d) => d && d[0]);
+  await assert.rejects(() => admin.setResult(W, 'floor', 'by:sconosciuto'), /invalid/);
+  await assert.rejects(() => admin.setResult(W, 'floor', 'boh'), /invalid/);
+  await assert.rejects(() => admin.setResult(W, 'floor', `skipped:${a}`), /invalid/, 'conterebbe due volte il debito dell\'assegnato');
+  await assert.rejects(() => admin.setResult(W, 'pavimento', 'done'), /invalid|permission/);
+  await admin.setResult(W, 'floor', `skipped:${other}`);                   // valido
+  // «Nessuno questa settimana»: nessun risultato da registrare (un «saltato anche X» darebbe un debito a X)
+  const r = rowAt(admin, W);
+  await admin.setWeekAssignments(W, { floor: '-', bathroom: r.assigned[1], kitchen: r.assigned[2] });
+  await assert.rejects(() => admin.setResult(W, 'floor', `skipped:${other}`), /invalid/);
+  await assert.rejects(() => as(other).setResult(W, 'floor', `by:${other}`), /invalid|permission/);
+  await admin.setResult(W, 'floor', '');                                    // togliere resta sempre possibile
+  assert.deepEqual(rowAt(admin, wk(4)).debts.map((d) => d && d[0]), base, 'nessun debito di pavimenti in più');
+});
+
+test('correggere chi ha pulito: il segno «volontario» non resta su un risultato diverso', async () => {
+  const { s, ids, admin, as, rowAt } = await setupHouse('2026-10-28');
+  const W = wk(4);
+  const a = rowAt(admin, W).assigned[0]; const v = ids.find((id) => id !== a);
+  const r = await as(v).volunteer(W, 'floor', { force: true });
+  assert.equal(r.ok, true); assert.equal(s.state.weeks[W].volunteer.floor, v);
+  await admin.setResult(W, 'floor', 'done');                               // in realtà l'ha fatto l'assegnato
+  assert.equal((s.state.weeks[W].volunteer || {}).floor, undefined);
+  await admin.setResult(W, 'floor', `by:${v}`);
+  assert.equal((s.state.weeks[W].volunteer || {}).floor, undefined, 'non si reinventa');
 });
