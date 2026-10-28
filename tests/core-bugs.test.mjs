@@ -138,6 +138,7 @@ test('setResult: valori non validi rifiutati (chi non esiste, «saltato anche» 
   await admin.setWeekAssignments(W, { floor: '-', bathroom: r.assigned[1], kitchen: r.assigned[2] });
   await assert.rejects(() => admin.setResult(W, 'floor', `skipped:${other}`), /invalid/);
   await assert.rejects(() => as(other).setResult(W, 'floor', `by:${other}`), /invalid|permission/);
+  await assert.rejects(() => admin.requestCover({ week: W, chore: 'floor' }), /invalid/, 'nessun turno da far coprire');
   await admin.setResult(W, 'floor', '');                                    // togliere resta sempre possibile
   assert.deepEqual(rowAt(admin, wk(4)).debts.map((d) => d && d[0]), base, 'nessun debito di pavimenti in più');
 });

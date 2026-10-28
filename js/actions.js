@@ -168,6 +168,7 @@ export class Actions {
   async requestCover({ week, chore, to = null, terms = 'repay', note = '' }) {
     const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
     const id = uid(); const from = row.assigned[CHORES.indexOf(chore)];
+    if (!from) throw new Error('invalid');                    // «Nessuno questa settimana»: non c'è un turno da far coprire
     await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, terms: 'repay', ...(cleanNote(note) ? { note: cleanNote(note) } : {}), status: 'pending', at: this.ctx.now().toISOString() });
     return id;
   }
