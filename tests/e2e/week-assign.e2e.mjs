@@ -27,7 +27,7 @@ async function mk({ me = 'anna', admin = true, lang = 'it-IT', viewport, dark, h
 }
 const rowOf = (page, sunday = CUR) => page.evaluate((s) => { const r = window.__app.calc.out.rows.find((x) => x.sunday === s); return { assigned: r.assigned, swapped: r.swapped, closed: r.closed }; }, sunday);
 const wkDoc = (page, s = CUR) => page.evaluate((sun) => JSON.parse(JSON.stringify(window.__app.state.weeks[sun] || {})), s);
-const openWeek = async (page, sunday = CUR) => { await page.evaluate((s) => document.querySelector(`.week[data-sunday="${s}"]`).click(), sunday); await page.waitForSelector('#layer .sheet.on'); await page.waitForTimeout(450); };
+const openWeek = async (page, sunday = CUR) => { await page.evaluate((s) => { if (!document.querySelector(`.week[data-sunday="${s}"]`)) for (const b of document.querySelectorAll('[data-act=month][aria-expanded=false]')) { b.click(); if (document.querySelector(`.week[data-sunday="${s}"]`)) break; } document.querySelector(`.week[data-sunday="${s}"]`).click(); }, sunday);   // le settimane passate stanno nei mesi richiudibili: si apre quello giusto await page.waitForSelector('#layer .sheet.on'); await page.waitForTimeout(450); };
 const openAssign = async (page, sunday = CUR) => { await openWeek(page, sunday); await page.click('[data-act="assign-week"]'); await page.waitForTimeout(500); };
 const sheets = (page) => page.locator('#layer .sheet').count();
 const noOverflow = async (page, label) => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1 && [...document.querySelectorAll('#layer .sheet')].every((s) => s.scrollWidth <= s.clientWidth + 1)), 'overflow orizzontale: ' + label);

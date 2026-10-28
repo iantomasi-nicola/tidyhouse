@@ -121,11 +121,13 @@ function weekRow(ctx, row, { wide, selectedSunday }) {
   const cells = CHORES.map((chore, c) => {
     const id = row.assigned[c];
     const oc = outcomeOf(ctx, row, c);
-    if (id && flowChips(ctx, row.sunday, chore).some((f) => f.key === 'incomplete')) incomplete.push(ctx.t('chore.' + chore));
+    const fl = id ? flowChips(ctx, row.sunday, chore) : [];
+    if (fl.some((f) => f.key === 'incomplete')) incomplete.push(ctx.t('chore.' + chore));
     return h('span', { class: 'wk-mc', 'data-chore': chore },
       h('i', { class: 'dot ' + chore }),
       h('span', { class: 'n' + (id ? '' : ' none') }, id ? ctx.name(id) : (empty ? '' : ctx.t('chore.noOne'))),
-      oc ? h('span', { class: 'ind ' + oc.tone, title: oc.label }, icon(oc.ic)) : (id && row.isMakeup[c] ? h('span', { class: 'ind acc', title: ctx.t('st.makeup') }, icon('refresh')) : null));
+      oc ? h('span', { class: 'ind ' + oc.tone, title: oc.label }, icon(oc.ic)) : (id && row.isMakeup[c] ? h('span', { class: 'ind acc', title: ctx.t('st.makeup') }, icon('refresh')) : null),
+      fl.filter((f) => f.key !== 'incomplete').map((f) => h('span', { class: 'ind ' + f.tone, title: f.text, 'aria-label': f.text, 'data-flow': f.key }, icon(f.ic))));
   });
   const extra = [];
   if (wkDoc.note) extra.push(h('span', { class: 'ind note', title: ctx.t('cal.hasNote') }, icon('edit')));
