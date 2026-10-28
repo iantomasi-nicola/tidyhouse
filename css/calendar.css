@@ -174,3 +174,11 @@ button.cs-pick:active { background: var(--tonal-2); }
 .cal-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
 .cal-legend .ind { width: 20px; height: 20px; }
 .cal-legend .ind svg.i { width: 13px; height: 13px; }
+
+/* motivo di una sostituzione */
+.cs-reason { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: var(--r-lg); background: var(--surface-2); color: var(--text); font-size: .9375rem; }
+.cs-reason svg.i { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--text-2); }
+.fl-reason { gap: 8px; }
+.fl-reason-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fl-reason-chip { min-height: 44px; cursor: pointer; }
+.fl-qnote { font-style: italic; }

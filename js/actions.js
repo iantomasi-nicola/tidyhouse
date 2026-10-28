@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
+import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, cleanNote, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
 import { engineHouse } from './store.js';
 import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
 
@@ -147,10 +147,10 @@ export class Actions {
     return ids;
   }
   /** L'assegnato chiede una sostituzione (a una persona precisa o a chiunque). */
-  async requestCover({ week, chore, to = null, terms = 'repay' }) {
+  async requestCover({ week, chore, to = null, terms = 'repay', note = '' }) {
     const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
     const id = uid(); const from = row.assigned[CHORES.indexOf(chore)];
-    await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, terms: 'repay', status: 'pending', at: this.ctx.now().toISOString() });
+    await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, terms: 'repay', ...(cleanNote(note) ? { note: cleanNote(note) } : {}), status: 'pending', at: this.ctx.now().toISOString() });
     return id;
   }
   /** Qualcuno si offre di fare il turno di un altro: serve il consenso dell'assegnato. */
@@ -172,7 +172,7 @@ export class Actions {
     if (!accept) { await this.s.setDoc('requests', reqId, { status: 'declined', answeredAt: this.ctx.now().toISOString(), notifiedAnswer: false }); return; }
     const who = rq.kind === 'cover' ? this.me : rq.from;
     // l'assegnato resta tale finché chi lo fa non segna "ha pulito X" (recupero + riposo secondo le regole del foglio)
-    await this.s.setDoc('weeks', rq.week, { agreed: { [rq.chore]: who } });
+    await this.s.setDoc('weeks', rq.week, { agreed: { [rq.chore]: who }, ...(rq.note ? { agreedNote: { [rq.chore]: { text: cleanNote(rq.note), by: rq.from } } } : {}) });
     await this.s.setDoc('requests', reqId, { status: 'accepted', by: who, answeredAt: this.ctx.now().toISOString(), notifiedAnswer: false });
     await this.log('agreed', { week: rq.week, chore: rq.chore, who, terms: rq.terms || 'repay' });
   }
@@ -186,22 +186,23 @@ export class Actions {
   async clearAgreed(sunday, chore) {
     const row = this.row(sunday); const assigned = row && row.assigned[CHORES.indexOf(chore)];
     this.need(!!row && !!assigned && (this.admin || assigned === this.me));
-    await this.s.setDoc('weeks', sunday, { agreed: { [chore]: null } });
+    await this.s.setDoc('weeks', sunday, { agreed: { [chore]: null }, agreedNote: { [chore]: null } });
   }
   /**
    * «Non posso questa settimana»: il turno passa in automatico al sostituto più equo (quello suggerito dalle regole del foglio, come se
    * chi non può non ci fosse). Chi non può resta l'assegnato: se l'altro lo fa («ha pulito X») o nessuno lo fa, il debito è suo e lo recupera
    * nelle settimane dopo (di solito con un turno doppio). Ritorna l'id del sostituto.
    */
-  async autoCover(sunday, chore) {
+  async autoCover(sunday, chore, note = '') {
     const row = this.row(sunday); const c = CHORES.indexOf(chore);
     const assigned = row && row.assigned[c];
     this.need(!!row && !!assigned && !row.closed && !row.res[c].kind && (this.admin || assigned === this.me));
     const sub = autoSub(row, c);
     if (!sub) throw new Error('nosub');
-    await this.s.setDoc('weeks', sunday, { agreed: { [chore]: sub } });
+    const nt = cleanNote(note);
+    await this.s.setDoc('weeks', sunday, { agreed: { [chore]: sub }, agreedNote: { [chore]: nt ? { text: nt, by: assigned } : null } });
     await this.log('agreed', { week: sunday, chore, who: sub, terms: 'auto' });
-    await this.notice(sub, 'assigned', { week: sunday, chore });
+    await this.notice(sub, 'assigned', { week: sunday, chore, ...(nt ? { note: nt } : {}) });
     this.kick();
     return sub;
   }

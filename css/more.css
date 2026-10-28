@@ -228,3 +228,5 @@ button.mx-chip::after { inset: 0; }
 .mx-stalehint { margin: 0 6px 8px; }
 .mx-stale { opacity: .8; }
 .mx-stalebtn { margin-top: 10px; }
+
+.mx-reason { color: var(--text); font-style: italic; margin-top: 2px; }

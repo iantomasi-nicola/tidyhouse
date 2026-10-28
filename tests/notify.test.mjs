@@ -174,3 +174,14 @@ test('server notifiche: un solo turno da segnare => azione «Segna fatto» con i
   const p = got.find((x) => x.actions && x.actions.length);
   assert.ok(p, 'almeno una notifica con azione'); assert.equal(p.actions[0].action, 'done'); assert.match(p.actions[0].url, /^#\/do\/done\/\d{4}-\d\d-\d\d\/(floor|bathroom|kitchen)$/); assert.match(p.actions[0].title, /Segna fatto/);
 });
+
+test('server notifiche: il motivo della sostituzione compare nella notifica (richiesta e «passato a te»)', async () => {
+  const db = fakeDb({
+    members: { dB: { personId: 'B', push: { endpoint: 'eB' }, lang: 'it' }, dC: { personId: 'C', push: { endpoint: 'eC' }, lang: 'it' } },
+    requests: { c1: { kind: 'cover', week: wk(4), chore: 'floor', from: 'A', to: 'B', status: 'pending', terms: 'repay', note: 'va a ballare in discoteca', at: '2026-10-30T08:00:00Z' },
+      n1: { kind: 'notice', code: 'assigned', to: 'C', from: 'A', week: wk(4), chore: 'bathroom', note: 'ha un esame', status: 'info', at: '2026-10-30T08:00:00Z' } },
+  });
+  const got = []; await runNotify({ db, send: async (s, p) => got.push([s.endpoint, p.title, p.body]), now: new Date('2026-10-30T10:00:00Z'), vapidPublic: 'PUB' });
+  const to = (e) => got.filter((g) => g[0] === e).map((g) => g[1] + '|' + g[2]).join(' ;; ');
+  assert.match(to('eB'), /Motivo: va a ballare in discoteca/); assert.match(to('eC'), /Motivo: ha un esame/);
+});

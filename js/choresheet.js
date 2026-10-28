@@ -4,10 +4,11 @@
 import { h, icon, avatar, toggle, seg, copyText, download, confetti, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 import { CHORES, addDays } from './engine.js';
-import { weekDays, planOf, delayOf, checklistOwners, swapPatch, autoSub, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
+import { weekDays, planOf, delayOf, checklistOwners, swapPatch, autoSub, cleanNote, noteFor, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
 import { it as itCant, en as enCant } from './strings/cantdo.js';
+import { it as itReason, en as enReason } from './strings/reason.js';
 import { openAssignWeekSheet } from './weekassign.js';
 import { ruleAssigned } from './assignlogic.js';
 import { it as itUxa, en as enUxa } from './strings/uxa.js';
@@ -16,6 +17,7 @@ registerStrings(it, en);
 registerStrings(itUxa, enUxa);
 registerStrings(itFlow, enFlow);
 registerStrings(itCant, enCant);
+registerStrings(itReason, enReason);
 loadCss('css/calendar.css');
 
 export const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -133,6 +135,14 @@ export function incompleteOf(ctx, sunday, chore) {
   return texts.filter((x) => pend.has(x));
 }
 
+/** Campo «Motivo» con suggerimenti: il valore vive in st.note (stato dello sheet, non si perde nei ridisegni). */
+function reasonField(ctx, st, sh) {
+  const input = h('input', { class: 'input', type: 'text', maxlength: '80', value: st.note || '', placeholder: ctx.t('reason.ph'), 'aria-label': ctx.t('reason.label'), 'data-testid': 'reason-input', enterkeyhint: 'done', autocapitalize: 'sentences', autocomplete: 'off',
+    oninput: (e) => { st.note = e.target.value; } });
+  const chips = ['away', 'exam', 'sick', 'work', 'family'].map((k) => h('button', { type: 'button', class: 'chip fl-reason-chip', 'data-reason': k, onclick: () => { st.note = ctx.t('reason.chip.' + k); input.value = st.note; input.focus(); } }, ctx.t('reason.chip.' + k)));
+  return h('div', { class: 'stack tight fl-reason' }, h('label', { class: 'lbl' }, ctx.t('reason.label')), input, h('div', { class: 'fl-reason-chips' }, chips), h('p', { class: 'muted small' }, ctx.t('reason.visible')));
+}
+
 /** Chip di flusso di un turno: concordato, ritardo, volontario, incompleto → [{key, tone, ic, text}]. */
 export function flowChips(ctx, sunday, chore) {
   const row = rowOf(ctx, sunday); const c = ci(chore);
@@ -141,6 +151,8 @@ export function flowChips(ctx, sunday, chore) {
   const open = !res.kind;
   const ag = (wk.agreed || {})[chore];
   if (ag && open && ag !== row.assigned[c]) out.push({ key: 'agreed', tone: 'acc', ic: 'users', text: t('flow.agreedWith', { name: ctx.name(ag) }) });
+  const nt = open ? noteFor(wk, ctx.state.requests, sunday, chore) : '';
+  if (nt) out.push({ key: 'note', tone: '', ic: 'edit', text: ctx.t('reason.note', { note: nt }) });
   const dl = delayOf(houseW(ctx), sunday, chore);
   if (dl && open) out.push({ key: 'delay', tone: 'warn', ic: 'clock', text: t('flow.delayUntil', { date: fmtDate(dl, ctx.lang) }) });
   const vol = (wk.volunteer || {})[chore];
@@ -364,7 +376,7 @@ export function openAssignSheet(ctx, sunday, chore) {
 export function openChoreSheet(ctx, sunday, chore, opts = {}) {
   const c = ci(chore);
   if (c < 0 || !rowOf(ctx, sunday)) return null;
-  const st = { view: opts.view || 'main', coverTo: '*', terms: 'repay' };   // stato che non deve perdersi nei ridisegni
+  const st = { view: opts.view || 'main', coverTo: '*', terms: 'repay', note: '' };   // stato che non deve perdersi nei ridisegni
 
   const build = (sh) => {
     const go = (v) => { st.view = v; sh.focusFirst = true; sh.draw(true); };
@@ -443,9 +455,10 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
         h('div', { class: 'cs-title' }, t('cantdo.title')),
         sub ? h('div', { class: 'note ok', 'data-testid': 'cantdo-sub' }, icon('users'), t('cantdo.text', { name: ctx.name(sub), chore: lower })) : h('div', { class: 'note warn', 'data-testid': 'cantdo-none' }, icon('alert'), t('cantdo.nosub')),
         sub ? h('p', { class: 'muted small' }, t('cantdo.recover')) : null,
+        reasonField(ctx, st, sh),
         sub ? h('button', { type: 'button', class: 'btn lg block', 'data-act': 'cantdo-confirm', onclick: async () => {
           let who = null;
-          try { who = await A.autoCover(sunday, chore); } catch (e) { ctx.toast(e && e.message === 'permission' ? t('err.permission') : e && e.message === 'nosub' ? t('cantdo.nosub') : t('error')); return; }
+          try { who = await A.autoCover(sunday, chore, st.note); } catch (e) { ctx.toast(e && e.message === 'permission' ? t('err.permission') : e && e.message === 'nosub' ? t('cantdo.nosub') : t('error')); return; }
           ctx.haptic(ctx.prefs.haptics, 10);
           ctx.toast(t('cantdo.done', { name: ctx.name(who), chore: lower }), 7000, { action: { label: t('cantdo.undo'), onClick: () => run(ctx, () => A.clearAgreed(sunday, chore), t('cantdo.undone')) } });
           sh.close();
@@ -467,8 +480,9 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
           opt('*', h('div', { class: 'ico' }, icon('users')), t('flow.askAnyone'), t('flow.askAnyoneHint')),
           ids.map((id) => opt(id, person(ctx, id), ctx.name(id), null, id === sug ? chip(t('cal.suggested'), 'acc', 'sparkles') : null))),
         termsPicker(ctx, { mode: 'ask', a: assigned, b: st.coverTo === '*' ? null : st.coverTo, }),
+        reasonField(ctx, st, sh),
         h('button', { type: 'button', class: 'btn lg block', 'data-act': 'ask-send', onclick: async () => {
-          if (await run(ctx, () => A.requestCover({ week: sunday, chore, to: st.coverTo === '*' ? null : st.coverTo, terms: st.terms }), t('flow.askSent'))) { st.terms = 'repay'; go('main'); }
+          if (await run(ctx, () => A.requestCover({ week: sunday, chore, to: st.coverTo === '*' ? null : st.coverTo, terms: st.terms, note: st.note }), t('flow.askSent'))) { st.terms = 'repay'; st.note = ''; go('main'); }
         } }, icon('swap'), t('flow.askSend')));
     }
     if (st.view === 'offer') {
@@ -531,6 +545,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       h('div', { class: 'cs-who' }, assigned ? person(ctx, assigned, 'lg') : h('div', { class: 'av lg cs-none' }, '–'),
         h('div', { class: 'grow' }, h('div', { class: 'lbl' }, t('chore.assignedTo')), h('div', { class: 'cs-pname', 'data-testid': 'assignee' }, aName))),
       chipsRow,
+      (!res.kind && noteFor(wk, ctx.state.requests, sunday, chore)) ? h('p', { class: 'cs-reason', 'data-testid': 'chore-note' }, icon('edit'), t('reason.note', { note: noteFor(wk, ctx.state.requests, sunday, chore) })) : null,
       row.isMakeup[c] ? h('p', { class: 'cs-hint' }, t('chore.makeupHint')) : null,
       res.kind && at ? h('div', { class: 'cs-marked' }, icon('clock'), t('cal.markedWhen', { name: by === 'admin' || !by ? t('misc.admin') : ctx.name(by), when: whenLabel(ctx, at) })) : null);
 
@@ -612,7 +627,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
           } else title = t('flow.req.offerInfo', { name: ctx.name(q.from), to: ctx.name(q.to) });
         }
         return h('div', { class: 'li fl-req', 'data-testid': 'cover-req', 'data-kind': q.kind }, h('div', { class: 'ico' }, icon(ic)),
-          h('div', { class: 'grow' }, h('div', { class: 't' }, title), desc ? h('div', { class: 'd' }, desc) : null, buttons ? h('div', { class: 'fl-btns' }, buttons) : null));
+          h('div', { class: 'grow' }, h('div', { class: 't' }, title), q.note ? h('div', { class: 'd fl-qnote', 'data-testid': 'req-note' }, ctx.t('reason.note', { note: cleanNote(q.note) })) : null, desc ? h('div', { class: 'd' }, desc) : null, buttons ? h('div', { class: 'fl-btns' }, buttons) : null));
       });
       out.push(section(t('flow.sec.requests'), h('div', { class: 'list' }, rows)));
     }

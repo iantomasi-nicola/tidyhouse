@@ -4,7 +4,7 @@ import { h, icon, avatar, loadCss, confetti, haptic, promptDialog } from '../ui.
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, validateRoommates } from '../engine.js';
 import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote, termsLine } from '../choresheet.js';
-import { planOf, buildStats, weekDays, sharedStatus } from '../extras.js';
+import { planOf, buildStats, weekDays, sharedStatus, cleanNote } from '../extras.js';
 import { it, en } from '../strings/home.js';
 import { it as itU, en as enU } from '../strings/uxa.js';
 import { it as itZ, en as enZ } from '../strings/more3.js';   // moreZ.boughtToast (spesa: comprato + Annulla)
@@ -258,7 +258,7 @@ function requestRows(ctx, M) {
       const cover = q.kind === 'cover';
       rows.push(alertRow({ tone: 'p', ic: cover ? 'users' : 'user', testid: 'req-' + id,
         title: cover ? t(q.to ? 'flow.alert.coverTo' : 'flow.alert.cover', { name: ctx.name(q.from), chore }) : t('flow.alert.offer', { name: ctx.name(q.from), chore }),
-        desc: [cover ? t('flow.alert.coverDesc', { range }) : t('flow.alert.offerDesc', { range }), h('div', { class: 'hm-terms', 'data-terms': 'repay' }, termsLine(ctx, q.terms, cover ? q.from : q.to, cover ? me : q.from))],
+        desc: [cover ? t('flow.alert.coverDesc', { range }) : t('flow.alert.offerDesc', { range }), q.note ? h('div', { class: 'hm-reason', 'data-testid': 'req-note' }, t('reason.note', { note: cleanNote(q.note) })) : null, h('div', { class: 'hm-terms', 'data-terms': 'repay' }, termsLine(ctx, q.terms, cover ? q.from : q.to, cover ? me : q.from))],
         actions: [h('button', { class: 'btn sm', type: 'button', 'data-act': 'req-yes', onclick: answer(() => ctx.actions.answerCover(id, true), cover ? t('flow.req.agreedMe') : t('flow.req.agreedHim', { name: ctx.name(q.from) })) }, icon('check'), cover ? t('flow.req.canDo') : t('req.accept')),
           h('button', { class: 'btn sm soft', type: 'button', 'data-act': 'req-no', onclick: answer(() => ctx.actions.answerCover(id, false), t('flow.req.declined')) }, cover ? t('flow.req.cant') : t('req.decline'))] }));
     } else if (q.to === me) {

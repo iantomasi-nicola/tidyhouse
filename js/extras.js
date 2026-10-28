@@ -60,6 +60,16 @@ export const uid = () => randomCode(10);
 // ============ Settimane: helpers ============
 export function weekIndex(house, sunday) { return Math.round((dayNum(sunday) - dayNum(house.startSunday)) / 7); }
 export function weekDays(sunday) { return Array.from({ length: 7 }, (_, i) => addDays(sunday, i - 6)); }
+/** Nota del motivo di una sostituzione: breve, una riga, senza caratteri di controllo (la vedono tutti i coinquilini). */
+export const cleanNote = (s) => String(s || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+/** Motivo mostrato per una mansione: quello dell'accordo («passato a X») oppure quello della richiesta di sostituzione ancora aperta. */
+export function noteFor(weekDoc, requests, sunday, chore) {
+  const a = ((weekDoc || {}).agreedNote || {})[chore];
+  if (a && a.text) return cleanNote(a.text);
+  for (const q of Object.values(requests || {})) if (q && q.kind === 'cover' && q.week === sunday && q.chore === chore && q.status === 'pending' && q.note) return cleanNote(q.note);
+  return '';
+}
+
 /** La persona è assente oggi? (viaggio in corso, o segnata assente nella settimana corrente). `house` = vista del motore (con weeks e trips). */
 export function awayToday(house, personId, today) {
   if (!personId) return false;

@@ -3,11 +3,12 @@
 import { h, icon, loadCss, liRow, empty, avatar, toggle, stepper, seg, confirmDialog, confetti, clear } from '../ui.js';
 import { t, tr, getLang, fmtDate, fmtWeekRange, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, DEFAULT_SETTINGS, addDays } from '../engine.js';
-import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, SHARED_TEMPLATES, sharedStatus, tasksForWeek, checklistFor, nextDueWeek, weekIndex, weekOfDate, uid } from '../extras.js';
+import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, SHARED_TEMPLATES, sharedStatus, tasksForWeek, checklistFor, nextDueWeek, weekIndex, weekOfDate, uid, cleanNote } from '../extras.js';
 import { it, en } from '../strings/more.js';
 import { it as it2, en as en2 } from '../strings/more2.js';
 import { it as it3, en as en3 } from '../strings/more3.js';
 import { it as itHow, en as enHow } from '../strings/howto.js';
+import { it as itReason, en as enReason } from '../strings/reason.js';
 import { normNeed, frequentNeeds, distinctNeeds, starterNeeds, splitPasted } from '../needs-suggest.js';
 import { it as itFlow, en as enFlow } from '../strings/flow.js';   // flow.shared.* (testi condivisi con la Home)
 import { it as itB, en as enB } from '../strings/uxb.js';
@@ -16,6 +17,7 @@ registerStrings(it, en);
 registerStrings(it2, en2);
 registerStrings(it3, en3);
 registerStrings(itHow, enHow);
+registerStrings(itReason, enReason);
 registerStrings(itFlow, enFlow);
 registerStrings(itB, enB);
 
@@ -79,7 +81,7 @@ function todoBlock(ctx) {
     const no = open ? null : h('button', { type: 'button', class: 'btn soft sm', 'data-testid': 'hub-req-decline-' + r.id, onclick: () => lock(no, () => answerRequest(ctx, r, false)) }, icon('x'), t('req.decline'));
     return h('div', { class: 'li mx-todo-row', 'data-testid': 'hub-req-' + r.id, 'data-req': r.id },
       avatar(ctx.name(r.from), ctx.color(r.from), 'sm'),
-      h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r)), h('div', { class: 't' }, reqLine(ctx, r)), h('div', { class: 'btn-row mx-todo-act' }, no, yes)));
+      h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r)), h('div', { class: 't' }, reqLine(ctx, r)), r.note ? h('div', { class: 'small mx-reason', 'data-testid': 'hub-req-note' }, t('reason.note', { note: cleanNote(r.note) })) : null, h('div', { class: 'btn-row mx-todo-act' }, no, yes)));
   };
   const sharedRow = (x) => {
     const id = x.task.id;
@@ -965,13 +967,13 @@ function requestsPage(ctx) {
     return h('div', { class: 'card stack tight mx-req mx-reqcard', 'data-testid': 'req-' + r.id },
       h('div', { class: 'row' }, avatar(ctx.name(r.from), ctx.color(r.from)), h('div', { class: 'grow' },
         h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r), open ? chip('', icon('users'), t('moreY.req.openForAll')) : null),
-        h('p', { class: 'mx-rt' }, reqLine(ctx, r)), h('div', { class: 'small muted' }, whenLabel(ctx, r.at)))),
+        h('p', { class: 'mx-rt' }, reqLine(ctx, r)), r.note ? h('div', { class: 'small mx-reason', 'data-testid': 'req-note' }, t('reason.note', { note: cleanNote(r.note) })) : null, h('div', { class: 'small muted' }, whenLabel(ctx, r.at)))),
       termsBlock(ctx, r, { consequences: true }),
       h('div', { class: 'btn-row' }, open ? null : btnDecline(r), btnAccept(r, k === 'cover' ? t('moreY.req.takeIt') : null)));
   };
   const listRow = (r, { cancelable, answerable, hist }) => h('div', { class: 'li mx-req' + (answerable ? ' adm' : ''), 'data-testid': 'req-' + r.id },
     avatar(ctx.name(r.from), ctx.color(r.from), 'sm'),
-    h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r), statusChip(r)), h('div', { class: 't' }, hist || answerable ? reqPlain(ctx, r) : reqLine(ctx, r)), termsBlock(ctx, r, { consequences: answerable }),
+    h('div', { class: 'grow' }, h('div', { class: 'mx-kindrow' }, kindChip(r), termsChip(r), statusChip(r)), h('div', { class: 't' }, hist || answerable ? reqPlain(ctx, r) : reqLine(ctx, r)), r.note ? h('div', { class: 'small mx-reason', 'data-testid': 'req-note' }, t('reason.note', { note: cleanNote(r.note) })) : null, termsBlock(ctx, r, { consequences: answerable }),
       h('div', { class: 'd' }, hist ? [whenLabel(ctx, r.answeredAt || r.at), r.status === 'accepted' && r.by ? ` · ${t('moreY.req.will', { name: ctx.name(r.by) })}` : ''] : whenLabel(ctx, r.at))),
     cancelable ? btnCancel(r) : null,
     answerable ? h('div', { class: 'btn-row mx-req-actions' }, btnDecline(r), btnAccept(r)) : null);

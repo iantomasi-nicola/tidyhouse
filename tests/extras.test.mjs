@@ -339,3 +339,12 @@ test('penalità: chi lascia un arretrato di checklist e poi si assenta, una volt
   const none = buildStats({ ...hh, weeks: { [wk(0)]: weeks[wk(0)], [wk(1)]: { result: weeks[wk(1)].result }, [wk(2)]: { result: weeks[wk(2)].result } } }, compute({ ...hh, weeks: { [wk(0)]: weeks[wk(0)], [wk(1)]: { result: weeks[wk(1)].result }, [wk(2)]: { result: weeks[wk(2)].result } } }, addDays(wk(3), -3), 6));
   assert.equal(none.people.find((x) => x.id === doer).penalties, 0, 'presente: nessuna penalità');
 });
+
+test('motivo di una sostituzione: ripulito e limitato a 80 caratteri; si legge dall\'accordo o dalla richiesta aperta', async () => {
+  const { cleanNote, noteFor } = await import('../js/extras.js');
+  assert.equal(cleanNote('  va a\nballare\t\tin   discoteca  '), 'va a ballare in discoteca');
+  assert.equal(cleanNote('x'.repeat(200)).length, 80); assert.equal(cleanNote(null), '');
+  assert.equal(noteFor({ agreedNote: { floor: { text: 'esame' } } }, {}, '2026-11-01', 'floor'), 'esame');
+  assert.equal(noteFor({}, { r1: { kind: 'cover', week: '2026-11-01', chore: 'floor', status: 'pending', note: 'lavoro' } }, '2026-11-01', 'floor'), 'lavoro');
+  assert.equal(noteFor({}, { r1: { kind: 'cover', week: '2026-11-01', chore: 'floor', status: 'accepted', note: 'lavoro' } }, '2026-11-01', 'floor'), '', 'una richiesta già chiusa non conta');
+});
