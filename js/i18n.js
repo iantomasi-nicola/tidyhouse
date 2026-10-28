@@ -32,7 +32,7 @@ const D = {
     // week card / chore sheet
     'chore.assignedTo': 'Assegnato a', 'chore.whoCleaned': 'Chi ha pulito?', 'chore.suggestedSub': 'Sostituto equo suggerito: {name}', 'chore.nobody': 'Nessuno (saltata)',
     'chore.alsoSkipped': 'Anche {name} era di riserva ma non ha pulito', 'chore.reset': 'Rimetti da fare', 'chore.swap': 'Scambio concordato', 'chore.swapWith': 'Scambia con…',
-    'chore.planDay': 'Giorno scelto', 'chore.planHint': 'Scegli il giorno in cui lo fai (es. venerdì se nel weekend non ci sei). Gli altri lo vedono e i promemoria si adattano.',
+    'chore.planDay': 'Giorno scelto', 'chore.planHint': 'Scegli il giorno in cui lo fai (es. venerdì se nel weekend non ci sei), al più tardi martedì della settimana dopo. Gli altri lo vedono e i promemoria si adattano.',
     'chore.planClear': 'Togli giorno', 'chore.makeupBadge': 'Recupero', 'chore.makeupHint': 'Questo turno è un recupero: aggiungilo a quello normale.',
     'chore.paybackHint': 'Restituzione diretta: ti ha coperto, ora tocca a te.', 'chore.by': 'a cura di', 'chore.auto': 'Calcolato automaticamente',
     'chore.undoSkipped': 'Hai saltato: ricorda che diventa un recupero e un CDM.', 'chore.history': 'Storico',
@@ -257,7 +257,7 @@ D.en = {
   'widget.upcoming': 'Upcoming weeks', 'widget.makeups': 'Make-ups and rests', 'widget.ranking': 'Mini ranking', 'widget.needs': 'To buy', 'widget.quick': 'Quick actions', 'widget.links': 'Quick links',
   'chore.assignedTo': 'Assigned to', 'chore.whoCleaned': 'Who cleaned?', 'chore.suggestedSub': 'Suggested fair substitute: {name}', 'chore.nobody': 'Nobody (skipped)',
   'chore.alsoSkipped': '{name} was the backup but didn\'t clean either', 'chore.reset': 'Put back to "to do"', 'chore.swap': 'Agreed swap', 'chore.swapWith': 'Swap with…',
-  'chore.planDay': 'Chosen day', 'chore.planHint': 'Pick the day you\'ll do it (e.g. Friday if you\'re away on the weekend). Others see it and reminders adapt.',
+  'chore.planDay': 'Chosen day', 'chore.planHint': 'Pick the day you\'ll do it (e.g. Friday if you\'re away on the weekend), at the latest the Tuesday after. Others see it and reminders adapt.',
   'chore.planClear': 'Clear day', 'chore.makeupBadge': 'Make-up', 'chore.makeupHint': 'This chore is a make-up: it comes on top of your normal one.',
   'chore.paybackHint': 'Direct payback: they covered for you, now it\'s your turn.', 'chore.by': 'by', 'chore.auto': 'Calculated automatically',
   'chore.undoSkipped': 'You skipped: it becomes a make-up and a CDM.', 'chore.history': 'History',

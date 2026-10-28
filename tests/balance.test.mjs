@@ -137,3 +137,19 @@ test('correggere il risultato di una settimana passata: nessuno ha pulito / ha p
   assert.equal(debtOf(admin, other, 0), 1);
   assert.equal(s.state.weeks[LASTW].result.floor, `skipped:${other}`);
 });
+
+test('badge TR/CDM: l\'admin li toglie e li rimette; il calcolo per le regole resta', async () => {
+  const { s, ids, admin, user } = await setup();
+  const { buildStats } = await import('../js/extras.js');
+  const stats = () => buildStats(engineHouse(s.state), admin.out());
+  const top = stats().people.find((p) => p.trRaw);
+  assert.ok(top && top.tr, 'qualcuno ha il TR');
+  await assert.rejects(() => user.setBadgeOff(top.id, 'tr', true), /permission/);
+  await assert.rejects(() => admin.setBadgeOff('nessuno', 'tr', true), /invalid/);
+  await admin.setBadgeOff(top.id, 'tr', true);
+  const after = stats().people.find((p) => p.id === top.id);
+  assert.equal(after.tr, false); assert.equal(after.trRaw, true); assert.deepEqual(after.badgeOff, { tr: true, cdm: false });
+  await admin.setBadgeOff(top.id, 'tr', false);
+  assert.equal(stats().people.find((p) => p.id === top.id).tr, true);
+  assert.ok(ids.length);
+});

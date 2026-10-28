@@ -60,6 +60,13 @@ export const uid = () => randomCode(10);
 // ============ Settimane: helpers ============
 export function weekIndex(house, sunday) { return Math.round((dayNum(sunday) - dayNum(house.startSunday)) / 7); }
 export function weekDays(sunday) { return Array.from({ length: 7 }, (_, i) => addDays(sunday, i - 6)); }
+/** Ultimo giorno in cui si può fare un turno scelto: martedì della settimana successiva (domenica + 2). */
+export const PLAN_EXTRA_DAYS = 2;
+/** Giorni tra cui scegliere «quando lo faccio»: da lunedì della settimana fino a martedì dopo, senza i giorni già passati (se `today`). */
+export function planDays(sunday, today) {
+  const all = [...weekDays(sunday), ...Array.from({ length: PLAN_EXTRA_DAYS }, (_, i) => addDays(sunday, i + 1))];
+  return today ? all.filter((d) => d >= today) : all;
+}
 /** Nota del motivo di una sostituzione: breve, una riga, senza caratteri di controllo (la vedono tutti i coinquilini). */
 export const cleanNote = (s) => String(s || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
 /** Motivo mostrato per una mansione: quello dell'accordo («passato a X») oppure quello della richiesta di sostituzione ancora aperta. */
@@ -291,7 +298,13 @@ export function buildStats(house, out) {
     p.score = byEffort ? Math.max(0, Math.round((p.effort - p.penaltyPoints) * 10) / 10) : p.cleanedTotal;
   }
   const maxScore = Math.max(0, ...people.map((p) => p.score));
-  for (const p of people) p.tr = p.score > 0 && p.score === maxScore;
+  // badge TR/CDM: `Raw` = guadagnato per le regole; `badgeOff` (house.badgeOff = {idPersona:{tr,cdm}}) = tolto dall'admin
+  const off = house.badgeOff || {};
+  for (const p of people) {
+    p.trRaw = p.score > 0 && p.score === maxScore; p.cdmRaw = p.cdm;
+    p.badgeOff = off[p.id] && (off[p.id].tr || off[p.id].cdm) ? { tr: !!off[p.id].tr, cdm: !!off[p.id].cdm } : null;
+    p.tr = p.trRaw && !(p.badgeOff && p.badgeOff.tr); p.cdm = p.cdmRaw && !(p.badgeOff && p.badgeOff.cdm);
+  }
   return {
     people, closedWeeks, balance, completion: assAll ? Math.round((100 * doneAll) / assAll) : null,
     monthly: [...monthly.values()].sort((a, b) => a.month.localeCompare(b.month)).slice(-12), effort: eff, from: fromP, sd, mean,

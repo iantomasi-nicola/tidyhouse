@@ -4,7 +4,7 @@ import { h, icon, avatar, loadCss, confetti, haptic, promptDialog } from '../ui.
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES, validateRoommates } from '../engine.js';
 import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote, termsLine } from '../choresheet.js';
-import { planOf, buildStats, weekDays, sharedStatus, cleanNote } from '../extras.js';
+import { planOf, buildStats, planDays, sharedStatus, cleanNote } from '../extras.js';
 import { it, en } from '../strings/home.js';
 import { it as itU, en as enU } from '../strings/uxa.js';
 import { it as itZ, en as enZ } from '../strings/more3.js';   // moreZ.boughtToast (spesa: comprato + Annulla)
@@ -189,14 +189,15 @@ function miniRow(ctx, M, it2) {
 function planTip(ctx, M, f) {
   const row = M.row, ch = CHORES[f.c], t = ctx.t;
   if (!ctx.feature('planDay') || !ctx.actions.canPlan(row.sunday, ch) || planOf(M.eh, row.sunday, ch)) return null;
-  const days = weekDays(row.sunday);
+  const days = planDays(row.sunday, M.today);
+  if (!days.length) return null;
   const pills = days.map((d) => {
     const past = d < M.today;
     return h('button', { type: 'button', class: past ? 'past' : '', disabled: past || null, 'aria-pressed': 'false', 'aria-label': `${dowLong(d)} ${fmtDate(d)}`, 'data-day': d,
       onclick: async () => { try { await ctx.actions.setPlanDay(row.sunday, ch, d); haptic(ctx.prefs.haptics, 8); ctx.toast(t('st.planned', { day: dowLong(d) })); } catch { ctx.toast(t('error')); } } },
     h('small', null, t('dow.' + dowOf(d))), h('span', null, d.slice(8).replace(/^0/, '')));
   });
-  return h('div', { class: 'hm-tip', 'data-testid': 'plan-tip' }, h('div', { class: 'hm-tiphead' }, icon('calendar'), h('span', null, t('home.tipPlanDay'))), h('div', { class: 'daychips' }, pills));
+  return h('div', { class: 'hm-tip', 'data-testid': 'plan-tip' }, h('div', { class: 'hm-tiphead' }, icon('calendar'), h('span', null, t('home.tipPlanDay'))), h('div', { class: 'daychips', style: `--dc:${days.length <= 7 ? days.length : 5}` }, pills));
 }
 
 // ---------------- WEEK ----------------

@@ -4,7 +4,7 @@
 import { h, icon, avatar, toggle, seg, copyText, download, confetti, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 import { CHORES, addDays } from './engine.js';
-import { weekDays, planOf, delayOf, checklistOwners, swapPatch, autoSub, cleanNote, noteFor, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
+import { planDays, planOf, delayOf, checklistOwners, swapPatch, autoSub, cleanNote, noteFor, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
 import { it as itCant, en as enCant } from './strings/cantdo.js';
@@ -670,7 +670,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       const today = ctx.today();
       out.push(section(t('chore.planDay'),
         h('div', { class: 'card stack tight' },
-          h('div', { class: 'daychips', role: 'group', 'aria-label': t('chore.planDay') }, weekDays(sunday).map((d) => h('button', {
+          h('div', { class: 'daychips', role: 'group', 'aria-label': t('chore.planDay'), style: `--dc:${planDays(sunday, today).length <= 7 ? planDays(sunday, today).length : 5}` }, planDays(sunday, today).map((d) => h('button', {
             type: 'button', class: d < today ? 'past' : '', 'aria-pressed': String(plan === d), 'data-day': d, 'aria-label': `${dowLong(d, ctx.lang)} ${fmtDate(d, ctx.lang)}`,
             onclick: () => run(ctx, () => A.setPlanDay(sunday, chore, plan === d ? null : d)),
           }, h('small', null, t('dow.' + dowIdx(d))), String(+d.slice(8))))),

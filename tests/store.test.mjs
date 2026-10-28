@@ -488,3 +488,16 @@ test('"lo faccio io": sempre con recupero (il regalo non esiste più)', async ()
     const r2 = adm.a.out().rows[adm.a.out().cur]; assert.equal(r2.sb[1], B.a.me, 'chi ha pulito guadagna il riposo'); assert.ok(r2.da[1] === owner || r2.isMakeup[1], 'chi non l\'ha fatto lo recupera (o il turno era già un recupero)');
   }
 });
+
+test('giorno scelto: da lunedì fino a martedì della settimana dopo, non oltre', async () => {
+  const hub = new MemoryHub(); await mkHouse(hub);
+  const adm = await client(hub, 'H1', { isAdmin: true });
+  const row = adm.a.out().rows.find((r) => r.isCur);
+  await adm.a.setPlanDay(row.sunday, 'floor', addDays(row.sunday, 2));
+  assert.equal(adm.s.state.weeks[row.sunday].plan.floor, addDays(row.sunday, 2));
+  await assert.rejects(adm.a.setPlanDay(row.sunday, 'floor', addDays(row.sunday, 3)), /invalid/);
+  await assert.rejects(adm.a.setPlanDay(row.sunday, 'floor', addDays(row.sunday, -7)), /invalid/);
+  const { planDays } = await import('../js/extras.js');
+  assert.deepEqual(planDays(row.sunday, addDays(row.sunday, -1)), [addDays(row.sunday, -1), row.sunday, addDays(row.sunday, 1), addDays(row.sunday, 2)]);
+  assert.equal(planDays(row.sunday).length, 9);
+});

@@ -1,6 +1,6 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
 import { CHORES, NOBODY, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, cleanNote, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
+import { PLAN_EXTRA_DAYS, uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, cleanNote, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
 import { engineHouse } from './store.js';
 import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
 
@@ -256,6 +256,7 @@ export class Actions {
   async setEveryoneAway(sunday, on) { this.need(this.admin); await this.s.setDoc('weeks', sunday, { everyone: on ? true : null }); }
   async setPlanDay(sunday, chore, date) {
     this.need(this.canPlan(sunday, chore));
+    if (date && !(dayNum(date) >= dayNum(sunday) - 6 && dayNum(date) <= dayNum(sunday) + PLAN_EXTRA_DAYS)) throw new Error('invalid');   // dalla settimana fino a martedì dopo
     await this.s.setDoc('weeks', sunday, { plan: { [chore]: date || null } });
     if (date) await this.log('plan', { week: sunday, chore, day: date });
   }
@@ -316,6 +317,13 @@ export class Actions {
   async restoreAdjust(week, personId, prev) {
     this.need(this.admin);
     await this.s.setDoc('weeks', week, { adj: { [personId]: adjPatch(prev || {}) } });
+  }
+  /** Toglie (off=true) o rimette il badge TR/CDM a una persona (solo admin): `house.badgeOff`. Il badge guadagnato per le regole resta calcolato, ma non si mostra. */
+  async setBadgeOff(personId, kind, off = true) {
+    this.need(this.admin);
+    if (!['tr', 'cdm'].includes(kind) || !(this.house.roommates || []).some((r) => r.id === personId)) throw new Error('invalid');
+    await this.s.setHouse({ badgeOff: { [personId]: { [kind]: off ? true : null } } });
+    await this.log('badge', { who: personId, text: `${kind.toUpperCase()} ${off ? '−' : '+'}` });
   }
   async toggleTask(sunday, taskId, chore, done) {
     this.need(this.canTask(sunday, chore));

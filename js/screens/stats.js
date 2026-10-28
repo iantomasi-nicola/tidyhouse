@@ -5,7 +5,9 @@ import { buildStats, rankingText, DEFAULT_TASK_PENALTY } from '../extras.js';
 import { CHORES } from '../engine.js';
 import { it, en } from '../strings/stats.js';
 import { it as it2, en as en2 } from '../strings/more2.js';
+import { it as itBdg, en as enBdg } from '../strings/badge.js';
 registerStrings(it, en);
+registerStrings(itBdg, enBdg);
 registerStrings(it2, en2);   // moreY.pen.* (penalità checklist)
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -44,7 +46,10 @@ function scoreView(ctx, st, mode, showRank) {
   // a punti fatica la penalità checklist (p.penaltyPoints) si sottrae ai punti
   const people = st.people.map((p) => ({ ...p, score: mode === 'effort' ? Math.max(0, Math.round((p.effort - (p.penaltyPoints || 0)) * 10) / 10) : p.cleanedTotal }));
   const max = Math.max(0, ...people.map((p) => p.score));
-  for (const p of people) { p.tr = showRank && p.score > 0 && p.score === max; p.cdm = showRank && p.cdm; }
+  for (const p of people) {
+    p.trRaw = showRank && p.score > 0 && p.score === max; p.tr = p.trRaw && !(p.badgeOff && p.badgeOff.tr);
+    p.cdm = showRank && p.cdmRaw && !(p.badgeOff && p.badgeOff.cdm);
+  }
   people.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   let pos = 0;
   people.forEach((p, i) => { if (i === 0 || p.score !== people[i - 1].score) pos = i + 1; p.pos = pos; });
@@ -310,5 +315,20 @@ function openPerson(ctx, st, p) {
       h('div', { class: 'grow' }, h('div', { class: 'pd-cn' }, choreName(c)), h('div', { class: 'small muted' }, t('stats.cleanedBy') + ': ' + p.cleaned[i])),
       h('span', { class: 'chip ' + (open ? 'warn' : 'ok') }, open ? t('stats.makeupN', { n: open }) : t('stats.noMakeups')));
   }));
-  return ctx.sheet({ title: p.name, body: h('div', { class: 'stack pd' }, head, p.penalties > 0 ? h('div', { class: 'pd-chips' }, h('span', { class: 'chip warn' }, icon('alert'), t('moreY.pen.chip', { pts: fmtPts(ctx, p.penaltyPoints) }))) : null, grid, h('div', { class: 'lbl' }, t('stats.openMakeupsBy')), mkList, penNote) });
+  // admin: toglie (o rimette) il badge TR / CDM a questa persona
+  const badgeBtn = (kind) => {
+    const gained = kind === 'tr' ? p.trRaw : p.cdmRaw; const off = !!(p.badgeOff && p.badgeOff[kind]);
+    if (!ctx.isAdmin || (!gained && !off)) return null;
+    const label = kind.toUpperCase();
+    return h('button', { type: 'button', class: 'btn soft sm', 'data-act': `badge-${kind}`, onclick: async () => {
+      try {
+        await ctx.actions.setBadgeOff(p.id, kind, !off);
+        ctx.toast(t(off ? 'bdg.restored' : 'bdg.removed', { badge: label, name: p.name }), 6000, off ? undefined : { action: { label: t('flow.undo'), onClick: async () => { try { await ctx.actions.setBadgeOff(p.id, kind, false); } catch { ctx.toast(t('error')); } } } });
+        sh.close();
+      } catch (e) { ctx.toast(e && e.message === 'permission' ? t('err.permission') : t('error')); }
+    } }, icon(off ? 'refresh' : 'x'), t(off ? 'bdg.restore' : 'bdg.remove', { badge: label }));
+  };
+  const badgeRow = [badgeBtn('tr'), badgeBtn('cdm')].filter(Boolean);
+  const sh = ctx.sheet({ title: p.name, body: h('div', { class: 'stack pd' }, head, badgeRow.length ? h('div', { class: 'pd-chips', 'data-testid': 'badge-admin' }, badgeRow) : null, p.penalties > 0 ? h('div', { class: 'pd-chips' }, h('span', { class: 'chip warn' }, icon('alert'), t('moreY.pen.chip', { pts: fmtPts(ctx, p.penaltyPoints) }))) : null, grid, h('div', { class: 'lbl' }, t('stats.openMakeupsBy')), mkList, penNote) });
+  return sh;
 }
