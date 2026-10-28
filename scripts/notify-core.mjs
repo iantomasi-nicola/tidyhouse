@@ -97,7 +97,7 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
           if (rq.status === 'pending' && !rq.notified) {
             // sostituzione aperta a tutti: solo a chi è a casa (gli assenti non possono comunque farla)
             const targets = rq.kind === 'offer' ? [rq.to] : rq.to ? [rq.to] : active.map((r) => r.id).filter((x) => x !== rq.from);
-            const ps = targets.map((pid) => go({ type: 'requests', personId: pid, key: `${rq.kind}:${rid}:${pid}`, skipAway: rq.kind === 'cover' && !rq.to, custom: (l) => ({ title: tr(l, rq.kind === 'offer' ? 'n.offer.title' : 'n.cover.title'), body: tr(l, rq.kind === 'offer' ? 'n.offer.body' : 'n.cover.body', { name: name(rq.from), chore: CH(l, rq.chore) }) + ' ' + tr(l, rq.terms === 'gift' ? 'n.terms.gift' : 'n.terms.repay'), url: '#/requests', actions: answer(l) }) }));
+            const ps = targets.map((pid) => go({ type: 'requests', personId: pid, key: `${rq.kind}:${rid}:${pid}`, skipAway: rq.kind === 'cover' && !rq.to, custom: (l) => ({ title: tr(l, rq.kind === 'offer' ? 'n.offer.title' : 'n.cover.title'), body: tr(l, rq.kind === 'offer' ? 'n.offer.body' : 'n.cover.body', { name: name(rq.from), chore: CH(l, rq.chore) }) + ' ' + tr(l, 'n.terms.repay'), url: '#/requests', actions: answer(l) }) }));
             after.push(async () => { if (ps.some((p) => p.ok > 0) || ps.every((p) => !p.targets)) await db.setDoc(hid, 'requests', rid, { notified: true }, true); });
           } else if (rq.status !== 'pending' && rq.notifiedAnswer === false) {
             const ok = rq.status === 'accepted'; const who = rq.kind === 'offer' ? rq.to : rq.by;

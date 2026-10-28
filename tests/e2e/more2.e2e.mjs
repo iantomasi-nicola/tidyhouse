@@ -207,12 +207,12 @@ await scenario('requests: sostituzioni, offerte, avvisi, stato, annulla, badge h
   assert.match(t, /Cerchi un sostituto per bagno/); assert.match(t, /Ti sei offerto di fare cucina al posto di Carla/);
   assert.match(t, /Bruno ha pulito cucina al posto tuo/); assert.match(t, /Solo informativo/);
   // condizioni: chip, spiegazione di una riga, conseguenze prima di rispondere
-  assert.match(await page.locator('[data-testid=req-r1]').innerText(), /Regalo/);
-  assert.match(await page.locator('[data-testid=terms-r1]').innerText(), /Regalo: il turno passa a chi se ne fa carico, nessun recupero\./);
-  assert.match(await page.locator('[data-testid=terms-r1]').innerText(), /Se accetti[\s\S]*Il turno passa a Anna[\s\S]*Bruno non deve recuperarlo/);
+  assert.match(await page.locator('[data-testid=req-r1]').innerText(), /Con recupero/);   // le vecchie richieste «regalo» valgono «con recupero»
+  assert.match(await page.locator('[data-testid=terms-r1]').innerText(), /Con recupero: la settimana prossima il turno si recupera/);
+  assert.match(await page.locator('[data-testid=terms-r1]').innerText(), /Se accetti[\s\S]*Anna fa il turno e guadagna un riposo[\s\S]*Bruno lo recupera/);
   assert.match(await page.locator('[data-testid=terms-r2]').innerText(), /Con recupero: la settimana prossima il turno si recupera, chi lo fa guadagna un riposo\./);
   assert.match(await page.locator('[data-testid=terms-r2]').innerText(), /Anna fa il turno e guadagna un riposo[\s\S]*Carla lo recupera la settimana prossima/);
-  assert.match(await page.locator('[data-testid=terms-r3]').innerText(), /Il turno passa a Bruno/);
+  assert.match(await page.locator('[data-testid=terms-r3]').innerText(), /Bruno fa il turno e guadagna un riposo/);
   assert.match(await page.locator('[data-testid=req-r4]').innerText(), /Con recupero/, 'senza terms = con recupero');
   assert.match(await page.locator('[data-testid=req-history] [data-testid=req-r7]').innerText(), /Con recupero/);
   assert.match(t, /Concordata/); assert.match(t, /Rifiutata/); assert.match(t, /Lo farà Carla/);
@@ -384,7 +384,7 @@ await scenario('activity: nuovi tipi di log (incomplete, volunteer, delay, agree
   assert.match(t, /Bruno ha pulito cucina al posto di Carla, di sua iniziativa/);
   assert.match(t, /Carla pulirà bagno in ritardo, martedì 3 nov/);
   assert.match(t, /Concordato: Bruno farà pavimenti/);
-  assert.match(t, /Concordato con recupero: Carla farà cucina, il turno si recupera la settimana prossima/); assert.match(t, /Regalo: Anna farà pavimenti al posto dell'assegnato, nessun recupero/);
+  assert.match(t, /Concordato con recupero: Carla farà cucina, il turno si recupera la settimana prossima/); assert.match(t, /Concordato con recupero: Anna farà pavimenti/);
   assert.match(t, /Anna ha aggiunto un'assenza per Carla/); assert.match(t, /Bruno ha rimesso cucina da fare/);
   assert.match(t, /ma mancava 1 voce della checklist/);
   assert.deepEqual((await page.locator('.eyebrow').allInnerTexts()).slice(0, 2), ['Oggi', 'Ieri']);

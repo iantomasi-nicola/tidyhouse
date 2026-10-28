@@ -604,69 +604,61 @@ const run = async () => {
     noErrors(en);
   });
 
-  await test('"lo faccio io": due schede (con recupero / favore) con conseguenze per entrambi; il favore passa il turno', async () => {
-    // offerta: K propone un favore a B (assegnato del bagno)
+  await test('"lo faccio io": solo «con recupero», con conseguenze per entrambi; nessun regalo', async () => {
+    // offerta: K si offre di fare il bagno di B: esiste solo «con recupero» (il «regalo» non c'è più)
     const page = await open({ s: mk({ me: K, admin: false }) });
     await openChore(page, 'bathroom');
     await top(page).locator('[data-act=offer]').click();
     await page.waitForSelector('#layer .sheet .fl-terms');
     const sh = top(page);
-    assert.equal(await sh.locator('.fl-term').count(), 2);
-    assert.equal(await sh.locator('[data-terms=repay]').getAttribute('aria-pressed'), 'true', 'preselezionato "con recupero", bene in vista');
-    assert.match(await sh.locator('[data-terms=repay]').innerText(), /Lo faccio io, tu recuperi/);
+    assert.equal(await sh.locator('.fl-term').count(), 1, 'una sola modalità');
+    assert.equal(await sh.locator('[data-terms=gift]').count(), 0, 'nessun regalo');
+    assert.match(await sh.locator('.fl-term').innerText(), /Lo faccio io, tu recuperi/);
     assert.match(await sh.locator('[data-testid=terms-effect-repay]').innerText(), new RegExp(`${NAME[B]}: recupera la settimana prossima · ${NAME[K]}: guadagna 1 riposo`));
-    assert.match(await sh.locator('[data-terms=gift]').innerText(), /Lo faccio io al posto tuo e mi va bene così[\s\S]*Favore/);
-    assert.match(await sh.locator('[data-testid=terms-effect-gift]').innerText(), new RegExp(`${NAME[B]}: nessun debito · ${NAME[K]}: il turno è suo`));
     await shot(page, 'terms-offer-390');
-    await sh.locator('[data-terms=gift]').click();
-    assert.equal(await sh.locator('[data-terms=gift]').getAttribute('aria-pressed'), 'true');
-    await page.evaluate(() => window.__app.store.setDoc('weeks', '2026-11-15', { note: 'x' }));   // la scelta sopravvive agli aggiornamenti
-    await page.waitForTimeout(300);
-    assert.equal(await sh.locator('[data-terms=gift]').getAttribute('aria-pressed'), 'true');
     await sh.locator('[data-act=offer-send]').click();
     await page.waitForSelector('#layer .sheet [data-act=offer-pending]');
-    assert.equal(Object.values(await reqs(page)).find((r) => r.kind === 'offer').terms, 'gift');
-    // B vede la modalità prima di rispondere
+    assert.equal(Object.values(await reqs(page)).find((r) => r.kind === 'offer').terms, 'repay');
+    // B vede le conseguenze prima di rispondere
     await as(page, B);
     const al = page.locator('[data-widget=alerts] [data-testid^=req-]');
-    assert.match(await al.innerText(), new RegExp(`È un favore: il turno passa a ${NAME[K]}, nessun recupero per ${NAME[B]}`));
-    assert.equal(await al.locator('.hm-terms').getAttribute('data-terms'), 'gift');
+    assert.match(await al.innerText(), new RegExp(`${NAME[B]}`));
+    assert.equal(await al.locator('.hm-terms').getAttribute('data-terms'), 'repay');
     await shot(page, 'terms-alert-390');
     await page.waitForTimeout(700);
     await al.locator('[data-act=req-yes]').click();
-    await page.waitForFunction((k) => ((window.__app.state.weeks['2026-11-01'] || {}).swap || {}).bathroom === k, K);
-    await page.waitForFunction((k) => window.__app.calc.out.rows[window.__app.calc.out.cur].assigned[1] === k, K);   // il turno è passato a K
+    await page.waitForFunction((k) => ((window.__app.state.weeks['2026-11-01'] || {}).agreed || {}).bathroom === k, K);
+    assert.equal(((await wk(page)).swap || {}).bathroom ?? null, null, 'nessuno scambio: il turno resta all\'assegnato (recupero)');
     noErrors(page);
-    // richiesta: F chiede un favore a chiunque; la richiesta mostra "con recupero" se lasciata predefinita
+    // richiesta: F chiede a chiunque; la richiesta è «con recupero»
     const p2 = await open({ s: mk({ me: F, admin: false }) });
     await openChore(p2, 'floor');
     await top(p2).locator('[data-act=ask]').click();
     await p2.waitForSelector('#layer .sheet .fl-terms');
     assert.match(await top(p2).locator('[data-testid=terms-effect-repay]').innerText(), new RegExp(`${NAME[F]}: recupera la settimana prossima · chi accetta: guadagna 1 riposo`));
     await top(p2).locator(`.cs-pick[data-who=${B}]`).click();
-    assert.match(await top(p2).locator('[data-testid=terms-effect-gift]').innerText(), new RegExp(`${NAME[F]}: nessun debito · ${NAME[B]}: il turno è suo`));
+    assert.equal(await top(p2).locator('[data-terms=gift]').count(), 0, 'nessun regalo');
     await shot(p2, 'terms-ask-390');
     await top(p2).locator('[data-act=ask-send]').click();
     await p2.waitForSelector('#layer .sheet [data-testid=cover-req]');
     const q = Object.values(await reqs(p2)).find((r) => r.kind === 'cover');
     assert.equal(q.terms, 'repay');
     assert.match(await top(p2).locator('[data-testid=cover-req]').innerText(), /Con recupero/);
-    // volontario: spiega le conseguenze e offre la via del favore (offerta con consenso)
+    // volontario: spiega le conseguenze, nessuna via del regalo
     const p3 = await open({ s: mk({ me: B, admin: false }) });
     await openChore(p3, 'floor');
     await top(p3).locator('[data-act=volunteer]').click();
-    await p3.waitForSelector('[data-choice="gift"]');
-    assert.match(await top(p3).innerText(), /deve un recupero e tu guadagni 1 riposo[\s\S]*Proponi un favore/);
-    await p3.click('[data-choice="gift"]');
-    await p3.waitForFunction(() => Object.values(window.__app.state.requests).some((r) => r.kind === 'offer' && r.terms === 'gift'));
-    assert.equal((await wk(p3)).result?.floor ?? null, null, 'nessun "fatto" senza consenso');
+    await p3.waitForSelector('[data-choice="ok"]');
+    assert.equal(await p3.locator('[data-choice="gift"]').count(), 0, 'nessun regalo');
+    assert.match(await top(p3).innerText(), /deve un recupero e tu guadagni 1 riposo/);
+    await p3.click('[data-choice="cancel"]');
     noErrors(p3);
     // EN a 320
     const en = await open({ s: mk({ me: K, admin: false, extra: { 'cp:prefs': { lang: 'en' } } }), viewport: SMALL, dark: true, lang: 'en-US' });
     await openChore(en, 'bathroom');
     await top(en).locator('[data-act=offer]').click();
     await en.waitForSelector('#layer .sheet .fl-terms');
-    assert.match(await top(en).innerText(), /I'll do it, you make it up[\s\S]*I'll do it for you and that's fine[\s\S]*Favor/);
+    assert.match(await top(en).innerText(), /I'll do it, you make it up/);
     await noOverflow(en, 'terms 320');
     await shot(en, 'terms-en-dark-320');
     noErrors(en);

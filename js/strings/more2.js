@@ -130,18 +130,13 @@ export const it = {
   'moreY.act.shared': '{name} ha fatto "{text}"',
   'set.feat.shared': 'Compiti condivisi',
 
-  // condizioni di sostituzione/offerta (terms: repay | gift)
+  // condizioni di sostituzione/offerta (sempre «con recupero»)
   'moreY.terms.repay': 'Con recupero',
-  'moreY.terms.gift': 'Regalo',
   'moreY.terms.repay.line': 'Con recupero: la settimana prossima il turno si recupera, chi lo fa guadagna un riposo.',
-  'moreY.terms.gift.line': 'Regalo: il turno passa a chi se ne fa carico, nessun recupero.',
   'moreY.terms.ifYes': 'Se accetti',
   'moreY.terms.repay.doer': '{doer} fa il turno e guadagna un riposo.',
   'moreY.terms.repay.requester': '{requester} lo recupera la settimana prossima.',
-  'moreY.terms.gift.doer': 'Il turno passa a {doer}.',
-  'moreY.terms.gift.requester': '{requester} non deve recuperarlo: nessun recupero, nessun CDM.',
   'moreY.act.agreedRepay': 'Concordato con recupero: {who} farà {chore}, il turno si recupera la settimana prossima',
-  'moreY.act.agreedGift': 'Regalo: {who} farà {chore} al posto dell\'assegnato, nessun recupero',
 };
 
 export const en = {
@@ -267,14 +262,9 @@ export const en = {
   'set.feat.shared': 'Shared tasks',
 
   'moreY.terms.repay': 'With make-up',
-  'moreY.terms.gift': 'Gift',
   'moreY.terms.repay.line': 'With make-up: next week the chore is made up, whoever does it earns a rest.',
-  'moreY.terms.gift.line': 'Gift: the chore goes to whoever takes it on, no make-up.',
   'moreY.terms.ifYes': 'If you accept',
   'moreY.terms.repay.doer': '{doer} does the chore and earns a rest.',
   'moreY.terms.repay.requester': '{requester} makes it up next week.',
-  'moreY.terms.gift.doer': 'The chore goes to {doer}.',
-  'moreY.terms.gift.requester': '{requester} doesn\'t have to make it up: no make-up, no CDM.',
   'moreY.act.agreedRepay': 'Agreed with make-up: {who} will do {chore}, it gets made up next week',
-  'moreY.act.agreedGift': 'Gift: {who} will do {chore} in place of the assignee, no make-up',
 };

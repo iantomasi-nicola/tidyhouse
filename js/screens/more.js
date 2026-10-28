@@ -913,8 +913,8 @@ const reqPlain = (ctx, r) => (reqKind(r) === 'swap'
   ? t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: t('chore.' + r.fromChore), b: t('chore.' + r.toChore), week: wkLabel(r) })
   : reqLine(ctx, r));
 const statusChip = (r) => (r.status === 'accepted' ? chip('ok', icon('check'), t('moreY.st.agreed')) : r.status === 'declined' ? chip('bad', icon('x'), t('moreY.st.declined')) : chip('warn', icon('clock'), t('req.pending')));
-const termsOf = (r) => (reqKind(r) === 'swap' ? null : r.terms === 'gift' ? 'gift' : 'repay');
-const termsChip = (r) => { const k = termsOf(r); return k ? (k === 'gift' ? chip('ok mx-terms', icon('sparkles'), t('moreY.terms.gift')) : chip('warn mx-terms', icon('refresh'), t('moreY.terms.repay'))) : null; };
+const termsOf = (r) => (reqKind(r) === 'swap' ? null : 'repay');   // il «regalo» non esiste più: anche le vecchie richieste valgono «con recupero»
+const termsChip = (r) => { const k = termsOf(r); return k ? chip('warn mx-terms', icon('refresh'), t('moreY.terms.repay')) : null; };
 /** Una riga di spiegazione + (prima di rispondere) le conseguenze per chi fa il turno e per chi lo chiede. */
 function termsBlock(ctx, r, { consequences = false } = {}) {
   const k = termsOf(r); if (!k) return null;
@@ -1009,7 +1009,7 @@ let actLimit = 60;
 const ACT_ICON = { done: ['check', 'g'], cover: ['swap', 'p'], skipped: ['x', 'r'], reset: ['refresh', ''], away: ['plane', 'o'], back: ['home', 'g'], trip: ['plane', 'o'], plan: ['calendar', ''], swap: ['swap', 'p'], need: ['cart', 'o'], task: ['list', 'g'], settings: ['settings', ''], roommates: ['users', ''], import: ['upload', ''],
   incomplete: ['alert', 'o'], volunteer: ['sparkles', 'g'], delay: ['clock', 'o'], agreed: ['check', 'p'], shared: ['refresh', 'g'], assign: ['calendar', 'p'] };
 const ACT_NEW = new Set(['incomplete', 'volunteer', 'delay', 'agreed', 'shared']);
-const agreedKey = (p) => 'moreY.act.agreed' + (p.terms === 'gift' ? 'Gift' : p.terms === 'repay' ? 'Repay' : '');
+const agreedKey = (p) => 'moreY.act.agreed' + (p.terms ? 'Repay' : '');
 function actText(ctx, e) {
   const p = e.p || {};
   if (!ACT_ICON[e.type]) return t('act.generic', { name: personName(ctx, e.by), text: p.text || e.type || '' });

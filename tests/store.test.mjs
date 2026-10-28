@@ -467,24 +467,23 @@ test('compiti condivisi: salvataggio admin, "fatto" di chiunque, annulla solo di
   assert.ok(Object.values(adm.s.state.log).some((l) => l.type === 'shared'));
 });
 
-test('"lo faccio io": con recupero (regole) oppure regalo (nessun debito)', async () => {
+test('"lo faccio io": sempre con recupero (il regalo non esiste più)', async () => {
   const hub = new MemoryHub(); await mkHouse(hub);
   const adm = await client(hub, 'H1', { isAdmin: true });
   await adm.a.setHouse({ checklistOff: { floor: true, bathroom: true, kitchen: true } });
   const ids = adm.s.state.house.roommates.map((r) => r.id);
   const row = adm.a.out().rows[adm.a.out().cur]; const sunday = row.sunday;
   const A = await client(hub, 'H1', { meId: row.assigned[0] }); const B = await client(hub, 'H1', { meId: row.assigned[2] });   // B ha la cucina: si offre per pavimenti e bagno
-  // regalo: dopo l'accettazione il turno passa a B come scambio concordato, senza debiti per A
+  // anche chiedendo «gift» (vecchi client/dati) si ottiene «con recupero»: nessuno scambio concordato, nessun turno regalato
   const id = await B.a.offerCover({ week: sunday, chore: 'floor', terms: 'gift' });
-  assert.equal(adm.s.state.requests[id].terms, 'gift');
+  assert.equal(adm.s.state.requests[id].terms, 'repay');
   await A.a.answerCover(id, true);
-  assert.equal(adm.s.state.weeks[sunday].swap.floor, B.a.me); assert.equal(adm.s.state.weeks[sunday].agreed.floor, B.a.me);
-  const r = adm.a.out().rows[adm.a.out().cur]; assert.equal(r.assigned[0], B.a.me); assert.equal(r.da[0], '', 'nessun debito'); assert.equal(r.sb[0], '', 'nessun credito di riposo');
+  assert.equal(adm.s.state.weeks[sunday].swap, undefined); assert.equal(adm.s.state.weeks[sunday].agreed.floor, B.a.me);
   // con recupero (predefinito): niente swap; chi lo fa segna "ha pulito" e allora scattano recupero + riposo
   const id2 = await B.a.offerCover({ week: sunday, chore: 'bathroom' }); const owner = row.assigned[1];
   if (owner !== B.a.me) {
     const O = await client(hub, 'H1', { meId: owner }); assert.equal(adm.s.state.requests[id2].terms, 'repay');
-    await O.a.answerCover(id2, true); assert.equal(adm.s.state.weeks[sunday].swap.bathroom, undefined); assert.equal(adm.s.state.weeks[sunday].agreed.bathroom, B.a.me);
+    await O.a.answerCover(id2, true); assert.equal((adm.s.state.weeks[sunday].swap || {}).bathroom, undefined); assert.equal(adm.s.state.weeks[sunday].agreed.bathroom, B.a.me);
     await B.a.completeChore(sunday, 'bathroom', { value: 'by:' + B.a.me });
     const r2 = adm.a.out().rows[adm.a.out().cur]; assert.equal(r2.sb[1], B.a.me, 'chi ha pulito guadagna il riposo'); assert.ok(r2.da[1] === owner || r2.isMakeup[1], 'chi non l\'ha fatto lo recupera (o il turno era già un recupero)');
   }

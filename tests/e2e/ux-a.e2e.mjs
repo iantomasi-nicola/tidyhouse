@@ -112,23 +112,21 @@ const run = async () => {
     noErrors(page); await page.close();
   });
 
-  // ===== F3: l'admin che assegna un turno sceglie «con recupero» o «regalo» =====
-  await test('F3 assegna (admin): scelta recupero/regalo come nelle altre richieste', async () => {
+  // ===== F3: l'admin che assegna un turno: sempre «con recupero» (il regalo non esiste più) =====
+  await test('F3 assegna (admin): solo con recupero, nessun regalo', async () => {
     const s = mk({ me: 'anna', admin: true });
     const page = await open({ s });
     const sub = (await wk(page)).agreed;
     assert.ok(!sub);
     await openChore(page, 'floor');
     await page.click('[data-act="assign"]'); await page.waitForTimeout(500);
-    assert.equal(await page.locator('#layer .sheet [data-terms="repay"]').count(), 1, 'scheda con recupero');
-    assert.equal(await page.locator('#layer .sheet [data-terms="gift"]').count(), 1, 'scheda regalo');
-    assert.equal(await page.locator('#layer .sheet [data-terms="repay"]').getAttribute('aria-pressed'), 'true', 'predefinito: con recupero');
+    assert.equal(await page.locator('#layer .sheet [data-testid="terms-effect-repay"]').count(), 1, 'spiegazione con recupero');
+    assert.equal(await page.locator('#layer .sheet [data-terms="gift"]').count(), 0, 'nessun regalo');
     const other = [F === 'anna' ? 'bruno' : 'anna'][0] === F ? 'carla' : (F === 'anna' ? 'bruno' : 'anna');
-    // regalo -> concordato + il turno passa a chi lo fa (nessun debito)
-    await page.click('#layer .sheet [data-terms="gift"]'); await page.waitForTimeout(300);
+    // concordato col sostituto: nessuno scambio, l'assegnato resta tale (recupero)
     await page.click(`#layer .sheet .cs-pick[data-who="${other}"]`); await page.waitForTimeout(800);
     let w = await wk(page);
-    assert.equal(w.agreed.floor, other); assert.equal((w.swap || {}).floor, other, 'regalo: scambio concordato');
+    assert.equal(w.agreed.floor, other); assert.ok(!(w.swap || {}).floor, 'nessuno scambio');
     // con recupero (predefinito) su un altro turno -> solo concordato
     await closeSheets(page);
     await openChore(page, 'bathroom');

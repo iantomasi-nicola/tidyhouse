@@ -150,16 +150,16 @@ export class Actions {
   async requestCover({ week, chore, to = null, terms = 'repay' }) {
     const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
     const id = uid(); const from = row.assigned[CHORES.indexOf(chore)];
-    await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, terms: terms === 'gift' ? 'gift' : 'repay', status: 'pending', at: this.ctx.now().toISOString() });
+    await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, terms: 'repay', status: 'pending', at: this.ctx.now().toISOString() });
     return id;
   }
   /** Qualcuno si offre di fare il turno di un altro: serve il consenso dell'assegnato. */
-  /** terms: 'repay' = lo faccio io e tu recuperi (regole del foglio: recupero + riposo) · 'gift' = lo faccio io al posto tuo, senza recupero. */
+  /** Sempre «con recupero» (regole del foglio: chi pulisce guadagna il riposo, l'assegnato recupera). Il «regalo» senza recupero non esiste più. */
   async offerCover({ week, chore, terms = 'repay' }) {
     const row = this.row(week); const a = row && row.assigned[CHORES.indexOf(chore)];
     this.need(feature(this.house, 'requests') && !!this.me && !!a && a !== this.me);
     const id = uid();
-    await this.s.setDoc('requests', id, { kind: 'offer', week, chore, from: this.me, to: a, terms: terms === 'gift' ? 'gift' : 'repay', status: 'pending', at: this.ctx.now().toISOString() });
+    await this.s.setDoc('requests', id, { kind: 'offer', week, chore, from: this.me, to: a, terms: 'repay', status: 'pending', at: this.ctx.now().toISOString() });
     return id;
   }
   /** Risposta a una richiesta di sostituzione/offerta. Accettando, il turno risulta "concordato" con quella persona. */
@@ -171,8 +171,8 @@ export class Actions {
     else this.need(this.admin || rq.to === this.me);
     if (!accept) { await this.s.setDoc('requests', reqId, { status: 'declined', answeredAt: this.ctx.now().toISOString(), notifiedAnswer: false }); return; }
     const who = rq.kind === 'cover' ? this.me : rq.from;
-    // 'gift': il turno passa a chi se ne fa carico come scambio concordato (nessun recupero, nessun riposo, nessun CDM); 'repay': resta all'assegnato finché chi lo fa non segna "ha pulito X" (recupero + riposo come da regole)
-    await this.s.setDoc('weeks', rq.week, { agreed: { [rq.chore]: who }, ...(rq.terms === 'gift' ? { swap: { [rq.chore]: who } } : {}) });
+    // l'assegnato resta tale finché chi lo fa non segna "ha pulito X" (recupero + riposo secondo le regole del foglio)
+    await this.s.setDoc('weeks', rq.week, { agreed: { [rq.chore]: who } });
     await this.s.setDoc('requests', reqId, { status: 'accepted', by: who, answeredAt: this.ctx.now().toISOString(), notifiedAnswer: false });
     await this.log('agreed', { week: rq.week, chore: rq.chore, who, terms: rq.terms || 'repay' });
   }
