@@ -132,8 +132,9 @@ test('notifiche: ritardo da lunedi\', max 2 al giorno agli orari scelti (10:00, 
   assert.equal(at('2026-11-02T04:00:00Z').length, 0, 'prima del primo orario');
   assert.ok(at('2026-11-02T11:00:00Z').every((x) => x.slot === 0), 'recupero entro la finestra: ancora il primo slot');
   assert.equal(planNotifications({ house: house({ notif: { late: { times: ['09:00', '10:00', '11:00'], max: 3 } } }), weeks, now: nowRome('2026-11-02T10:30:00Z') }).filter((x) => x.type === 'late').map((x) => x.slot).filter((v, i, a) => a.indexOf(v) === i).join(), '2', 'un solo invio per esecuzione');
-  // martedi' = chiusa => conta gia' come saltata
-  assert.ok(at('2026-11-03T09:10:00Z').length >= 1 && at('2026-11-03T09:10:00Z').every((x) => x.lateClosed));
+  // martedi' e' ancora entro la tolleranza (2 giorni); mercoledi' = chiusa => conta gia' come saltata
+  assert.ok(at('2026-11-03T09:10:00Z').length >= 1 && at('2026-11-03T09:10:00Z').every((x) => !x.lateClosed));
+  assert.ok(at('2026-11-04T09:10:00Z').length >= 1 && at('2026-11-04T09:10:00Z').every((x) => x.lateClosed));
   // oltre 3 giorni dopo la domenica: stop
   assert.equal(at('2026-11-05T09:10:00Z').length, 0);
   // settimana corrente non e' "in ritardo"
