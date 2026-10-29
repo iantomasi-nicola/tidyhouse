@@ -371,21 +371,24 @@ await scenario('Correggi chi ha pulito: settimana passata → ha pulito X / ness
   const res = () => page.evaluate((w) => (window.__app.state.weeks[w].result || {}).floor || '', PAST);
   const r0 = await page.evaluate((w) => window.__app.calc.out.rows.find((x) => x.sunday === w).assigned, PAST);
   const other = ['anna', 'bruno', 'carla'].find((x) => x !== r0[0]);
+  // scheda turno → «Gestisci (admin)» → «Com'è andata»: un tocco per scelta, la scheda resta aperta
   await page.evaluate((w) => import('/js/choresheet.js').then((m) => m.openChoreSheet(window.__app, w, 'floor')), PAST);
-  await page.waitForSelector('#layer .sheet.on [data-act="result-edit"]'); await page.waitForTimeout(450);
-  await page.click('#layer .sheet [data-act="result-edit"]'); await page.waitForSelector('#layer .sheet.on [data-value="skipped"]'); await page.waitForTimeout(450);
-  assert.equal(await page.locator('#layer .sheet [data-value="done"]').getAttribute('aria-pressed'), 'true', 'stato attuale: fatto');
-  await page.click(`#layer .sheet [data-value="by:${other}"]`); await page.waitForTimeout(700);
+  await page.waitForSelector('#layer .sheet.on [data-act="res-floor"]'); await page.waitForTimeout(450);
+  assert.equal(await page.locator('#layer .sheet [data-act="res-floor"][data-value="done"]').getAttribute('aria-pressed'), 'true', 'stato attuale: fatto');
+  await page.click(`#layer .sheet [data-act="res-floor"][data-value="by:${other}"]`); await page.waitForTimeout(700);
   assert.equal(await res(), `by:${other}`);
   assert.match(await toastText(page), /Risultato aggiornato/);
   await page.click('.toast button'); await page.waitForTimeout(600);
   assert.equal(await res(), 'done', 'Annulla ripristina');
   for (const v of ['skipped', `skipped:${other}`, '']) {
-    await page.evaluate((w) => import('/js/resultedit.js').then((m) => m.openResultEditSheet(window.__app, w, 'floor')), PAST);
-    await page.waitForSelector('#layer .sheet.on [data-value="skipped"]'); await page.waitForTimeout(450);
-    await page.click(`#layer .sheet [data-value="${v || 'reset'}"]`); await page.waitForTimeout(700);
+    await page.click(`#layer .sheet [data-act="res-floor"][data-value="${v || 'reset'}"]`); await page.waitForTimeout(700);
     assert.equal(await res(), v);
   }
+  // anche come foglio a sé
+  await page.evaluate((w) => import('/js/resultedit.js').then((m) => m.openResultEditSheet(window.__app, w, 'floor')), PAST);
+  await page.waitForSelector('#layer .sheet.on [data-value="skipped"]'); await page.waitForTimeout(450);
+  await page.locator('#layer .sheet.on').last().locator('[data-value="skipped"]').click(); await page.waitForTimeout(700);
+  assert.equal(await res(), 'skipped');
   noErrors(page, 'correggi'); await page.close();
 });
 

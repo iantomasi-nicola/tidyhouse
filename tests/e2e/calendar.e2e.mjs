@@ -140,7 +140,7 @@ await scenario('ha pulito un altro: lista, sostituto suggerito, stato nel motore
   assert.equal(r.res[1].id, other); assert.equal(r.cleaner[1], other);
   assert.equal((await wkDoc(page)).result.bathroom, 'by:' + other);
   assert.match(await topSheet(page).locator('[data-testid=res-effect-bathroom]').innerText(), /Bruno recupera/);
-  await closed(page);
+  await page.keyboard.press('Escape'); await closed(page);   // la scheda resta aperta: si vede il nuovo stato
   assert.match(await page.locator('.week.cur').innerText(), /Bagno[\s\S]*Bruno/i);
   noErrors(page, 'cover');
   await page.close();
@@ -158,7 +158,7 @@ await scenario('non fatto (solo admin): saltata e saltata con sostituto di riser
   await shot(page, 'skip-390');
   let r = await curRow(page);
   assert.equal(r.sk[2], 'carla');
-  await closed(page);
+  await page.keyboard.press('Escape'); await closed(page);
   // anche il sostituto di riserva non ha pulito
   const sub = before.subs[0];
   await openChore(page, 'floor');
@@ -504,7 +504,7 @@ await scenario('inglese', async () => {
   await page.waitForTimeout(500);
   assert.match(await topSheet(page).innerText(), /Assigned to/);
   assert.match(await topSheet(page).innerText(), /Mark done/);
-  assert.match(await topSheet(page).innerText(), /Someone else cleaned/);
+  assert.match(await topSheet(page).innerText(), /Manage \(admin\)[\s\S]*Who does it[\s\S]*How it went/);
   await shot(page, 'chore-sheet-en');
   await page.keyboard.press('Escape'); await page.waitForTimeout(500);
   await topSheet(page).locator('[data-act=whatsapp]').click();

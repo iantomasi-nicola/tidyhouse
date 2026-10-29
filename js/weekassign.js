@@ -173,6 +173,21 @@ export function whoState(ctx, row, ruled, c) {
   return { sel: 'rules', terms: null };
 }
 
+/** Mansioni dello stesso scambio di `chore` (es. Pavimenti↔Bagno): tornando «come da regole» si toglie lo scambio intero, non metà. */
+function swapGroup(swap, ctx, sunday, chore) {
+  if (!swap[chore]) return [chore];
+  const ruled = ruleAssigned(ctx.calc.eh, ctx.calc.today, sunday) || [];
+  const set = new Set([chore]); let grew = true;
+  while (grew) {
+    grew = false;
+    for (const c of [...set]) {
+      const holder = ruled[CHORES.indexOf(c)], receiver = swap[c];
+      for (const c2 of CHORES) if (!set.has(c2) && swap[c2] && ((holder && swap[c2] === holder) || (receiver && ruled[CHORES.indexOf(c2)] === receiver))) { set.add(c2); grew = true; }
+    }
+  }
+  return CHORES.filter((c) => set.has(c));
+}
+
 /** Applica una scelta. kind: 'rules' | 'nobody' | 'repay' | 'free' | 'swap' (id = persona; per 'swap' chi aveva la mansione prende `c2`, quella di id). */
 async function applyWho(ctx, sunday, chore, kind, id, c2) {
   const A = ctx.actions; const t = ctx.t; const c = CHORES.indexOf(chore);
@@ -192,7 +207,7 @@ async function applyWho(ctx, sunday, chore, kind, id, c2) {
     } else {
       await clearAg(chore);
       let wanted, change;
-      if (kind === 'rules') { wanted = { [chore]: '' }; msg = t('flow.mg.saved.rules', { chore: t('chore.' + chore) }); change = t('assign.logChange', { chore: lch(chore), name: t('assign.rules') }); }
+      if (kind === 'rules') { wanted = Object.fromEntries(swapGroup(prevSwap, ctx, sunday, chore).map((x) => [x, ''])); msg = t('flow.mg.saved.rules', { chore: t('chore.' + chore) }); change = t('assign.logChange', { chore: lch(chore), name: t('assign.rules') }); }
       else if (kind === 'nobody') { wanted = { [chore]: NOBODY }; msg = t('flow.mg.saved.nobody', { chore: t('chore.' + chore) }); change = t('assign.logChange', { chore: lch(chore), name: t('assign.nobody') }); }
       else if (kind === 'swap') {
         await clearAg(c2);

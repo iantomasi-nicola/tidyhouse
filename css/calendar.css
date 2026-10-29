@@ -230,9 +230,6 @@ button.cs-pick:active { background: var(--tonal-2); }
 .fl-qnote { font-style: italic; }
 
 /* pannello desktop (admin): ogni mansione con «Chi lo fa» e «Com'è andata» sempre visibili */
-@media (min-width: 1180px) {
-  .cal-layout:has(.wd-item-mg) { grid-template-columns: minmax(0, 1fr) minmax(440px, 560px); }
-}
 .wd-item-mg { display: grid; gap: 4px; padding-bottom: 12px; }
 .wd-item-mg + .wd-item-mg { border-top: .5px solid var(--hair); }
 .wd-mg { display: grid; gap: 12px; padding: 0 14px 0 16px; min-width: 0; }

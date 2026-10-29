@@ -79,7 +79,7 @@ function whenLabel(ctx, iso) {
 /** Esegue un'azione con gestione errori, toast e vibrazione. Ritorna true se è andata a buon fine. */
 async function run(ctx, fn, okMsg) {
   try { await fn(); if (okMsg) ctx.toast(okMsg); ctx.haptic(ctx.prefs.haptics, 10); return true; }
-  catch (e) { ctx.toast(e && e.message === 'permission' ? ctx.t('err.permission') : ctx.t('error')); return false; }
+  catch (e) { ctx.toast(e && e.message === 'permission' ? ctx.t('err.permission') : e && e.message === 'expired' ? ctx.t('flow.req.expired') : ctx.t('error')); return false; }
 }
 
 /**
@@ -675,12 +675,12 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
 
 // ================================================================ DETTAGLIO SETTIMANA
 /** Contenuto del dettaglio settimana (usato dallo sheet e dal pannello desktop del calendario). */
-export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
+export function renderWeekDetail(ctx, sunday, { heading = false, sheet = false } = {}) {
   const row = rowOf(ctx, sunday);
   if (!row) return h('div');
   const A = ctx.actions; const wk = weekDoc(ctx, sunday);
   const stat = weekStatus(ctx, row);
-  const inline = heading && ctx.isAdmin;   // pannello desktop delle Settimane (≥1180px) aperto dall'admin
+  const inline = !sheet && ctx.isAdmin;   // pannello desktop delle Settimane (≥1180px, fuori dal foglio) aperto dall'admin: tutto gestibile lì
   const ruled = inline ? (ruleAssigned(ctx.calc.eh, ctx.calc.today, sunday) || row.assigned.slice()) : null;
   const out = [];
 
@@ -789,7 +789,7 @@ function sh_revert(sw, val) { try { sw.querySelector('input').checked = val; } c
 export function openWeekSheet(ctx, sunday) {
   const row0 = rowOf(ctx, sunday);
   if (!row0) return null;
-  return liveSheet(ctx, { title: () => fmtWeekRange(sunday, ctx.lang), full: true, build: () => renderWeekDetail(ctx, sunday) });
+  return liveSheet(ctx, { title: () => fmtWeekRange(sunday, ctx.lang), full: true, build: () => renderWeekDetail(ctx, sunday, { sheet: true }) });
 }
 
 // ================================================================ WHATSAPP

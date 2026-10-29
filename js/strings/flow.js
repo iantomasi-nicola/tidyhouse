@@ -76,6 +76,7 @@ export const it = {
   'flow.req.agreedHim': 'Concordato: lo farà {name}',
   'flow.req.declined': 'Richiesta rifiutata',
   'flow.req.cancelled': 'Richiesta annullata',
+  'flow.req.expired': 'Richiesta scaduta: la settimana è finita o i turni sono cambiati. Non si può più accettare.',
   // admin
   'flow.assignBtn': 'Scegli chi lo fa',
   'flow.assignTitle': 'Chi deve farlo?',
@@ -226,6 +227,7 @@ export const en = {
   'flow.req.agreedHim': 'Agreed: {name} will do it',
   'flow.req.declined': 'Request declined',
   'flow.req.cancelled': 'Request cancelled',
+  'flow.req.expired': 'Request expired: the week is over or the chores have changed. It can no longer be accepted.',
   'flow.assignBtn': 'Choose who does it',
   'flow.assignTitle': 'Who has to do it?',
   'flow.assignHint': 'The person you pick gets a notice and the chore shows as "agreed" with them.',

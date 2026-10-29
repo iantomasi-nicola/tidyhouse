@@ -168,9 +168,9 @@ const run = async () => {
     await page.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[0].kind === 'done');
     await noSheets(page);
     assert.equal((await wk(page)).incomplete?.floor ?? null, null);
-    // riaperto: "Rimetti da fare" annulla
+    // riaperto (admin): «Com'è andata» → «Da fare» annulla
     await openChore(page, 'floor');
-    await top(page).locator('[data-act=reset]').click();
+    await top(page).locator('[data-act=res-floor][data-value=reset]').click();
     await page.waitForFunction(() => window.__app.calc.out.rows[window.__app.calc.out.cur].res[0].kind === '');
     noErrors(page);
     // checklist spenta per la mansione: niente sezione e nessun blocco
@@ -370,39 +370,42 @@ const run = async () => {
     noErrors(p2);
   });
 
-  await test('admin: sceglie chi fa una mansione non svolta dal foglio settimana (sostituto equo evidenziato)', async () => {
+  await test('admin: «Gestisci (admin)» → «Chi lo fa» su una mansione non svolta (con recupero, sostituto equo in testa, Annulla)', async () => {
     const page = await open({ s: mk({ me: 'anna', admin: true, weeks: DONE3 }), hash: '#/calendar' });
     await page.locator(`.week[data-sunday="${PREV}"]`).click(); await page.waitForTimeout(550);
-    assert.equal(await top(page).locator('[data-assign]').count(), 3, 'una per mansione non svolta');
+    assert.equal(await top(page).locator('[data-assign]').count(), 0, 'niente bottoni sparsi sotto ogni mansione');
+    assert.match(await top(page).innerText(), /Gestisci \(admin\)[\s\S]*Assegna la settimana[\s\S]*Recuperi e riposi/);
     await shot(page, 'week-assign-390');
-    await top(page).locator('[data-assign=kitchen]').click();
-    await page.waitForSelector('#layer .sheet [data-who]');
-    await page.waitForTimeout(450);
-    assert.match(await top(page).innerText(), /Chi deve farlo\?/);
+    await top(page).locator('[data-chore=kitchen] .wd-main').click();
+    await page.waitForSelector('#layer .sheet [data-testid=admin-manage]'); await page.waitForTimeout(450);
     const sub = P3.row.subs[2];
-    if (sub && sub !== P3.kitchen) assert.equal(await top(page).locator('.cs-pick.sug').getAttribute('data-who'), sub, 'consigliato in evidenza');
-    assert.equal(await top(page).locator('.cs-pick').first().getAttribute('data-who'), sub && sub !== P3.kitchen ? sub : await top(page).locator('.cs-pick').first().getAttribute('data-who'));
-    await shot(page, 'assign-390');
+    const firstWho = await top(page).locator('[data-act=who-kitchen]').nth(1).getAttribute('data-who');
+    if (sub && sub !== P3.kitchen) assert.equal(firstWho, sub, 'il sostituto equo è il primo dopo «Come da regole»');
     const pick = ['bruno', 'carla', 'anna'].find((id) => id !== P3.kitchen && id !== 'anna');
-    await top(page).locator(`.cs-pick[data-who=${pick}]`).click();
+    await top(page).locator(`[data-act=who-kitchen][data-who=${pick}]`).click(); await page.waitForTimeout(300);
+    assert.match(await top(page).locator('[data-testid=mg-how-kitchen]').innerText(), /Con recupero[\s\S]*Senza recupero/);
+    await shot(page, 'assign-390');
+    await top(page).locator('[data-testid=mg-terms-kitchen-repay]').click();
     await page.waitForFunction(([s, p]) => ((window.__app.state.weeks[s] || {}).agreed || {}).kitchen === p, [PREV, pick]);
     await page.waitForTimeout(500);
-    assert.equal(await sheets(page), 1, 'si chiude solo la scelta');
-    assert.match(await top(page).locator('[data-chore=kitchen]').innerText(), new RegExp(`Concordato con ${NAME[pick]}`));
+    assert.equal(await top(page).locator(`[data-act=who-kitchen][data-who=${pick}]`).getAttribute('aria-pressed'), 'true');
+    assert.match(await top(page).innerText(), new RegExp(`Concordato con ${NAME[pick]}`));
     assert.ok(Object.values(await reqs(page)).some((q) => q.kind === 'notice' && q.code === 'assigned' && q.to === pick), 'avviso alla persona scelta');
-    // togliere l'assegnazione
-    await top(page).locator('[data-assign=kitchen]').click();
-    await page.waitForSelector('#layer .sheet [data-act=assign-clear]'); await page.waitForTimeout(450);
-    await top(page).locator('[data-act=assign-clear]').click();
+    // Annulla nel messaggio, poi di nuovo e «Come da regole»
+    await page.locator('.toast .toast-action').click();
+    await page.waitForFunction((s) => !((window.__app.state.weeks[s] || {}).agreed || {}).kitchen, PREV);
+    await page.waitForTimeout(450);
+    await top(page).locator(`[data-act=who-kitchen][data-who=${pick}]`).click(); await page.waitForTimeout(300);
+    await top(page).locator('[data-testid=mg-terms-kitchen-repay]').click();
+    await page.waitForFunction(([s, p]) => ((window.__app.state.weeks[s] || {}).agreed || {}).kitchen === p, [PREV, pick]);
+    await page.waitForTimeout(450);
+    await top(page).locator('[data-act=who-kitchen][data-who=rules]').click();
     await page.waitForFunction((s) => !((window.__app.state.weeks[s] || {}).agreed || {}).kitchen, PREV);
     noErrors(page);
-    // dalla scheda turno (admin) e non admin: niente scelta
-    await closeSheets(page);
-    await openChore(page, 'floor', PREV);
-    assert.equal(await top(page).locator('[data-act=assign]').count(), 1);
+    // non admin: niente sezione admin
     const p2 = await open({ s: mk({ me: B, admin: false, weeks: DONE3 }), hash: '#/calendar' });
-    await p2.locator(`.week[data-sunday="${PREV}"]`).click(); await p2.waitForTimeout(550);
-    assert.equal(await top(p2).locator('[data-assign]').count(), 0);
+    await openChore(p2, 'kitchen', PREV);
+    assert.equal(await top(p2).locator('[data-testid=admin-manage]').count(), 0);
     noErrors(p2);
   });
 

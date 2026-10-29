@@ -1,7 +1,7 @@
 // «Recuperi e riposi» (solo admin): aggiungere o togliere recuperi per mansione e riposi a ogni persona.
 // Scrive solo le correzioni `adj` tramite ctx.actions.adjustBalance: la logica di assegnazione del motore non cambia.
 import { h, icon, avatar, loadCss } from './ui.js';
-import { registerStrings } from './i18n.js';
+import { registerStrings, fmtWeekRange } from './i18n.js';
 import { CHORES } from './engine.js';
 import { liveSheet } from './choresheet.js';
 import { it, en } from './strings/balance.js';
@@ -25,7 +25,7 @@ async function apply(ctx, id, delta, what) {
 }
 
 /** Riga del motore da cui partono le correzioni (settimana corrente, o la prima non chiusa). */
-export const balanceRow = (ctx) => ctx.calc.out.rows.find((r) => r.isCur) || ctx.calc.out.rows.find((r) => !r.closed) || null;
+export const balanceRow = (ctx) => ctx.actions.balanceRow(ctx.calc.out);
 
 /** Riepilogo breve di una persona: «1 recupero · 2 riposi» / «Nessun recupero né riposo». */
 export function balanceSummary(ctx, id) {
@@ -50,11 +50,11 @@ export function balanceCard(ctx, id) {
   const total = debts.reduce((a, v) => a + v, 0);
   return h('section', { class: 'bal-card', 'data-person': id },
     h('div', { class: 'bal-who' }, avatar(name, ctx.color(id), 'sm'), h('span', null, name)),
-    ...CHORES.map((c, k) => h('div', { class: 'bal-row', 'data-chore': c },
+    ...CHORES.map((c, k) => h('div', { class: 'bal-row', 'data-bal': c },
       h('div', { class: 'tile sm ' + c }, icon(CHORE_ICON[c])),
       h('div', { class: 'grow' }, t('chore.' + c)),
       stepper(debts[k], c, t('bal.add', { chore: t('chore.' + c).toLowerCase(), name }), t('bal.sub', { chore: t('chore.' + c).toLowerCase(), name }), mkWhat))),
-    h('div', { class: 'bal-row', 'data-chore': 'rest' },
+    h('div', { class: 'bal-row', 'data-bal': 'rest' },
       h('div', { class: 'tile sm rest' }, icon('moon')),
       h('div', { class: 'grow' }, t('bal.rest')),
       stepper(credit, 'credit', t('bal.addRest', { name }), t('bal.subRest', { name }), restWhat)),
@@ -67,7 +67,10 @@ export function balanceCard(ctx, id) {
 export function balanceCards(ctx, ids) {
   const row = balanceRow(ctx);
   const list = (ids || (row ? row.nm.filter(Boolean) : [])).map((id) => balanceCard(ctx, id)).filter(Boolean);
-  return list.length ? list : [h('div', { class: 'note warn' }, icon('home2'), ctx.t('bal.noPeople'))];
+  if (!list.length) return [h('div', { class: 'note warn' }, icon('home2'), ctx.t('bal.noPeople'))];
+  // la settimana corrente ha già dei risultati: le correzioni (e i numeri mostrati) valgono dalla prossima
+  if (!row.isCur) list.unshift(h('div', { class: 'note', 'data-testid': 'bal-from' }, icon('info'), ctx.t('bal.from', { date: fmtWeekRange(row.sunday, ctx.lang) })));
+  return list;
 }
 
 /** Apre il pannello (solo admin). */
