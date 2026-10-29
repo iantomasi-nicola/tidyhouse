@@ -22,6 +22,11 @@ export const it = {
   'bal.log': '{name}: {changes}',
   'bal.hint': 'Un riposo porta la persona a riposo quando non ha recuperi e in casa ci sono abbastanza persone.',
   'bal.act': '{name}: correzione recuperi/riposi ({text})',
+  'bal.sum.none': 'Nessun recupero né riposo',
+  'bal.sum.mk1': '1 recupero',
+  'bal.sum.mk': '{n} recuperi',
+  'bal.sum.rest1': '1 riposo',
+  'bal.sum.rest': '{n} riposi',
 };
 export const en = {
   'bal.btn': 'Make-ups and rests',
@@ -46,4 +51,9 @@ export const en = {
   'bal.log': '{name}: {changes}',
   'bal.hint': 'A rest puts the person on rest when they owe no make-ups and enough people are home.',
   'bal.act': '{name}: make-ups/rests adjusted ({text})',
+  'bal.sum.none': 'No make-ups or rests',
+  'bal.sum.mk1': '1 make-up',
+  'bal.sum.mk': '{n} make-ups',
+  'bal.sum.rest1': '1 rest',
+  'bal.sum.rest': '{n} rests',
 };

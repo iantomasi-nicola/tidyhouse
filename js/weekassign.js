@@ -2,11 +2,13 @@
 // Scrive solo `swap` (come le celle grigie del foglio) tramite ctx.actions.setWeekAssignments: il motore non cambia.
 import { h, icon, avatar, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange } from './i18n.js';
+import { it as itFlow, en as enFlow } from './strings/flow.js';
 import { CHORES, NOBODY } from './engine.js';
 import { presentIds, activeIds, ruleAssigned, diffAssign, loadOf } from './assignlogic.js';
 import { it, en } from './strings/assign.js';
 
 registerStrings(it, en);
+registerStrings(itFlow, enFlow);
 loadCss('css/weekassign.css');
 
 const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
@@ -153,4 +155,131 @@ export function openAssignWeekSheet(ctx, sunday) {
 
   draw();
   return s;
+}
+
+// ================================================================ «Chi lo fa» di UNA mansione (inline: scheda turno e pannello desktop)
+// Un tocco su «Come da regole» o «Nessuno» applica subito; un tocco su una persona mostra le conseguenze (con recupero / senza recupero /
+// scambio) e il tocco sull'opzione applica. Sempre con Annulla nel messaggio. Scrive solo `swap` (setWeekAssignments) e `agreed` (assignCover).
+const pending = new Map();   // `${sunday}|${chore}` → persona scelta, in attesa di «come» (sopravvive ai ridisegni)
+const err = (ctx, e) => ctx.toast(e && e.message === 'permission' ? ctx.t('err.permission') : ctx.t('error'));
+
+/** Stato «chi lo fa» di una mansione: { sel: 'rules'|'-'|id, terms: 'repay'|'free'|null }. */
+export function whoState(ctx, row, ruled, c) {
+  const chore = CHORES[c]; const wk = (ctx.state.weeks || {})[row.sunday] || {};
+  const ag = (wk.agreed || {})[chore]; const sw = (wk.swap || {})[chore];
+  if (sw === NOBODY) return { sel: NOBODY, terms: null };
+  if (ag && ag !== row.assigned[c] && !row.res[c].kind) return { sel: ag, terms: 'repay' };
+  if (row.swapped[c] && row.assigned[c] && row.assigned[c] !== ruled[c]) return { sel: row.assigned[c], terms: 'free' };
+  return { sel: 'rules', terms: null };
+}
+
+/** Applica una scelta. kind: 'rules' | 'nobody' | 'repay' | 'free' | 'swap' (id = persona; per 'swap' chi aveva la mansione prende `c2`, quella di id). */
+async function applyWho(ctx, sunday, chore, kind, id, c2) {
+  const A = ctx.actions; const t = ctx.t; const c = CHORES.indexOf(chore);
+  const row = ctx.calc.out.rows.find((r) => r.sunday === sunday); if (!row) return false;
+  const wk = (ctx.state.weeks || {})[sunday] || {};
+  const prevSwap = { ...(wk.swap || {}) }; const prevAg = { ...(wk.agreed || {}) }; const am = (wk.autoMakeup || {})[chore] || null;
+  const cur = row.assigned[c];
+  const week = fmtWeekRange(sunday, ctx.lang); const lch = (x) => lc(t('chore.' + x));
+  const clearAg = async (ch) => { if (!prevAg[ch]) return; if (row.assigned[CHORES.indexOf(ch)]) await A.clearAgreed(sunday, ch); else await A.assignCover(sunday, ch, null); };
+  let msg;
+  try {
+    if (kind === 'repay') {
+      await clearAg(chore);
+      if (prevSwap[chore]) await A.setWeekAssignments(sunday, { [chore]: '' }, { merge: true, logText: t('assign.log', { week, changes: t('assign.logChange', { chore: lch(chore), name: t('assign.rules') }) }) });
+      await A.assignCover(sunday, chore, id);
+      msg = t('flow.mg.saved.repay', { name: ctx.name(id), chore: lch(chore) });
+    } else {
+      await clearAg(chore);
+      let wanted, change;
+      if (kind === 'rules') { wanted = { [chore]: '' }; msg = t('flow.mg.saved.rules', { chore: t('chore.' + chore) }); change = t('assign.logChange', { chore: lch(chore), name: t('assign.rules') }); }
+      else if (kind === 'nobody') { wanted = { [chore]: NOBODY }; msg = t('flow.mg.saved.nobody', { chore: t('chore.' + chore) }); change = t('assign.logChange', { chore: lch(chore), name: t('assign.nobody') }); }
+      else if (kind === 'swap') {
+        await clearAg(c2);
+        wanted = { [chore]: id, [c2]: cur };
+        msg = t('flow.mg.saved.swap', { a: ctx.name(id), c1: lch(chore), b: ctx.name(cur), c2: lch(c2) });
+        change = `${t('assign.logChange', { chore: lch(chore), name: ctx.name(id) })}, ${t('assign.logChange', { chore: lch(c2), name: ctx.name(cur) })}`;
+      } else { wanted = { [chore]: id }; msg = t('flow.mg.saved.free', { name: ctx.name(id), chore: lch(chore) }); change = t('assign.logChange', { chore: lch(chore), name: ctx.name(id) }); }
+      if (kind !== 'rules' || prevSwap[chore]) await A.setWeekAssignments(sunday, wanted, { merge: true, logText: t('assign.log', { week, changes: change }) });
+    }
+    // un recupero programmato (ritardo annunciato) su questa mansione non vale più se l'admin decide a mano
+    if (am) await ctx.store.setDoc('weeks', sunday, { autoMakeup: { [chore]: null } });
+  } catch (e) { err(ctx, e); return false; }
+  ctx.haptic(ctx.prefs.haptics, 10);
+  ctx.toast(msg, 7000, { action: { label: t('flow.undo'), onClick: async () => {
+    try {
+      await A.setWeekAssignments(sunday, prevSwap, { explicit: true, logText: t('assign.logUndo', { week }) });
+      const now = ((ctx.state.weeks || {})[sunday] || {}).agreed || {};
+      for (const ch of CHORES) if ((now[ch] || null) !== (prevAg[ch] || null)) await A.assignCover(sunday, ch, prevAg[ch] || null);
+      if (am) await ctx.store.setDoc('weeks', sunday, { autoMakeup: { [chore]: am } });
+      ctx.toast(t('flow.mg.undone'));
+    } catch { ctx.toast(t('error')); }
+  } } });
+  return true;
+}
+
+/** Controllo «Chi lo fa» per una mansione (solo admin). `redraw()` ridisegna chi lo contiene; `ruled` = assegnati per le regole (facoltativo, evita un ricalcolo). */
+export function whoPicker(ctx, sunday, chore, { redraw = () => {}, ruled = null } = {}) {
+  if (!ctx.isAdmin) return null;
+  const t = ctx.t; const c = CHORES.indexOf(chore);
+  const row = ctx.calc.out.rows.find((r) => r.sunday === sunday); if (!row || c < 0) return null;
+  const R = ruled || ruleAssigned(ctx.calc.eh, ctx.calc.today, sunday) || row.assigned.slice();
+  const base = R[c] || '';
+  const people = activeIds(row);
+  if (!people.length) return h('div', { class: 'mg-block', 'data-mg': 'who' }, h('div', { class: 'note warn' }, icon('home2'), t('assign.noPeople')));
+  const st = whoState(ctx, row, R, c);
+  const key = `${sunday}|${chore}`;
+  let pend = pending.get(key) || '';
+  if (pend && (pend === base || !people.includes(pend))) { pending.delete(key); pend = ''; }
+  let busy = false;
+  const go = async (kind, id, c2) => {
+    if (busy) return; busy = true; pending.delete(key);
+    try { await applyWho(ctx, sunday, chore, kind, id, c2); } finally { busy = false; redraw(); }
+  };
+  const pick = (id) => {
+    if (busy) return;
+    if (id === 'rules' || id === base) { pending.delete(key); if (st.sel !== 'rules') go('rules'); else redraw(); return; }
+    if (id === NOBODY) { pending.delete(key); if (st.sel !== NOBODY) go('nobody'); else redraw(); return; }
+    if (pend === id) pending.delete(key); else pending.set(key, id);   // anche sulla persona già scelta: per cambiare «come»
+    redraw();
+  };
+  const sug = row.subs[c];
+  const others = people.filter((id) => id !== base).sort((x, y) => (x === sug ? -1 : y === sug ? 1 : 0) || (row.away.includes(x) ? 1 : 0) - (row.away.includes(y) ? 1 : 0));
+  const subOf = (id) => {
+    if (id === st.sel && st.terms) return t('flow.mg.sub.' + st.terms);
+    const has = CHORES.filter((x, i) => i !== c && row.assigned[i] === id);
+    if (has.length) return t('flow.mg.sub.has', { chore: lc(t('chore.' + has[0])) });
+    if (row.away.includes(id)) return t('assign.absent');
+    if (row.rest.includes(id)) return t('flow.mg.sub.rest');
+    return id === sug ? t('cal.suggested') : '';
+  };
+  const opt = (id, label, { who = null, sub = '', ic = null } = {}) => h('button', {
+    type: 'button', class: 'wa-opt mg-opt' + (who ? '' : ' rules') + (pend === id ? ' pend' : ''), 'data-act': 'who-' + chore, 'data-who': id,
+    'aria-pressed': String(st.sel === id || pend === id), 'aria-expanded': who && id !== st.sel ? String(pend === id) : null, onclick: () => pick(id),
+  }, who ? avatar(ctx.name(who), ctx.color(who), 'sm') : ic ? icon(ic) : null, h('span', { class: 'wa-lbl' }, label), sub ? h('span', { class: 'wa-sub mg-sub' }, sub) : null);
+
+  const kids = [
+    h('div', { class: 'wa-opts', role: 'group', 'aria-label': t('assign.group', { chore: t('chore.' + chore) }) },
+      opt('rules', base ? t('assign.rulesWho', { name: ctx.name(base) }) : t('assign.rulesNone')),
+      others.map((id) => opt(id, ctx.name(id), { who: id, sub: subOf(id) })),
+      opt(NOBODY, t('assign.none'), { ic: 'x' })),
+  ];
+  if (pend) {
+    const name = ctx.name(pend); const from = (row.assigned[c] && row.assigned[c] !== pend ? row.assigned[c] : base) || '';
+    const canRepay = !!base && !row.res[c].kind && !row.isFut;
+    const c2 = CHORES.find((x, i) => i !== c && row.assigned[i] === pend);
+    const now = (kind) => st.sel === pend && st.terms === kind;
+    const choice = (kind, title, desc, extra) => h('button', { type: 'button', class: 'wa-term mg-term', 'data-act': 'who-terms', 'data-terms': kind, 'data-testid': `mg-terms-${chore}-${kind}`, 'aria-pressed': String(now(kind)),
+      onclick: () => { if (now(kind)) { pending.delete(key); redraw(); } else go(kind, pend, c2); } }, h('span', { class: 'wa-tt' }, title), h('span', { class: 'wa-td' }, desc), extra ? h('span', { class: 'wa-td mg-warn' }, extra) : null);
+    const multi = c2 ? t('flow.mg.multi', { name, n: CHORES.filter((x, i) => i !== c && row.assigned[i] === pend).length + 1 }) : '';
+    kids.push(h('div', { class: 'mg-how', role: 'group', 'aria-label': t('flow.mg.how', { who: name }), 'data-testid': 'mg-how-' + chore },
+      h('div', { class: 'mg-howt' }, from ? t('flow.mg.howFrom', { who: name, from: ctx.name(from) }) : t('flow.mg.how', { who: name })),
+      row.closed ? h('div', { class: 'note warn small' }, icon('alert'), t('assign.closedWarn')) : null,
+      h('div', { class: 'wa-terms mg-terms' },
+        canRepay ? choice('repay', t('assign.terms.repay'), t('assign.terms.repayD', { who: name, from: ctx.name(base) })) : null,
+        from && c2 && row.assigned[c] === from ? choice('swap', t('flow.mg.swap'), t('flow.mg.swapD', { a: name, c1: lc(t('chore.' + chore)), b: ctx.name(from), c2: lc(t('chore.' + c2)) })) : null,
+        choice('free', t('assign.terms.free'), from ? t('assign.terms.freeD', { who: name, from: ctx.name(from) }) : t('flow.mg.freeNone', { who: name }), multi)),
+      h('button', { type: 'button', class: 'btn ghost sm mg-cancel', 'data-act': 'who-cancel', onclick: () => { pending.delete(key); redraw(); } }, t('cancel'))));
+  }
+  return h('div', { class: 'mg-block', 'data-mg': 'who' }, kids);
 }

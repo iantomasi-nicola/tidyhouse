@@ -20,3 +20,22 @@
 .wa-term:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .wa-tt { font-weight: 700; font-size: .875rem; }
 .wa-td { font-size: .75rem; color: var(--text-2); overflow-wrap: anywhere; }
+
+/* «Gestisci (admin)»: Chi lo fa · Com'è andata (scheda turno e pannello desktop delle Settimane) */
+.mg { gap: 14px; }
+.mg-part { display: grid; gap: 8px; min-width: 0; }
+.mg-lbl { font-weight: 700; font-size: .875rem; color: var(--text); }
+.mg-block { display: grid; gap: 10px; min-width: 0; }
+.mg-opt[aria-pressed="true"] { background: var(--tonal-2); color: var(--accent-ink); border-color: var(--accent); }
+.mg-opt.pend { border-style: dashed; }
+.mg-sub { color: var(--text-2); font-weight: 600; }
+.mg-opt[aria-pressed="true"] .mg-sub { color: var(--accent-ink); }
+.mg-how { display: grid; gap: 8px; padding: 12px; border-radius: var(--r-lg); background: var(--surface-2); min-width: 0; }
+.mg-howt { font-weight: 700; overflow-wrap: anywhere; }
+.mg-term { background: var(--surface); }
+.mg-term[aria-pressed="true"] { background: var(--tonal-2); border-color: var(--accent); color: var(--accent-ink); }
+.mg-warn { color: var(--chip-warn); font-weight: 650; }
+.mg-cancel { justify-self: start; min-height: 44px; }
+.mg-eff { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
+.mg-also { display: grid; gap: 6px; }
+.mg-rows .li { min-height: 56px; }

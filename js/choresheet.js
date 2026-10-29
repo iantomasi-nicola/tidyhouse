@@ -4,13 +4,15 @@
 import { h, icon, avatar, toggle, seg, copyText, download, confetti, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 import { CHORES, addDays } from './engine.js';
-import { planDays, planOf, delayOf, checklistOwners, swapPatch, autoSub, cleanNote, noteFor, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
+import { planDays, planOf, delayOf, checklistOwners, autoSub, cleanNote, noteFor, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
 import { it as itCant, en as enCant } from './strings/cantdo.js';
 import { it as itReason, en as enReason } from './strings/reason.js';
 import { it as itRez, en as enRez } from './strings/resultedit.js';
-import { openAssignWeekSheet } from './weekassign.js';
+import { openAssignWeekSheet, whoPicker } from './weekassign.js';
+import { resultPicker } from './resultedit.js';
+import { balanceCards, balanceSummary, openBalanceSheet } from './balance.js';
 import { ruleAssigned } from './assignlogic.js';
 import { it as itUxa, en as enUxa } from './strings/uxa.js';
 
@@ -23,6 +25,7 @@ registerStrings(itRez, enRez);
 loadCss('css/calendar.css');
 
 export const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
+let balOpen = false;   // pannello desktop: «Recuperi e riposi» aperto (sopravvive ai ridisegni)
 const ci = (chore) => CHORES.indexOf(chore);
 const dowIdx = (date) => new Date(date + 'T00:00:00Z').getUTCDay();
 const isOk = (r) => r.kind === 'done' || r.kind === 'by';
@@ -341,39 +344,39 @@ function coverRequests(ctx, sunday, chore) {
   return Object.entries(ctx.state.requests || {}).filter(([, q]) => q && (q.kind === 'cover' || q.kind === 'offer') && q.status === 'pending' && q.week === sunday && q.chore === chore);
 }
 
-/** Toglie l'assegnazione dell'admin; se era un «regalo» (scambio concordato verso la stessa persona) toglie anche quello, cosi' il turno torna com'era. */
-async function clearAssignment(ctx, sunday, chore) {
-  const wkd = weekDoc(ctx, sunday); const who = (wkd.agreed || {})[chore];
-  return run(ctx, async () => {
-    await ctx.actions.assignCover(sunday, chore, null);
-    if (who && (wkd.swap || {})[chore] === who) await ctx.actions.setSwap(sunday, { [chore]: null });
-  }, ctx.t('flow.assignCleared'));
+/**
+ * Sezione «Gestisci (admin)» di un turno, ordinata per intento: Chi lo fa · Com'è andata (+ nella scheda: recuperi e riposi, sollecito, settimana intera).
+ * Stessa sezione nella scheda turno e nel pannello desktop delle Settimane. `redraw()` ridisegna chi la contiene.
+ */
+export function adminManage(ctx, sunday, chore, { redraw = () => {}, ruled = null, sheet = null } = {}) {
+  if (!ctx.isAdmin) return null;
+  const row = rowOf(ctx, sunday); const c = ci(chore); const t = ctx.t;
+  if (!row || c < 0) return null;
+  const assigned = row.assigned[c];
+  const part = (lbl, node) => (node ? h('div', { class: 'mg-part' }, h('div', { class: 'mg-lbl' }, lbl), node) : null);
+  const kids = [part(t('flow.mg.who'), whoPicker(ctx, sunday, chore, { redraw, ruled })),
+    assigned && !row.isFut ? part(t('flow.mg.result'), resultPicker(ctx, sunday, chore)) : null];
+  if (sheet) {
+    const rows = [];
+    if (assigned) rows.push(actRow('refresh', 'p', t('flow.mg.balOf', { name: ctx.name(assigned) }), balanceSummary(ctx, assigned), { 'data-act': 'mg-bal' }, () => sheet.go('balance')));
+    if (assigned && assigned !== ctx.me && !row.res[c].kind && !row.isFut) rows.push(actRow('bell', '', t('cal.nudgeName', { name: ctx.name(assigned) }), null, { 'data-act': 'nudge' }, () => run(ctx, () => ctx.actions.nudge(assigned), t('acc.nudgeSent'))));
+    if (row.nm.some(Boolean)) rows.push(actRow('users', '', t('assign.btn'), t('assign.btnHint'), { 'data-act': 'assign-week' }, () => openAssignWeekSheet(ctx, sunday)));
+    kids.push(h('div', { class: 'list mg-rows' }, rows));
+  }
+  return h('section', { class: 'cs-sec mg', 'data-testid': 'admin-manage' }, h('div', { class: 'eyebrow' }, t('flow.mg.title')), ...kids.filter(Boolean));
 }
 
-/** Scelta (admin) di chi deve fare un turno non svolto: evidenzia il sostituto equo. Usato dalla scheda turno e dal dettaglio settimana. */
-export function openAssignSheet(ctx, sunday, chore) {
-  const c = ci(chore);
-  if (c < 0 || !rowOf(ctx, sunday) || !ctx.isAdmin) return null;
-  return liveSheet(ctx, { title: () => ctx.t('flow.assignTitle'), build: (api) => {
-    const row = rowOf(ctx, sunday);
-    if (!row) { api.close(); return h('div'); }
-    const cur = (weekDoc(ctx, sunday).agreed || {})[chore]; const sug = row.subs[c];
-    const ids = active(row).slice().sort((a, b) => (a === sug ? -1 : b === sug ? 1 : 0));
-    const pick = async (id) => {
-      const ok = await run(ctx, async () => { await ctx.actions.assignCover(sunday, chore, id); }, ctx.t('flow.assignDone', { name: ctx.name(id), chore: ctx.t('chore.' + chore).toLowerCase() }));
-      if (ok) api.close();
-    };
-    return h('div', { class: 'stack' },
-      h('div', { class: 'row' }, tile(chore, 'sm'), h('div', { class: 'grow' }, h('b', null, ctx.t('chore.' + chore)), h('span', { class: 'muted' }, ' · ' + fmtWeekRange(sunday, ctx.lang)))),
-      h('p', { class: 'muted small' }, ctx.t('flow.assignHint')),
-      row.assigned[c] ? termsPicker(ctx, { mode: 'assign', a: row.assigned[c], b: null, whoLabel: ctx.t('uxa.terms.whoPicked') }) : null,
-      sug && ids.includes(sug) ? h('div', { class: 'note ok' }, icon('sparkles'), ctx.t('chore.suggestedSub', { name: ctx.name(sug) })) : null,
-      h('div', { class: 'list' }, ids.map((id) => h('button', { type: 'button', class: 'li cs-pick' + (id === sug ? ' sug' : ''), 'data-who': id, 'aria-pressed': String(id === cur), onclick: () => pick(id) },
-        person(ctx, id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(id)),
-          row.rest.includes(id) || row.away.includes(id) ? h('div', { class: 'd' }, row.away.includes(id) ? ctx.t('cal.away') : ctx.t('chore.rest')) : null),
-        id === sug ? chip(ctx.t('cal.suggested'), 'acc', 'sparkles') : null, id === cur ? icon('check') : icon('chevron')))),
-      cur ? h('button', { type: 'button', class: 'btn danger block', 'data-act': 'assign-clear', onclick: async () => { if (await clearAssignment(ctx, sunday, chore)) api.close(); } }, icon('x'), ctx.t('flow.assignClear')) : null);
-  } });
+/** Contenitore che si ridisegna da solo (pannello desktop): mantiene il focus sul controllo equivalente. */
+function selfDrawing(cls, attrs, build) {
+  const box = h('div', { class: cls, ...attrs });
+  const k = (el) => [el.dataset.act, el.dataset.who, el.dataset.value, el.dataset.terms].join('|');
+  const draw = () => {
+    const a = document.activeElement; const key = a && box.contains(a) ? k(a) : '';
+    box.replaceChildren(...[build(draw)].flat().filter(Boolean));
+    if (key) { const f = [...box.querySelectorAll('button')].find((x) => k(x) === key); if (f) f.focus({ preventScroll: true }); }
+  };
+  draw();
+  return box;
 }
 
 // ================================================================ DETTAGLIO TURNO
@@ -419,37 +422,14 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
         h('div', { class: 'list' }, ids.map((id) => h('button', { type: 'button', class: 'li cs-pick' + (id === sug ? ' sug' : ''), 'data-who': id, onclick: (ev) => finish('by:' + id, t('cal.t.by', { name: ctx.name(id) }), ev) },
           person(ctx, id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(id)), row.away.includes(id) ? h('div', { class: 'd' }, t('cal.away')) : null), id === agreed ? chip(t('flow.agreed'), 'acc', 'users') : null, id === sug ? chip(t('cal.suggested'), 'acc', 'sparkles') : null, icon('chevron')))));
     }
-    if (st.view === 'skip') {
-      const sub = row.subs[c];
-      const opts2 = [];
-      if (res.kind !== 'skipped') opts2.push(h('button', { type: 'button', class: 'li cs-pick', 'data-value': 'skipped', onclick: (ev) => finish('skipped', t('cal.t.skipped'), ev) },
-        h('div', { class: 'ico r' }, icon('x')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('chore.nobody')), h('div', { class: 'd' }, t('cal.skipNobodyHint', { name: aName }))), icon('chevron')));
-      if (sub && sub !== assigned && !(res.kind === 'skippedBy' && res.id === sub)) opts2.push(h('button', { type: 'button', class: 'li cs-pick', 'data-value': 'skipped:' + sub, onclick: (ev) => finish('skipped:' + sub, t('cal.t.skipped'), ev) },
-        person(ctx, sub), h('div', { class: 'grow' }, h('div', { class: 't' }, t('cal.alsoNot', { name: ctx.name(sub) })), h('div', { class: 'd' }, t('cal.skipAlsoHint', { name: ctx.name(sub) }))), icon('chevron')));
+    if (st.view === 'balance' && ctx.isAdmin) {
+      const ids = [...new Set([assigned, agreed, res.kind === 'by' ? res.id : ''].filter(Boolean))];
       return h('div', { class: 'stack' },
         back(ctx, () => go('main')),
-        h('div', { class: 'cs-title' }, t('home.notDone')),
-        h('div', { class: 'note warn' }, icon('alert'), t('chore.undoSkipped')),
-        h('div', { class: 'list' }, opts2));
-    }
-    if (st.view === 'swap') {
-      const entries = [];
-      CHORES.forEach((c2, i) => { const id = row.assigned[i]; if (i !== c && id && id !== assigned) entries.push({ id, chore2: c2 }); });
-      for (const id of present(row)) if (id !== assigned && !row.assigned.includes(id)) entries.push({ id, chore2: null });
-      const doSwap = async (e) => {
-        const patch = swapPatch(row, { chore, personId: assigned }, { chore: e.chore2 || 'rest', personId: e.id });
-        if (await run(ctx, () => A.setSwap(sunday, patch), t('cal.swapDone'))) go('main');
-      };
-      return h('div', { class: 'stack' },
-        back(ctx, () => go('main')),
-        h('div', { class: 'cs-title' }, t('chore.swapWith')),
-        h('p', { class: 'muted small' }, t('cal.swapHint')),
-        entries.length ? h('div', { class: 'list' }, entries.map((e) => h('button', { type: 'button', class: 'li cs-pick', 'data-who': e.id, 'data-chore': e.chore2 || 'rest', onclick: () => doSwap(e) },
-          person(ctx, e.id),
-          h('div', { class: 'grow' }, h('div', { class: 't' }, e.chore2 ? `${ctx.name(e.id)} · ${t('chore.' + e.chore2)}` : ctx.name(e.id)),
-            h('div', { class: 'd' }, e.chore2 ? t('cal.swapSwap', { a: ctx.name(e.id), c1: t('chore.' + chore), b: aName, c2: t('chore.' + e.chore2) })
-              : t('cal.swapCover', { a: aName, c1: t('chore.' + chore), b: ctx.name(e.id) }))),
-          icon('chevron')))) : h('div', { class: 'empty' }, t('req.noChores')));
+        h('div', { class: 'cs-title' }, t('flow.mg.bal')),
+        h('p', { class: 'muted small' }, t('flow.mg.balHint')),
+        h('div', { class: 'stack bal' }, balanceCards(ctx, ids)),
+        h('button', { type: 'button', class: 'btn soft block', 'data-act': 'mg-bal-all', onclick: () => openBalanceSheet(ctx) }, icon('users'), t('flow.mg.balAll')));
     }
     if (st.view === 'cantdo') {
       const sub = autoSub(row, c);
@@ -565,13 +545,11 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
           ctx.isAdmin ? h('span', { class: 'small' }, t('flow.incAdmin')) : null)));
     }
 
-    // azioni sul risultato
-    const canDone = !!assigned && res.kind !== 'done' && A.canResult(sunday, chore, 'done');
+    // azioni sul risultato (l'admin qui ha solo «Segna fatto»: il resto è in «Gestisci (admin)» → «Com'è andata»)
+    const canDone = !!assigned && res.kind !== 'done' && A.canResult(sunday, chore, 'done') && !(ctx.isAdmin && res.kind);
     const coverIds = assigned ? coverCandidates(row, assigned).filter((id) => id !== assigned && !(res.kind === 'by' && res.id === id) && A.canResult(sunday, chore, 'by:' + id)) : [];
-    const showCover = coverIds.length && (ctx.isAdmin || assigned === me || agreed === me);
-    const canSkip = !!assigned && A.canResult(sunday, chore, 'skipped') && !(res.kind === 'skipped' && !(row.subs[c] && row.subs[c] !== assigned));
-    const canReset = !!assigned && !!res.kind && A.canResult(sunday, chore, '');
-    const canNudge = ctx.isAdmin && !!assigned && assigned !== me && !res.kind && !row.isFut;
+    const showCover = !ctx.isAdmin && coverIds.length && (assigned === me || agreed === me);
+    const canReset = !ctx.isAdmin && !!assigned && !!res.kind && A.canResult(sunday, chore, '');
     const reqs = coverRequests(ctx, sunday, chore);
     const myOffer = reqs.find(([, q]) => q.kind === 'offer' && q.from === me);
     const canVol = !!assigned && !!me && assigned !== me && !res.kind && agreed !== me && A.canResult(sunday, chore, 'by:' + me);
@@ -582,9 +560,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       acts.push(h('button', { type: 'button', class: 'btn soft block', 'data-act': 'cover', onclick: (ev) => (single ? finish('by:' + me, t('cal.t.by', { name: ctx.meName }), ev) : go('cover')) },
         icon('users'), single ? t('cal.iCleaned', { name: aName }) : t('home.didSomeoneElse')));
     }
-    if (canSkip) acts.push(h('button', { type: 'button', class: 'btn danger block', 'data-act': 'skip', onclick: () => go('skip') }, icon('x'), t('home.notDone')));
     if (canReset) acts.push(h('button', { type: 'button', class: 'btn ' + (done ? 'tonal' : 'ghost') + ' block', 'data-act': 'reset', onclick: (ev) => finish('', t('cal.t.reset'), ev) }, icon('refresh'), t('chore.reset')));
-    if (canNudge) acts.push(h('button', { type: 'button', class: 'btn tonal block', 'data-act': 'nudge', onclick: async () => { await run(ctx, () => A.nudge(assigned), t('acc.nudgeSent')); } }, icon('bell'), t('cal.nudgeName', { name: aName })));
     if (acts.length) out.push(h('div', { class: 'cs-actions' }, acts));
     else if (assigned && !ctx.isAdmin && !row.isFut && !canVol) out.push(h('div', { class: 'note' }, icon('lock'), t('chore.adminOnly')));
 
@@ -637,6 +613,9 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       out.push(section(t('flow.sec.requests'), h('div', { class: 'list' }, rows)));
     }
 
+    // admin: una sola sezione, ordinata per intento
+    if (ctx.isAdmin) out.push(adminManage(ctx, sunday, chore, { redraw: () => sh.draw(true), sheet: { go } }));
+
     // assegnato: sostituto o ritardo
     const delayNow = delayOf(houseW(ctx), sunday, chore);
     if (assigned && assigned === me && !res.kind) {
@@ -688,19 +667,6 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
         h('button', { type: 'button', class: 'btn soft block', 'data-act': 'request', onclick: () => openSwapRequestSheet(ctx, sunday, chore) }, icon('swap'), t('req.new')))));
     }
 
-    // admin: scegliere chi lo fa + scambio concordato manuale
-    if (ctx.isAdmin && assigned) {
-      const arows = [];
-      if (!done && !row.isFut) {
-        arows.push(actRow('users', '', t('flow.assignBtn'), agreed ? t('flow.agreedWith', { name: ctx.name(agreed) }) : t('flow.assignHint'), { 'data-act': 'assign' }, () => openAssignSheet(ctx, sunday, chore)));
-        if (agreed) arows.push(actRow('x', 'r', t('flow.assignClear'), null, { 'data-act': 'assign-clear-quick' }, () => clearAssignment(ctx, sunday, chore)));
-      }
-      if (!row.isFut) arows.push(actRow('check', '', t('rez.btn'), t('rez.btnHint'), { 'data-act': 'result-edit' }, async () => { try { (await import('./resultedit.js')).openResultEditSheet(ctx, sunday, chore); } catch (e) { console.warn(e); ctx.toast(t('error')); } }));
-      if (arows.length) out.push(section(t('flow.sec.admin'), h('div', { class: 'list' }, arows)));
-      out.push(section(t('chore.swap'), h('div', { class: 'btn-row' },
-        h('button', { type: 'button', class: 'btn soft', 'data-act': 'swap', onclick: () => go('swap') }, icon('swap'), t('chore.swapWith')),
-        row.swapped[c] ? h('button', { type: 'button', class: 'btn danger', 'data-act': 'swap-cancel', onclick: () => cancelSwapOf(ctx, sunday, chore) }, icon('x'), t('cal.swapCancel')) : null)));
-    }
     return h('div', { class: 'stack' }, out);
   };
 
@@ -714,6 +680,8 @@ export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
   if (!row) return h('div');
   const A = ctx.actions; const wk = weekDoc(ctx, sunday);
   const stat = weekStatus(ctx, row);
+  const inline = heading && ctx.isAdmin;   // pannello desktop delle Settimane (≥1180px) aperto dall'admin
+  const ruled = inline ? (ruleAssigned(ctx.calc.eh, ctx.calc.today, sunday) || row.assigned.slice()) : null;
   const out = [];
 
   out.push(h('div', { class: 'wd-head' },
@@ -739,13 +707,25 @@ export function renderWeekDetail(ctx, sunday, { heading = false } = {}) {
             showOc ? chip(oc.label, oc.tone, oc.ic) : null,
             fl.map((f) => chip(f.text, f.tone, f.ic))))),
       id ? resultToggle(ctx, sunday, chore) : null);
-    const canAssign = ctx.isAdmin && !!id && !isOk(res) && !row.isFut;
-    return h('div', { class: 'wd-item' }, rowEl,
-      canAssign ? h('div', { class: 'wd-assign' }, h('button', { type: 'button', class: 'btn tonal sm', 'data-assign': chore, onclick: () => openAssignSheet(ctx, sunday, chore) }, icon('users'), ctx.t('flow.assignBtn'))) : null);
+    // pannello desktop (admin): chi lo fa e com'è andata direttamente qui, tutto insieme, senza fogli a catena
+    const mg = inline ? selfDrawing('wd-mg', { 'data-mg-chore': chore }, (redraw) => {
+      const m = adminManage(ctx, sunday, chore, { redraw, ruled });
+      return m ? [...m.querySelectorAll(':scope > .mg-part')] : null;
+    }) : null;
+    return h('div', { class: 'wd-item' + (inline ? ' wd-item-mg' : '') }, rowEl, mg);
   })));
 
-  // assegnazione manuale della settimana (solo admin; vedi js/weekassign.js)
-  if (ctx.isAdmin && row.nm.some(Boolean)) out.push(h('div', { class: 'list wd-assignweek' }, actRow('users', '', ctx.t('assign.btn'), ctx.t('assign.btnHint'), { 'data-act': 'assign-week' }, () => openAssignWeekSheet(ctx, sunday))));
+  // admin: una sola sezione per la settimana (sul telefono il dettaglio di ogni turno è nella sua scheda → «Gestisci (admin)»)
+  if (ctx.isAdmin && row.nm.some(Boolean)) {
+    const rows = [actRow('users', '', ctx.t('assign.btn'), ctx.t('assign.btnHint'), { 'data-act': 'assign-week' }, () => openAssignWeekSheet(ctx, sunday))];
+    let bal = null;
+    if (inline) {
+      bal = h('details', { class: 'wd-bal', 'data-testid': 'wd-bal' }, h('summary', { class: 'li fl-act' }, h('div', { class: 'ico p' }, icon('refresh')), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.t('flow.mg.bal')), h('div', { class: 'd' }, ctx.t('flow.mg.balHint'))), icon('chevron', 'wd-chev')),
+        h('div', { class: 'stack bal wd-balbody' }, balanceCards(ctx)));
+      bal.open = balOpen; bal.addEventListener('toggle', () => { balOpen = bal.open; });
+    } else rows.push(actRow('refresh', 'p', ctx.t('flow.mg.bal'), ctx.t('bal.btnHint'), { 'data-act': 'mg-bal-all' }, () => openBalanceSheet(ctx)));
+    out.push(section(ctx.t('flow.mg.title'), h('div', { class: 'list wd-assignweek' }, rows), bal));
+  }
 
   // riposo
   if (row.rest.length) out.push(h('div', { class: 'wd-rest' }, h('div', { class: 'tile rest' }, icon('moon')), h('div', { class: 'grow' }, h('div', { class: 'lbl' }, ctx.t('cal.rest')), h('div', { class: 'wd-names' }, row.rest.map((id) => h('span', { class: 'wd-name' }, person(ctx, id, 'sm'), ctx.name(id)))))));

@@ -228,3 +228,20 @@ button.cs-pick:active { background: var(--tonal-2); }
 .fl-reason-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .fl-reason-chip { min-height: 44px; cursor: pointer; }
 .fl-qnote { font-style: italic; }
+
+/* pannello desktop (admin): ogni mansione con «Chi lo fa» e «Com'è andata» sempre visibili */
+@media (min-width: 1180px) {
+  .cal-layout:has(.wd-item-mg) { grid-template-columns: minmax(0, 1fr) minmax(440px, 560px); }
+}
+.wd-item-mg { display: grid; gap: 4px; padding-bottom: 12px; }
+.wd-item-mg + .wd-item-mg { border-top: .5px solid var(--hair); }
+.wd-mg { display: grid; gap: 12px; padding: 0 14px 0 16px; min-width: 0; }
+.wd-mg .wa-opts { gap: 6px; }
+.wd-mg .wa-opt { min-height: 44px; font-size: .8125rem; padding: 0 12px 0 6px; }
+.wd-mg .wa-opt.rules { padding-left: 12px; }
+.wd-bal { border-radius: var(--r-lg); background: var(--surface-2); }
+.wd-bal > summary { list-style: none; cursor: pointer; min-height: 56px; }
+.wd-bal > summary::-webkit-details-marker { display: none; }
+.wd-bal[open] .wd-chev { transform: rotate(90deg); }
+.wd-balbody { padding: 0 12px 12px; }
+.wd-bal + .list, .cs-sec .wd-assignweek + .wd-bal { margin-top: 8px; }
