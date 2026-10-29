@@ -15,7 +15,7 @@ registerStrings(coreIt, coreEn);
 registerStrings(uxcIt, uxcEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
-const VERSION = '1.10.4';
+const VERSION = '1.11.0';
 let pushMod = null;
 // all'avvio controlla il browser (permesso + sottoscrizione) PRIMA di decidere se chiedere le notifiche: evita il falso "non attive"
 const pushReady = import('./push.js').then(async (m) => { await Promise.race([m.probe(), new Promise((r) => setTimeout(r, 1500))]); pushMod = m; }).catch(() => {});
