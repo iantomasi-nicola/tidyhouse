@@ -412,14 +412,24 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
   const res = [];
   const catchUp = (cfg.catchUpHours || 5) * 60;
   const due = (dow, time) => (dow === undefined || lp.dow === dow) && lp.minutes >= hm(time) && lp.minutes - hm(time) <= catchUp;
-  const push = (o) => { const key = `${o.type}|${o.week}|${o.personId}|${today}|${o.slot ?? 0}`; if (!sent.has(key)) res.push({ ...o, key }); };
+  const byWeek = new Map(out.rows.map((r) => [r.sunday, r]));
+  const push = (o) => {
+    const key = `${o.type}|${o.week}|${o.personId}|${today}|${o.slot ?? 0}`; if (sent.has(key) || res.some((x) => x.key === key)) return;
+    // chi copre un turno concordato non è l'assegnato: «Segna fatto» dalla notifica non vale per lui (deve segnare «ha pulito»)
+    const r = o.chores && o.chores.length ? byWeek.get(o.week) : null;
+    res.push({ ...o, ...(r && o.chores.some((ch) => r.assigned[CHORES.indexOf(ch)] !== o.personId) ? { agreed: true } : {}), key });
+  };
   const cur = out.cur;
   if (cur < 0) return res;
   const row = out.rows[cur];
   const sunday = row.sunday;
   const pend = (r, c) => r.assigned[c] && !r.res[c].kind && !r.closed;      // ancora da segnare
-  const pendRow = (r) => [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind && !(delayOf(h2, r.sunday, CHORES[c]) >= today));
-  const pairs = (r, list) => { const m = new Map(); for (const c of list) { const id = r.assigned[c]; if (!m.has(id)) m.set(id, []); m.get(id).push(c); } return m; };
+  // giorno scelto dopo oggi (fino a martedì dopo la domenica) o ritardo annunciato: non è ancora in ritardo
+  const later = (r, c) => delayOf(h2, r.sunday, CHORES[c]) >= today || planOf(h2, r.sunday, CHORES[c]) > today;
+  const pendRow = (r) => [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind && !later(r, c));
+  // turno concordato «con recupero» (weeks.agreed): i promemoria vanno a chi lo fa, non all'assegnato (che resta tale per il motore)
+  const doer = (r, c) => { const a = (((weeks || {})[r.sunday] || {}).agreed || {})[CHORES[c]]; return a && a !== r.assigned[c] && r.nm.includes(a) ? a : r.assigned[c]; };
+  const pairs = (r, list) => { const m = new Map(); for (const c of list) { const id = doer(r, c); if (!m.has(id)) m.set(id, []); m.get(id).push(c); } return m; };
   const owned = feature(house, 'tasks') ? checklistOwners(h2, out, weeks, sunday).filter((x) => x.status !== 'done') : [];
   const tasksOf = (id) => owned.filter((x) => x.owner === id).length;
 
@@ -434,7 +444,7 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
     for (const id of new Set(owned.filter((x) => x.status === 'overdue').map((x) => x.owner).filter(Boolean))) if (!withChore.has(id)) push({ type: 'tasks', personId: id, week: sunday, n: owned.filter((x) => x.owner === id && x.status === 'overdue').length });
   }
   if (cfg.sunMark.on && due(cfg.sunMark.dow, cfg.sunMark.time)) {
-    for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => pend(row, c)))) push({ type: 'sunMark', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
+    for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => pend(row, c) && !(planOf(h2, sunday, CHORES[c]) > today)))) push({ type: 'sunMark', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
   }
   if (cfg.monNew.on && due(cfg.monNew.dow, cfg.monNew.time)) {
     for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => row.assigned[c]))) push({ type: 'monNew', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
@@ -447,10 +457,16 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
       const d = planOf(h2, sunday, CHORES[c]);
       if (!d || !pend(row, c)) continue;
       if (d === today) todays.push(c);
-      else if (d < today) { const k = row.assigned[c] + '|' + d; if (!lates.has(k)) lates.set(k, { id: row.assigned[c], d, cs: [] }); lates.get(k).cs.push(c); }
+      else if (d < today) { const id = doer(row, c); const k = id + '|' + d; if (!lates.has(k)) lates.set(k, { id, d, cs: [] }); lates.get(k).cs.push(c); }
     }
     for (const [id, cs] of pairs(row, todays)) push({ type: 'planDay', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
     for (const l of lates.values()) push({ type: 'planDayLate', personId: l.id, week: sunday, chores: l.cs.map((c) => CHORES[c]), day: l.d, slot: l.d });
+    // giorno scelto lunedì/martedì dopo la domenica: la settimana è già quella precedente
+    if (cur > 0) {
+      const pr = out.rows[cur - 1];
+      const cs0 = [0, 1, 2].filter((c) => pr.assigned[c] && !pr.res[c].kind && planOf(h2, pr.sunday, CHORES[c]) === today);
+      for (const [id, cs] of pairs(pr, cs0)) push({ type: 'planDay', personId: id, week: pr.sunday, chores: cs.map((c) => CHORES[c]) });
+    }
   }
   // compiti condivisi (es. spazzatura): promemoria quotidiano a chi tocca, se è da fare
   if (cfg.planDay.on && feature(house, 'shared') && lp.minutes >= hm(cfg.planDay.time) && lp.minutes - hm(cfg.planDay.time) <= catchUp) {
@@ -501,7 +517,7 @@ export function targetsFor(n, members, house) {
 export function notifMessage(n, house, lang = 'it', weeks = {}) {
   const m = baseMessage(n, house, lang, weeks);
   // un solo turno da segnare: la notifica offre «Segna fatto» (l'app lo esegue rispettando la checklist)
-  if (['satDuty', 'sunMark', 'late', 'planDay'].includes(n.type) && (n.chores || []).length === 1 && n.week) m.actions = [{ action: 'done', title: tr(lang, 'n.act.done'), url: `#/do/done/${n.week}/${n.chores[0]}` }];
+  if (['satDuty', 'sunMark', 'late', 'planDay'].includes(n.type) && (n.chores || []).length === 1 && n.week && !n.agreed) m.actions = [{ action: 'done', title: tr(lang, 'n.act.done'), url: `#/do/done/${n.week}/${n.chores[0]}` }];
   return m;
 }
 function baseMessage(n, house, lang = 'it', weeks = {}) {

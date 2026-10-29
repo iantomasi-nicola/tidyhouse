@@ -29,7 +29,7 @@ const openChore = (ctx, sunday, chore, opts) => lazy(ctx, () => import('../chore
 const openWeek = (ctx, sunday) => lazy(ctx, () => import('../choresheet.js'), (m) => m.openWeekSheet(ctx, sunday));
 
 // ---------------- modello dei dati della settimana ----------------
-function model(ctx) {
+function model(ctx, shown = new Set()) {
   const { out, eh } = ctx.calc;
   const cur = out.cur, me = ctx.me;
   const row = cur >= 0 ? out.rows[cur] : null;
@@ -37,7 +37,10 @@ function model(ctx) {
   const idx = [0, 1, 2];
   const mine = row && me ? idx.filter((c) => row.assigned[c] === me) : [];
   const late = prev && me ? idx.filter((c) => prev.assigned[c] === me && !prev.res[c].kind) : [];
-  return { out, eh, cur, row, prev, me, mine, late, today: ctx.today() };
+  const M = { out, eh, cur, row, prev, me, mine, late, today: ctx.today(), shown };
+  // l'Hero ha già il controllo «sono via / ci sono» (un tocco): il riquadro Assenti non lo ripete
+  M.heroAway = !!(row && me && shown.has('hero') && !late.length && canSelfAway(ctx) && row.nm.includes(me) && (!row.away.includes(me) || manualAway(M)));
+  return M;
 }
 // voci di checklist ancora da fare di cui sono responsabile io (anche arretrati di un'altra mansione)
 const extrasLeft = (ctx, M, sunday, c) => ownedItems(ctx, sunday).filter((x) => x.owner === M.me && x.status !== 'done' && (x.chore === CHORES[c] || x.reason === 'arrears')).length;
@@ -106,7 +109,7 @@ function widgetHero(ctx, M) {
   const pendCur = curItems.filter((x) => !row.res[x.c].kind);
   const unresolvedCur = pendCur.length;
   const iAmAway = row.away.includes(me);
-  const awayBtn = (!iAmAway && row.nm.includes(me) && canSelfAway(ctx) && !M.late.length) ? h('button', { class: 'hm-heroaway', type: 'button', onclick: () => setSelfAway(ctx, row.sunday, true) }, icon('plane'), t('home.imAway')) : null;
+  const awayBtn = (!iAmAway && row.nm.includes(me) && canSelfAway(ctx) && !M.late.length) ? h('button', { class: 'hm-heroaway', type: 'button', onclick: (e) => { e.currentTarget.disabled = true; setSelfAway(ctx, row.sunday, true, () => { e.currentTarget.disabled = false; }); } }, icon('plane'), t('home.imAway')) : null;
 
   // --- in ritardo ---
   if (lateItems.length) {
@@ -165,7 +168,7 @@ function widgetHero(ctx, M) {
     const manual = manualAway(M), can = canSelfAway(ctx);
     wrap.append(heroCard({
       variant: 'away', testid: 'hero-away', kicker: t('home.thisWeek'), ic: 'plane', big: t('home.awayWeek'), sub: manual ? t('home.awayHint') : t('home.awayTrip'),
-      actions: manual && can ? [h('button', { class: 'btn lg', type: 'button', onclick: () => setSelfAway(ctx, row.sunday, false) }, icon('check'), t('home.imBack'))] : [],
+      actions: manual && can ? [h('button', { class: 'btn lg', type: 'button', onclick: (e) => { e.currentTarget.disabled = true; setSelfAway(ctx, row.sunday, false, () => { e.currentTarget.disabled = false; }); } }, icon('check'), t('home.imBack'))] : [],
     }));
   } else if (!row.nm.includes(me)) {
     wrap.append(heroCard({ variant: 'away', testid: 'hero-noroster', kicker: t('home.thisWeek'), ic: 'info', big: t('home.noRoster'), sub: t('home.noRosterHint') }));
@@ -316,7 +319,7 @@ function widgetAlerts(ctx, M) {
       const open = p.makeups.reduce((a, v) => a + Math.max(0, v), 0);
       const thisWeek = [0, 1, 2].filter((c) => row.assigned[c] === me && row.isMakeup[c]).length;
       const n = open - thisWeek;
-      if (n > 0) rows.push(alertRow({ tone: 'p', ic: 'history', title: n === 1 ? t('home.myMakeups1') : t('home.myMakeups', { n }), desc: t('home.myMakeupsHint'), href: '#/calendar', testid: 'alert-makeups' }));
+      if (n > 0 && !M.shown.has('makeups')) rows.push(alertRow({ tone: 'p', ic: 'history', title: n === 1 ? t('home.myMakeups1') : t('home.myMakeups', { n }), desc: t('home.myMakeupsHint'), href: '#/calendar', testid: 'alert-makeups' }));
     }
   }
   if (ctx.isAdmin) {
@@ -366,8 +369,14 @@ function widgetChecklist(ctx, M) {
 }
 
 // ---------------- COMPITI CONDIVISI (es. spazzatura) ----------------
+/** Giorno (del fuso del dispositivo, come ctx.today()) di un istante ISO: «ieri» non deve dipendere dal fuso UTC. */
+function localDay(iso) {
+  const s = String(iso || ''); if (!/T/.test(s)) return s.slice(0, 10);
+  const d = new Date(s); if (Number.isNaN(d.getTime())) return s.slice(0, 10);
+  const p = (x) => String(x).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 function sharedWhen(ctx, iso) {
-  const day = String(iso || '').slice(0, 10); if (!day) return '';
+  const day = localDay(iso); if (!day) return '';
   const n = Math.round((Date.parse(ctx.today() + 'T00:00:00Z') - Date.parse(day + 'T00:00:00Z')) / 86400000);
   if (n <= 0) return ctx.t('today').toLowerCase();
   if (n === 1) return ctx.t('yesterday').toLowerCase();
@@ -378,8 +387,9 @@ function widgetShared(ctx, M) {
   if (!ctx.feature('shared')) return null;
   const list = sharedStatus(M.eh, M.out, M.today);
   if (!list.length) {
-    if (!ctx.isAdmin) return null;
-    return h('section', { class: 'hm-w', 'data-widget': 'shared' }, h('div', { class: 'eyebrow' }, h('span', null, t('widget.shared'))),
+    if (!ctx.isAdmin || ctx.prefs.sharedInviteOff) return null;
+    // invito per l'admin: si può togliere dalla Home (resta in Altro)
+    return h('section', { class: 'hm-w', 'data-widget': 'shared' }, h('div', { class: 'eyebrow' }, h('span', null, t('widget.shared')), h('button', { class: 'hm-dismiss', type: 'button', 'data-act': 'shared-invite-off', onclick: () => ctx.savePrefs({ sharedInviteOff: true }) }, t('home.ignore'))),
       h('a', { class: 'li hm-sharedinvite card', href: '#/more/shared', 'data-testid': 'shared-invite' }, h('div', { class: 'ico' }, icon('plus')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('flow.shared.invite')), h('div', { class: 'd' }, t('flow.shared.inviteHint'))), icon('chevron')));
   }
   const nm = (id) => (id === 'admin' || !id ? t('misc.admin') : ctx.name(id));
@@ -441,7 +451,7 @@ function widgetLinks(ctx) {
 function widgetAway(ctx, M) {
   const t = ctx.t, { row, me } = M;
   if (!row) return null;
-  const can = canSelfAway(ctx) && row.nm.includes(me);
+  const can = canSelfAway(ctx) && row.nm.includes(me) && !M.heroAway;
   if (!row.away.length && !can) return null;
   const people = row.away.length ? h('div', { class: 'hm-awaypeople' }, row.away.map((id) => h('span', { class: 'hm-person pill' }, avatar(ctx.name(id), ctx.color(id), 'sm'), h('span', { class: 'hm-ell' }, ctx.name(id))))) : h('div', { class: 'muted small' }, t('home.nobodyAway'));
   let toggleRow = null;
@@ -539,7 +549,7 @@ function openUnlock(ctx) {
 }
 function header(ctx, M) {
   const t = ctx.t;
-  const sub = M.row ? t('home.weekOf', { range: fmtWeekRange(M.row.sunday) }) : t('home.beforeStart', { date: fmtDate(shiftDays(M.eh.startSunday, -6), ctx.lang, { dow: true }) });
+  const sub = M.row ? t('home.weekOf', { range: fmtWeekRange(M.row.sunday) }) : (M.eh.startSunday ? t('home.beforeStart', { date: fmtDate(shiftDays(M.eh.startSunday, -6), ctx.lang, { dow: true }) }) : t('home.thisWeek'));
   const upd = ctx.updateReady;   // nuova versione pronta: il tasto si espande in "Aggiorna" col colore accento
   const refresh = h('button', { class: 'hm-refresh' + (upd ? ' upd' : ' icon-btn'), type: 'button', 'aria-label': upd ? t('home.updateAria') : t('home.refresh'), title: upd ? t('home.updateAria') : t('home.refresh'), 'data-testid': 'home-refresh', 'data-update': upd ? '1' : null, onclick: async (e) => {
     const b = e.currentTarget; if (b.disabled) return; b.disabled = true; b.classList.add('spin');
@@ -560,8 +570,8 @@ function header(ctx, M) {
 // ---------------- render ----------------
 export async function render(ctx) {
   loadCss('css/home.css');
-  const M = model(ctx);
   const layout = ctx.homeLayout();
+  const M = model(ctx, new Set(layout.order.filter((id) => !layout.hidden.includes(id) && WIDGETS[id])));
   const nodes = [];
   for (const id of layout.order) {
     if (layout.hidden.includes(id) || !WIDGETS[id]) continue;

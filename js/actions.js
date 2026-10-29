@@ -79,11 +79,26 @@ export class Actions {
   // ---- turni ----
   async setResult(sunday, chore, value) {
     this.need(this.canResult(sunday, chore, value));
+    this.validResult(sunday, chore, value);
     const at = this.ctx.now().toISOString();
-    await this.s.setDoc('weeks', sunday, { result: { [chore]: value || null }, resultAt: { [chore]: value ? at : null }, resultBy: { [chore]: value ? (this.me || 'admin') : null } });
+    const vol = (this.weekDoc(sunday).volunteer || {})[chore];
+    const keepVol = vol && value === 'by:' + vol;      // il segno «volontario» vale solo finché il risultato dice che ha pulito lui
+    await this.s.setDoc('weeks', sunday, { result: { [chore]: value || null }, resultAt: { [chore]: value ? at : null }, resultBy: { [chore]: value ? (this.me || 'admin') : null }, ...(vol && !keepVol ? { volunteer: { [chore]: null } } : {}) });
     const p = parseResult(value);
     const type = p.kind === 'done' ? 'done' : p.kind === 'by' ? 'cover' : p.kind === '' ? 'reset' : 'skipped';
     await this.log(type, { week: sunday, chore, who: p.id || null });
+  }
+  /**
+   * Valori ammessi per un risultato: '' (togli), 'done', 'skipped', 'by:ID', 'skipped:ID' con ID coinquilino; serve una persona assegnata
+   * (con «Nessuno questa settimana» non c'è nulla da registrare) e «saltato anche ID» non può essere l'assegnato (conterebbe due volte il debito).
+   */
+  validResult(sunday, chore, value) {
+    const c = CHORES.indexOf(chore); if (c < 0) throw new Error('invalid');
+    if (!value) return;
+    const p = parseResult(value);
+    if (!p.kind || (p.id !== undefined && !personById(this.house, p.id))) throw new Error('invalid');
+    const row = this.row(sunday); const a = row && row.assigned[c];
+    if (!a || (p.kind === 'skippedBy' && p.id === a)) throw new Error('invalid');
   }
   // ---- completamento con checklist, annulla, volontari, sostituzioni, ritardi ----
   weekDoc(sunday) { return (this.s.state.weeks || {})[sunday] || {}; }
@@ -153,6 +168,7 @@ export class Actions {
   async requestCover({ week, chore, to = null, terms = 'repay', note = '' }) {
     const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
     const id = uid(); const from = row.assigned[CHORES.indexOf(chore)];
+    if (!from) throw new Error('invalid');                    // «Nessuno questa settimana»: non c'è un turno da far coprire
     await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, terms: 'repay', ...(cleanNote(note) ? { note: cleanNote(note) } : {}), status: 'pending', at: this.ctx.now().toISOString() });
     return id;
   }
@@ -244,7 +260,10 @@ export class Actions {
   async clearMakeup(sunday, chore) {
     for (const [wk, w] of Object.entries(this.s.state.weeks || {})) {
       const m = (w.autoMakeup || {})[chore];
-      if (m && m.from === sunday) await this.s.setDoc('weeks', wk, { swap: { [chore]: null }, autoMakeup: { [chore]: null } });
+      if (!m || m.from !== sunday) continue;
+      if ((w.result || {})[chore]) continue;                     // recupero già registrato: la storia non cambia
+      const mine = (w.swap || {})[chore] === m.by;               // se l'admin nel frattempo ha assegnato a mano, la sua scelta resta
+      await this.s.setDoc('weeks', wk, { ...(mine ? { swap: { [chore]: null } } : {}), autoMakeup: { [chore]: null } });
     }
   }
 
@@ -290,13 +309,20 @@ export class Actions {
    * Si scrive in `weeks/{domenica}.adj` (vedi engine.js) sulla settimana corrente se non ha ancora risultati, altrimenti sulla prossima: vale da lì in poi,
    * la storia non cambia. I totali non scendono sotto zero. Ritorna { week, applied, prev } (`applied` = delta davvero applicato, `prev` serve per Annulla).
    */
-  async adjustBalance(personId, delta = {}, { logText = '' } = {}) {
-    this.need(this.admin);
-    const out = this.out(); const rows = out.rows;
+  /**
+   * Riga del motore su cui si scrivono le correzioni (la corrente se non ha risultati, altrimenti la prossima): i numeri da MOSTRARE nel pannello
+   * «Recuperi e riposi» sono i suoi `debts`/`credits`, altrimenti dopo un «+» il numero non cambia (la correzione vale dalla settimana dopo).
+   */
+  balanceRow(out = this.out()) {
+    const rows = out.rows;
     let i = rows.findIndex((r) => r.isCur);
     if (i < 0) i = Math.max(0, rows.findIndex((r) => !r.closed));
     if (rows[i] && rows[i].res.some((x) => x.kind)) i++;
-    const row = rows[i]; if (!row) throw new Error('invalid');
+    return rows[i] || null;
+  }
+  async adjustBalance(personId, delta = {}, { logText = '' } = {}) {
+    this.need(this.admin);
+    const row = this.balanceRow(); if (!row) throw new Error('invalid');
     const slot = row.nm.indexOf(personId); if (slot < 0) throw new Error('invalid');
     const cur = { ...((this.weekDoc(row.sunday).adj || {})[personId] || {}) };
     const applied = {}; const next = { ...cur };
@@ -341,8 +367,11 @@ export class Actions {
   }
   async answerSwap(reqId, accept) {
     const rq = this.s.state.requests[reqId]; this.need(rq && (rq.to === this.me || this.admin));
+    this.need(rq.status === 'pending');                       // già accettato/rifiutato (es. vecchia notifica, doppio tocco)
     if (!accept) return this.s.setDoc('requests', reqId, { status: 'declined', answeredAt: this.ctx.now().toISOString() });
     const row = this.row(rq.week); this.need(!!row);
+    // settimana chiusa, o nel frattempo i turni sono cambiati (l'admin ha riassegnato): lo scambio toglierebbe il turno a un terzo
+    if (isRequestStale(rq, this.out().rows, this.today()) || row.assigned[CHORES.indexOf(rq.fromChore)] !== rq.from || row.assigned[CHORES.indexOf(rq.toChore)] !== rq.to) throw new Error('expired');
     const patch = swapPatch(row, { chore: rq.fromChore, personId: rq.from }, { chore: rq.toChore, personId: rq.to });
     await this.s.setDoc('weeks', rq.week, { swap: patch });
     await this.s.setDoc('requests', reqId, { status: 'accepted', answeredAt: this.ctx.now().toISOString() });

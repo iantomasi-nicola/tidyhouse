@@ -149,7 +149,8 @@ export class CloudBackend {
   subscribe(cb) { this.cbs.add(cb); cb(this.state); return () => this.cbs.delete(cb); }
   getState() { return this.state; }
   _emit() { for (const cb of this.cbs) cb(this.state); }
-  _fsData(data) {
+  /** Dati per Firestore: con merge i null diventano deleteField(); in un «set» (documento intero) si tolgono e basta (Firestore rifiuta deleteField senza merge). */
+  _fsData(data, set = false) {
     const m = this.fs;
     const walk = (v) => {
       if (v === null) return m.deleteField();
@@ -158,19 +159,23 @@ export class CloudBackend {
       return v;
     };
     const walkNoDel = (v) => { const o = {}; for (const [k, x] of Object.entries(v)) if (x !== undefined && x !== null) o[k] = isObj(x) ? walkNoDel(x) : x; return o; };
-    return walk(data);
+    return set ? walkNoDel(data) : walk(data);
   }
   async write(ops) {
     // aggiornamento ottimistico immediato, poi invio
     applyOps(this.state, ops); this._emit();
-    const m = this.fs; const b = m.writeBatch(this.db);
-    for (const op of ops) {
-      const ref = this._doc(op.coll, op.id);
-      if (op.del) b.delete(ref);
-      else if (op.set) b.set(ref, this._fsData(JSON.parse(JSON.stringify(op.data))));
-      else b.set(ref, this._fsData(clone(op.data)), { merge: true });
+    // un batch di Firestore accetta al massimo 500 scritture: le operazioni grandi (import di un backup) vanno a blocchi
+    const m = this.fs;
+    for (let i = 0; i < ops.length; i += 450) {
+      const b = m.writeBatch(this.db);
+      for (const op of ops.slice(i, i + 450)) {
+        const ref = this._doc(op.coll, op.id);
+        if (op.del) b.delete(ref);
+        else if (op.set) b.set(ref, this._fsData(JSON.parse(JSON.stringify(op.data)), true));
+        else b.set(ref, this._fsData(clone(op.data)), { merge: true });
+      }
+      await b.commit();
     }
-    await b.commit();
   }
   /** Copia la casa in un nuovo id (a blocchi da 400 scritture) e verifica il conteggio dei documenti. */
   async cloneTo(newId, { dropDevices = [], patchHouse = {} } = {}) {

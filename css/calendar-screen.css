@@ -1,0 +1,27 @@
+/* Schermata Settimane: layout (lista + pannello desktop). Il contenuto del pannello (.wd-*) sta in css/calendar.css (scheda turno). */
+.cal-keyhint { display: none; margin: -4px 4px 10px; }
+.cal-flip { transform: rotate(180deg); }
+.cal-panelhead { display: flex; align-items: center; gap: 8px; }
+.cal-panelhead .wd-title { flex: 1; min-width: 0; margin: 0; text-align: center; font-size: 1.25rem; }
+.cal-step { width: 44px; height: 44px; flex: none; }
+.cal-step[disabled] { opacity: .35; }
+.cal-panelbody { display: grid; gap: 14px; }
+
+@media (min-width: 1180px) {
+  .main:has(.cal) { max-width: 1480px; }
+  .cal-keyhint { display: block; }
+  /* lista più stretta e fitta, pannello largo: è lì che si lavora */
+  .cal .cal-layout { grid-template-columns: minmax(380px, 5fr) minmax(460px, 6fr); gap: 24px; align-items: start; }
+  .cal .cal-panel { padding: 0; top: 16px; max-height: calc(100dvh - 32px); border-radius: var(--r-xl); }
+  .cal-panelhead { position: sticky; top: 0; z-index: 2; padding: 10px 12px; background: var(--surface); box-shadow: 0 1px 0 var(--hair); }
+  .cal-panelbody { padding: 16px 20px 24px; }
+
+  /* settimana selezionata sempre evidente; la corrente si riconosce dall'etichetta, non da un secondo contorno */
+  .cal .week.cur:not(.sel) { box-shadow: var(--shadow-1); }
+  .cal .week.sel { background: color-mix(in srgb, var(--accent) 11%, var(--surface)); box-shadow: 0 0 0 3px var(--accent); }
+  .cal .week.compact.sel { box-shadow: inset 5px 0 0 var(--accent), inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .cal .week.compact:hover:not(.sel) { background: var(--surface-2); }
+  .cal .week:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .cal .week.compact:focus-visible { outline-offset: -3px; }
+  .cal-today-wrap { justify-content: flex-start; }
+}

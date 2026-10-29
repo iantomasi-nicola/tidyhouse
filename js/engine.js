@@ -12,7 +12,7 @@ export const CHORES = ['floor', 'bathroom', 'kitchen'];
 /** Valore speciale di `swap[chore]`: l'admin ha deciso che quella mansione, quella settimana, non la fa nessuno (non crea debiti né crediti). */
 export const NOBODY = '-';
 export const DEFAULT_SETTINGS = {
-  grace: 1,          // giorni dopo la domenica per registrare i risultati
+  grace: 2,          // giorni dopo la domenica per registrare i risultati (fino a martedì: è anche l'ultimo giorno scelto)
   minRest: 3,        // minimo di persone a casa per spendere un riposo
   startPriority: 4,  // priorita' iniziale (settimane) di chi non ha storico
   window: 52,        // finestra classifica TR/CDM (0 = sempre)
