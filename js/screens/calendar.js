@@ -2,13 +2,14 @@
 // richiudibili (chiuse di default) con riepilogo di una riga; «Mostra altre» per il futuro lontano; pulsante «Oggi».
 // Su desktop (>=1180px) affianca alla lista il dettaglio della settimana selezionata.
 // Deep link: #/calendar?week=YYYY-MM-DD (qualsiasi giorno della settimana) apre il mese giusto, scorre fin lì e apre la scheda.
-import { h, icon, avatar, loadCss } from '../ui.js';
+import { h, icon, avatar, loadCss, cssReady } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
 import { CHORES } from '../engine.js';
 import { planOf } from '../extras.js';
 import { openWeekSheet, renderWeekDetail, weekStatus, outcomeOf, flowChips } from '../choresheet.js';
 import { it as itV, en as enV } from '../strings/calview.js';
 registerStrings(itV, enV);
+loadCss('css/calendar-screen.css');
 
 const WIDE = '(min-width: 1180px)';
 const FUT_FULL = 4;        // prossime settimane mostrate per esteso (dopo la corrente); su desktop 0: righe compatte, ne stanno di più
@@ -177,7 +178,7 @@ function monthGroup(ctx, key, rowsAsc, ropts) {
 }
 
 export async function render(ctx) {
-  loadCss('css/calendar-screen.css');
+  await cssReady();   // il foglio di stile del layout desktop deve essere pronto prima del primo disegno (niente spostamenti di layout)
   const { out } = ctx.calc;
   const rows = out.rows;
   const cur = out.cur;
