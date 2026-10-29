@@ -608,7 +608,7 @@ await scenario('hub: voci, badge, admin/non admin, feature spente', async () => 
   const page = await open({ seed: s });
   await goto(page, '/more');
   const t = await body(page);
-  for (const x of ['Scorte e spesa', 'Scambi turno', 'Ultimo che esce', 'Checklist ricorrenti', 'Regole della casa', 'Registro attività', 'Invita coinquilini', 'Esporta dati', 'Impostazioni', "Installa l'app", 'Informazioni', 'Versione \\d+\\.\\d+\\.\\d+']) assert.match(t, new RegExp(x), x);
+  for (const x of ['Scorte e spesa', 'Scambi turno', 'Ultimo che esce', 'Checklist ricorrenti', 'Regole della casa', 'Registro attività', 'Gestione casa', 'Recuperi e riposi', 'Cambia turni', 'Correggi chi ha pulito', 'Nuova assenza', 'Coinquilini', 'Invito e codice', 'Dati ed export', 'Tutte le impostazioni', "Installa l'app", 'Informazioni', 'Versione \\d+\\.\\d+\\.\\d+']) assert.match(t, new RegExp(x), x);
   assert.match(t, /2 da comprare/);
   assert.equal(await page.locator('a.li[href="#/needs"] .chip').innerText(), '2');
   assert.equal(await page.locator('a.li[href="#/requests"] .chip').innerText(), '1');
@@ -623,7 +623,7 @@ await scenario('hub: voci, badge, admin/non admin, feature spente', async () => 
   await goto(p2, '/more');
   const t2 = await body(p2);
   assert.doesNotMatch(t2, /Scorte e spesa/); assert.doesNotMatch(t2, /Registro attività/); assert.doesNotMatch(t2, /Ultimo che esce/);
-  assert.match(t2, /Invita coinquilini/); assert.doesNotMatch(t2, /Esporta dati/); assert.equal(await p2.locator('.mx-ai').count(), 0);   // UX-B: il codice è visibile a tutti, la pagina dati è solo admin
+  assert.match(t2, /Invito e codice/); assert.doesNotMatch(t2, /Dati ed export|Gestione casa|Recuperi e riposi/); assert.match(t2, /Impostazioni/); assert.equal(await p2.locator('.mx-ai').count(), 0);   // UX-B: il codice è visibile a tutti, la pagina dati è solo admin
   await goto(p2, '/needs');
   assert.match(await body(p2), /Funzione disattivata/);
   await done(p2);

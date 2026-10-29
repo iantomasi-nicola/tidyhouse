@@ -90,6 +90,56 @@ await scenario('hub: «Esporta dati» solo all\'admin, «Invita» anche a chi no
   await done(a);
 });
 
+await scenario('admin: «Gestione casa» in Altro apre i fogli giusti in 1 tap; ricerca trova le azioni; cambio codice e cambio admin senza scorrere', async () => {
+  const p = await open({ seed: S() });
+  await goto(p, '/more');
+  assert.ok(await p.locator(tid('hub-admin')).isVisible());
+  const order = await p.evaluate(() => [...document.querySelectorAll('.mx > section > .eyebrow')].map((e) => e.textContent.trim()));
+  assert.ok(order.indexOf('Gestione casa') >= 0 && order.indexOf('Gestione casa') < order.indexOf('In casa'), order.join(' | '));
+  const b = await p.locator('[data-act="adm-balance"]').boundingBox();
+  assert.ok(b && b.y + b.height < 844 - 90, 'Recuperi e riposi visibile senza scorrere: ' + JSON.stringify(b));
+  for (const [act, sel] of [['adm-balance', '.sheet.on'], ['adm-assign', '.sheet.on'], ['adm-fix', '[data-testid=fix-picker]'], ['adm-trip', '.sheet.on']]) {
+    await p.waitForTimeout(450);
+    await p.locator(`[data-act="${act}"]`).click();
+    await p.waitForSelector(sel);
+    await p.waitForTimeout(450); await p.keyboard.press('Escape');
+    await p.waitForFunction(() => !document.querySelector('.sheet.on'));
+  }
+  await p.waitForTimeout(450);
+  await p.locator('[data-act="adm-fix"]').click();
+  await p.waitForSelector('[data-testid=fix-picker] [data-fix]');
+  await p.waitForTimeout(450);
+  await p.locator('[data-testid=fix-picker] [data-fix]').first().click();
+  await p.waitForFunction(() => document.querySelectorAll('.sheet.on').length === 2);
+  await p.waitForTimeout(450); await p.keyboard.press('Escape'); await p.waitForTimeout(450); await p.keyboard.press('Escape');
+  await p.waitForFunction(() => !document.querySelector('.sheet.on'));
+  await noOverflow(p, 'hub admin'); await noRawKeys(p, 'hub admin'); await shot(p, 'hub-admin-390');
+  await goto(p, '/settings');
+  await p.locator(tid('st-search')).fill('recuperi');
+  await p.waitForSelector(tid('st-results') + ' ' + tid('st-act-balance'));
+  await p.locator(tid('st-search')).fill('correggi');
+  await p.waitForSelector(tid('st-results') + ' ' + tid('st-act-fix'));
+  await p.locator(tid('st-search')).fill('');
+  await p.waitForTimeout(450);
+  await p.locator(tid('settings-groups') + ' ' + tid('st-act-balance')).click();
+  await p.waitForSelector('.sheet.on'); await p.waitForTimeout(450); await p.keyboard.press('Escape');
+  await goto(p, '/settings/invite/rotate'); await p.waitForTimeout(600);
+  assert.ok(await p.locator(tid('invite-rotate')).isVisible());
+  const r = await p.locator(tid('rot-block')).boundingBox();
+  assert.ok(r && r.y < 300, 'il deep link mostra il blocco del nuovo codice: ' + JSON.stringify(r));
+  await goto(p, '/settings/security');
+  const first = await p.evaluate(() => document.querySelector('[data-testid=settings-page] form [data-testid]')?.getAttribute('data-testid'));
+  assert.equal(first, 'newadmin-who');
+  await done(p);
+  const n = await open({ seed: S({ admin: false, me: 'bruno' }) });
+  await goto(n, '/more');
+  assert.equal(await n.locator(tid('hub-admin')).count(), 0);
+  assert.equal(await n.locator('a.li[href="#/settings/invite"]').count(), 1);
+  await done(n);
+  const s3 = await open({ seed: S(), viewport: { width: 320, height: 640 } });
+  await goto(s3, '/more'); await noOverflow(s3, 'hub 320 (prima 348 px)'); await done(s3);
+});
+
 await scenario('hub: «Da fare ora» risponde alle richieste in 1 tap dall\'hub (prima 3 tap)', async () => {
   const p = await open({ seed: withState(S(), { requests: REQ() }) });
   await goto(p, '/more');
@@ -232,6 +282,7 @@ await scenario('sicurezza: il nuovo admin non è preselezionato su chi è già a
 await scenario('impostazioni: parole semplici nelle regole e testo «Chiave API» tradotto', async () => {
   const p = await open({ seed: S() });
   await goto(p, '/settings/rules');
+  await p.click(tid('fold-rules-adv') + ' > summary'); await p.waitForTimeout(200);   // i valori rari sono in «Avanzate»
   const t = await body(p);
   assert.match(t, /Persone a casa per concedere un riposo/); assert.match(t, /Settimane contate in classifica/);
   assert.doesNotMatch(t, /Finestra classifica/);

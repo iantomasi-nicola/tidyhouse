@@ -2,7 +2,7 @@
 
 Problema riferito dall'utente: per l'admin l'app sembra «pile di bottoni e impostazioni buttate lì» dai vari aggiornamenti.
 Metodo: lettura di `js/screens/more.js` e `js/screens/settings.js`, percorso dei compiti admin più comuni contato a mano
-dalla Home (390×844), verifica con Playwright (`tests/e2e/ux-b.e2e.mjs`, scenari «admin:»). Nessuna funzione tolta: solo spostata, rinominata o raggruppata.
+dalla Home (390×844), verifica con Playwright (`tests/e2e/ux-b.e2e.mjs`, scenario «admin: Gestione casa…»). Nessuna funzione tolta: solo spostata, rinominata o raggruppata.
 
 ## Criticità
 
@@ -13,13 +13,14 @@ dalla Home (390×844), verifica con Playwright (`tests/e2e/ux-b.e2e.mjs`, scenar
 | 3 | M | Impostazioni, indice admin | 15 sezioni divise per tema tecnico («La casa», «Notifiche e persone», «Avanzate»): «Coinquilini» è in mezzo alle regole, «Cambia admin» è in «Avanzate › Sicurezza admin» sotto il cambio PIN, «Recuperi e riposi» non c'è e la ricerca non lo trova. | Gruppi per intento e frequenza: **Per te** · **Gestione casa** (Recuperi e riposi, Persone, Invito e codice, Regole dei turni, Notifiche della casa, Admin e PIN, Dati ed export) · **Casa e funzioni** · **Avanzate** (Accessi, IA). La ricerca trova anche le azioni (recuperi, riposi, turni, risultato). |
 | 4 | M | Nomi | Stessa pagina con nomi diversi: «Invita coinquilini» (Altro) / «Invito» (Impostazioni); «Esporta dati» / «Dati e backup»; «Casa» (sezione) dentro il gruppo «La casa»; «Sicurezza admin» per una pagina usata soprattutto per cambiare admin. | Un nome per pagina: «Invito e codice», «Dati ed export», «Nome, lingua e obblighi», «Admin e PIN». |
 | 5 | B | Admin e PIN | La pagina si apre con una scheda «Funzioni admin sbloccate» che non fa nulla (la pagina si vede solo da sbloccati) e il cambio admin sta sotto il cambio PIN. | Tolta la scheda inutile (lo stato è nel foot); prima «Cambia admin», poi «Cambia PIN», poi «Blocca». |
-| 6 | B | Regole dei turni | Otto controlli tutti allo stesso livello: quelli che si toccano (tolleranza, riposo, notti di assenza, penalità) in mezzo a quelli rari (vantaggio iniziale, settimane in classifica, punti fatica, criterio classifica). | I rari in una sezione richiudibile **«Avanzate»** (chiusa; si apre da sola se un valore è diverso dal predefinito). |
-| 7 | B | Invito | Per cambiare il codice bisogna scorrere oltre codice, link e QR senza sapere che la funzione è lì. | Pulsante «Cambia codice» (solo admin) nella scheda dell'invito che porta al blocco; il link `#/settings/invite/rotate` lo apre già in vista. |
+| 6 | B | Regole dei turni | Otto controlli tutti allo stesso livello: quelli che si toccano (tolleranza, riposo, notti di assenza, penalità) in mezzo a quelli rari (vantaggio iniziale, settimane in classifica, punti fatica, criterio classifica). | I rari in una sezione richiudibile **«Avanzate»** (chiusa, con il riepilogo di cosa contiene). |
+| 7 | B | Invito | Per cambiare il codice bisogna scorrere oltre codice, link e QR senza sapere che la funzione è lì. | Pulsante «Cambia codice» (solo admin) subito sotto il codice, porta al blocco; il link `#/settings/invite/rotate` lo apre già in vista. |
 | 8 | B | Icone | Le icone si ripetono con significati diversi: `refresh` per Recuperi e riposi, Compiti condivisi e «cambia codice»; `sparkles` per Aspetto e IA. | Recuperi e riposi `wallet`, Aspetto `moon`, IA `edit`. |
 | 9 | B | Altro | Versione ripetuta due volte (riga «Informazioni» + piè di pagina). | Resta solo il piè di pagina; la riga dice cosa contiene. |
 
 ### Bug veri trovati
 - **Ricerca impostazioni**: «recuperi», «riposo», «correggi» non davano risultati anche se la funzione esiste (solo admin) → corretta (azioni nella ricerca).
+- **Altro a 320 px in italiano**: la scheda profilo con «Solo su questo dispositivo» allargava la pagina a 348 px (overflow orizzontale; i test lo misuravano solo in inglese) → corretta (`css/more.css`).
 - **Indice per l'admin**: nessuno (contatori e permessi ok). **Altro**: l'ordine delle righe «In casa» non seguiva l'uso (Ultimo che esce prima di Compiti condivisi) → riordinato: Spesa, Scambi, Compiti condivisi, Checklist, Ultimo che esce, Regole, Registro.
 
 ## Tocchi prima → dopo (admin, dalla Home, 390×844)
@@ -40,3 +41,7 @@ dalla Home (390×844), verifica con Playwright (`tests/e2e/ux-b.e2e.mjs`, scenar
 
 ## Non verificato
 Telefono vero (solo emulazione Playwright); lettori di schermo; Firestore reale con due dispositivi.
+
+## Fuori dai miei file (proposte)
+- `js/screens/home.js`: l'avviso «X è uscito» porta a `#/settings/invite`; con `#/settings/invite/rotate` si aprirebbe già sul blocco del nuovo codice.
+- `tests/e2e/onboarding-more.e2e.mjs` › «requests: in arrivo, inviate, storico» fallisce anche sul branch `claude/nifty-goodall-lcx5rh` senza queste modifiche (attesa dopo «Accetta» nella pagina Scambi): da guardare da chi ha toccato store/actions.

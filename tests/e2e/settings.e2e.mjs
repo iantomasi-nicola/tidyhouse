@@ -202,6 +202,9 @@ await test('regole: stepper, sforzo, rankBy', async (mk) => {
   const page = await mk(); await go(page, 'rules');
   await page.click(`${tid('step-grace')} button[aria-label="+"]`); await until(page, () => window.__app.house.settings.grace === 2);
   await page.click(`${tid('step-minNights')} button[aria-label="−"]`); await until(page, () => window.__app.house.settings.minNights === 2);
+  // i valori rari stanno in «Avanzate» (chiusa di default)
+  assert.equal(await isOpen(page, 'fold-rules-adv'), false);
+  await openFold(page, 'fold-rules-adv');
   await page.click(`${tid('step-window')} button[aria-label="+"]`); await until(page, () => window.__app.house.settings.window === 56);
   await page.click(`${tid('effort-floor')} .seg button:has-text("3")`); await until(page, () => window.__app.house.effort.floor === 3);
   await page.click(`${tid('effort-kitchen')} .seg button:has-text("5")`); await until(page, () => window.__app.house.effort.kitchen === 5);
