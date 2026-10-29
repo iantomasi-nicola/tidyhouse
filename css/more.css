@@ -10,6 +10,9 @@
 .mx-me > svg.i { color: var(--text-3); flex: none; }
 .mx-me-name { font-size: 1.25rem; font-weight: 750; letter-spacing: -.02em; }
 .mx-me-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* a 320 px «Solo su questo dispositivo» non deve allargare la pagina */
+.mx-me > .grow { min-width: 0; }
+.mx-me-chips .chip { max-width: 100%; height: auto; min-height: 26px; padding-block: 4px; white-space: normal; }
 .mx-ai { min-height: 52px; }
 .mx-ver { margin-top: 4px; }
 .mx .eyebrow .chip { height: 22px; }
@@ -230,3 +233,19 @@ button.mx-chip::after { inset: 0; }
 .mx-stalebtn { margin-top: 10px; }
 
 .mx-reason { color: var(--text); font-style: italic; margin-top: 2px; }
+
+/* hub: «Gestione casa» (solo admin): quattro azioni rapide in riquadri, poi le pagine di gestione */
+[data-testid="hub-admin"] { min-width: 0; }
+.mx-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mx-tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+.mx-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; text-align: left;
+  min-height: 72px; padding: 14px; border-radius: var(--r-xl); background: var(--surface); box-shadow: var(--shadow-1); color: var(--text); transition: background .15s, transform .2s var(--spring); }
+.mx-tile:active { background: var(--surface-2); transform: scale(.985); }
+.mx-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mx-tile > .ico { width: 36px; height: 36px; margin-bottom: 8px; border-radius: 11px; display: grid; place-items: center; background: var(--tonal); color: var(--accent-ink); flex: none; }
+.mx-tile > .ico.g { background: color-mix(in srgb, var(--ok) 16%, var(--surface)); color: var(--ok); }
+.mx-tile > .ico.o { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); color: var(--ico-o); }
+.mx-tile > .ico.p { background: color-mix(in srgb, #bf5af2 16%, var(--surface)); color: var(--ico-p); }
+.mx-tile-t { font-weight: 600; line-height: 1.25; max-width: 100%; overflow-wrap: anywhere; }
+.mx-tile-d { font-size: .8125rem; color: var(--text-2); max-width: 100%; overflow-wrap: anywhere; }
+.mx-oc { height: 26px; padding: 0 6px; }

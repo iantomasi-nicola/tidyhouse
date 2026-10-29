@@ -118,37 +118,93 @@ function hub(ctx) {
       h('div', { class: 'mx-me-chips' }, ctx.isAdmin ? chip('acc', icon('shield'), t('misc.admin')) : null, chip('', icon(ctx.cloud ? 'users' : 'device'), ctx.cloud ? t('moreX.cloud') : t('misc.localOnly')))),
     icon('chevron'));
 
-  const ai = ctx.isAdmin && house.ai && house.ai.enabled
-    ? h('button', { type: 'button', class: 'btn tonal block mx-ai', onclick: async () => {
-      try { const m = await import('../ai-ui.js'); await m.openAiImportSheet(ctx); } catch (e) { console.warn(e); ctx.toast(t('moreX.aiMissing')); }
-    } }, icon('sparkles'), t('moreX.ai'))
-    : null;
+  // in ordine d'uso: spesa e scambi ogni settimana, regole e registro di rado
+  const houseRows = [
+    f('needs') ? row({ ic: 'cart', tone: 'o', title: t('more.needs'), desc: needsOpen ? t('moreX.needsOpen', { n: needsOpen }) : t('needs.empty'), end: badge(needsOpen, 'warn'), href: '#/needs' }) : null,
+    f('requests') ? row({ ic: 'swap', tone: 'p', title: t('more.requests'), desc: inReq ? t('moreY.hub.awaiting', { n: inReq }) : t('moreY.hub.requests'), end: badge(inReq), href: '#/requests' }) : null,
+    f('shared') ? row({ ic: 'refresh', tone: 'g', title: t('shared.title'), desc: sharedDue ? t('shared.dueN', { n: sharedDue }) : t('shared.d.hub'), end: badge(sharedDue, 'warn'), href: '#/more/shared' }) : null,
+    f('tasks') ? row({ ic: 'list', tone: '', title: t('more.tasks'), desc: tasksOn ? t('moreX.tasksOn', { n: tasksOn }) : t('moreX.d.tasks'), href: '#/tasks' }) : null,
+    f('lastout') ? row({ ic: 'plane', tone: 'g', title: t('more.lastout'), desc: t('moreX.d.lastout'), href: '#/lastout' }) : null,
+    f('rules') ? row({ ic: 'book', tone: 'r', title: t('more.rules'), desc: t('moreX.d.rules'), href: '#/rules' }) : null,
+    f('activity') ? row({ ic: 'history', tone: '', title: t('more.activity'), desc: t('moreX.d.activity'), href: '#/activity' }) : null,
+  ];
+  // il codice è visibile a tutti (la rotazione resta all'admin); per l'admin l'invito sta in «Gestione casa»
+  const inviteRow = row({ ic: 'qr', tone: 'g', title: t('uxb.adm.invite'), desc: ctx.isAdmin && ctx.code() ? t('uxb.adm.inviteD', { code: ctx.code() }) : t('uxb.adm.inviteD0'), href: '#/settings/invite' });
 
   return shell(
     h('h1', { class: 'title' }, t('more.title')),
     profile,
     todoBlock(ctx),
-    group(t('moreX.g.house'), [
-      f('needs') ? row({ ic: 'cart', tone: 'o', title: t('more.needs'), desc: needsOpen ? t('moreX.needsOpen', { n: needsOpen }) : t('needs.empty'), end: badge(needsOpen, 'warn'), href: '#/needs' }) : null,
-      f('requests') ? row({ ic: 'swap', tone: 'p', title: t('more.requests'), desc: inReq ? t('moreY.hub.awaiting', { n: inReq }) : t('moreY.hub.requests'), end: badge(inReq), href: '#/requests' }) : null,
-      f('lastout') ? row({ ic: 'plane', tone: 'g', title: t('more.lastout'), desc: t('moreX.d.lastout'), href: '#/lastout' }) : null,
-      f('tasks') ? row({ ic: 'list', tone: '', title: t('more.tasks'), desc: tasksOn ? t('moreX.tasksOn', { n: tasksOn }) : t('moreX.d.tasks'), href: '#/tasks' }) : null,
-      f('shared') ? row({ ic: 'refresh', tone: 'g', title: t('shared.title'), desc: sharedDue ? t('shared.dueN', { n: sharedDue }) : t('shared.d.hub'), end: badge(sharedDue, 'warn'), href: '#/more/shared' }) : null,
-      f('rules') ? row({ ic: 'book', tone: 'r', title: t('more.rules'), desc: t('moreX.d.rules'), href: '#/rules' }) : null,
-      f('activity') ? row({ ic: 'history', tone: '', title: t('more.activity'), desc: t('moreX.d.activity'), href: '#/activity' }) : null,
-    ]),
-    ai,
-    group(t('moreX.g.manage'), [
-      row({ ic: 'users', tone: 'g', title: t('more.invite'), desc: t('moreX.d.invite'), href: '#/settings/invite' }),   // il codice è visibile a tutti; la rotazione resta all'admin
-      ctx.isAdmin ? row({ ic: 'refresh', tone: 'p', title: t('bal.btn'), desc: t('bal.btnHint'), onclick: async () => { try { (await import('../balance.js')).openBalanceSheet(ctx); } catch (e) { console.warn(e); ctx.toast(t('error')); } } }) : null,
-      ctx.isAdmin ? row({ ic: 'download', tone: '', title: t('more.export'), desc: t('moreX.d.export'), href: '#/settings/data' }) : null,   // la pagina dati è solo admin
-      row({ ic: 'settings', tone: '', title: t('more.settings'), desc: t('moreX.d.settings'), href: '#/settings' }),
-    ]),
+    ctx.isAdmin ? adminBlock(ctx, inviteRow) : null,
+    group(t('moreX.g.house'), houseRows),
+    ctx.isAdmin ? null : group(t('moreX.g.manage'), [inviteRow, row({ ic: 'settings', tone: '', title: t('more.settings'), desc: t('moreX.d.settings'), href: '#/settings' })]),
     group(t('moreX.g.app'), [
       row({ ic: 'device', tone: 'p', title: t('more.guide'), desc: isStandalone() ? t('guide.installed') : t('moreX.d.guide'), href: '#/guide' }),
-      row({ ic: 'info', tone: '', title: t('more.about'), desc: t('misc.version', { v: ctx.VERSION || '' }), href: '#/more/about' }),
+      row({ ic: 'info', tone: '', title: t('more.about'), desc: t('moreX.d.about'), href: '#/more/about' }),
     ]),
     h('p', { class: 'mx-ver muted small center' }, `${t('app.name')} · ${t('misc.version', { v: ctx.VERSION || '' })}`));
+}
+
+/** Apre un foglio di un altro modulo caricandolo solo quando serve. */
+const lazySheet = (ctx, load) => async () => { try { await load(); } catch (e) { console.warn(e); ctx.toast(t('error')); } };
+/** Settimana su cui lavorano «Cambia turni» e «Recuperi e riposi»: la corrente, altrimenti la prima non chiusa. */
+const curRow = (ctx) => { const rows = ctx.calc.out.rows; return rows.find((r) => r.isCur) || rows.find((r) => !r.closed) || null; };
+
+/**
+ * «Gestione casa» (solo admin): le azioni dell'admin in un posto solo, in ordine d'uso.
+ * Le quattro più frequenti sono riquadri (un tocco apre il foglio giusto), sotto le pagine di gestione.
+ */
+function adminBlock(ctx, inviteRow) {
+  const house = ctx.house; const cur = curRow(ctx);
+  const tile = ({ ic, tone = '', title, desc, act, onclick }) => h('button', { type: 'button', class: 'mx-tile', 'data-act': act, onclick },
+    h('span', { class: 'ico ' + tone }, icon(ic)), h('span', { class: 'mx-tile-t' }, title), desc ? h('span', { class: 'mx-tile-d' }, desc) : null);
+  const tiles = [
+    tile({ ic: 'wallet', tone: 'p', title: t('bal.btn'), desc: t('uxb.adm.balD'), act: 'adm-balance', onclick: lazySheet(ctx, async () => (await import('../balance.js')).openBalanceSheet(ctx)) }),
+    cur && cur.nm.some(Boolean) ? tile({ ic: 'calendar', tone: '', title: t('uxb.adm.assign'), desc: t('uxb.adm.assignD', { week: fmtWeekRange(cur.sunday, ctx.lang) }), act: 'adm-assign', onclick: lazySheet(ctx, () => openAssignCurrent(ctx)) }) : null,
+    tile({ ic: 'check', tone: 'g', title: t('uxb.adm.fix'), desc: t('uxb.adm.fixD'), act: 'adm-fix', onclick: () => openFixPicker(ctx) }),
+    ctx.feature('trips') ? tile({ ic: 'plane', tone: 'o', title: t('trips.add'), desc: t('uxb.adm.tripD'), act: 'adm-trip', onclick: lazySheet(ctx, async () => (await import('./trips.js')).openTripSheet(ctx)) }) : null,
+  ].filter(Boolean);
+  const people = (house.roommates || []).filter((r) => !(r.to && r.to < ctx.today())).map((r) => r.name).join(', ');
+  const ai = house.ai && house.ai.enabled
+    ? h('button', { type: 'button', class: 'li mx-ai', onclick: lazySheet(ctx, async () => { try { await (await import('../ai-ui.js')).openAiImportSheet(ctx); } catch (e) { console.warn(e); ctx.toast(t('moreX.aiMissing')); } }) },
+      h('div', { class: 'ico p' }, icon('edit')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('moreX.ai'))), h('div', { class: 'end' }, icon('chevron')))
+    : null;
+  return h('section', { 'data-testid': 'hub-admin' },
+    h('div', { class: 'eyebrow' }, t('uxb.adm.group')),
+    h('div', { class: 'stack tight' },
+      h('div', { class: 'mx-tiles', role: 'group', 'aria-label': t('uxb.adm.quick') }, tiles),
+      h('div', { class: 'list' },
+        liRow({ ic: 'users', tone: 'g', title: t('set.roommates'), desc: people, href: '#/settings/roommates' }),
+        inviteRow,
+        liRow({ ic: 'download', tone: '', title: t('uxb.adm.data'), desc: t('moreX.d.export'), href: '#/settings/data' }),   // la pagina dati è solo admin
+        ai,
+        liRow({ ic: 'settings', tone: '', title: t('uxb.adm.all'), desc: t('uxb.adm.allD'), href: '#/settings' }))));
+}
+
+/** «Cambia turni» della settimana corrente (foglio di js/weekassign.js). Usata anche dalla ricerca delle impostazioni. */
+export async function openAssignCurrent(ctx) {
+  const cur = curRow(ctx); if (!cur) { ctx.toast(t('uxb.adm.fixNone')); return null; }
+  return (await import('../weekassign.js')).openAssignWeekSheet(ctx, cur.sunday);
+}
+/** «Correggi chi ha pulito» senza cercare la settimana: settimana corrente e le 4 precedenti, un tocco sul turno apre la correzione. */
+export async function openFixPicker(ctx) {
+  let mod; let edit;
+  try { [mod, edit] = await Promise.all([import('../choresheet.js'), import('../resultedit.js')]); } catch (e) { console.warn(e); ctx.toast(t('error')); return; }
+  mod.liveSheet(ctx, { title: () => t('uxb.adm.fixTitle'), build: () => {
+    const rows = ctx.calc.out.rows.filter((r) => !r.isFut && r.assigned.some(Boolean)).slice(-5).reverse();
+    if (!rows.length) return h('div', { class: 'stack' }, h('p', { class: 'muted' }, t('uxb.adm.fixNone')));
+    return h('div', { class: 'stack', 'data-testid': 'fix-picker' }, h('p', { class: 'muted small' }, t('uxb.adm.fixHint')),
+      rows.map((row) => h('section', null,
+        h('div', { class: 'eyebrow' }, h('span', null, row.isCur ? `${t('uxb.adm.thisWeek')} · ${fmtWeekRange(row.sunday, ctx.lang)}` : fmtWeekRange(row.sunday, ctx.lang))),
+        h('div', { class: 'list' }, CHORES.map((c, i) => {
+          const who = row.assigned[i]; if (!who) return null;
+          const oc = mod.outcomeOf(ctx, row, i);
+          return h('button', { type: 'button', class: 'li', 'data-fix': `${row.sunday}:${c}`, onclick: () => edit.openResultEditSheet(ctx, row.sunday, c) },
+            h('i', { class: 'mx-ct ' + c }, icon(CHORE_ICON[c])),
+            h('div', { class: 'grow' }, h('div', { class: 't' }, `${t('chore.' + c)} · ${ctx.name(who)}`), h('div', { class: 'd' }, oc ? oc.label : t('uxb.adm.notYet'))),
+            h('div', { class: 'end' }, oc ? chip(oc.tone + ' mx-oc', icon(oc.ic)) : null, icon('chevron')));
+        })))));
+  } });
 }
 
 // ================================================================ scorte e spesa

@@ -16,7 +16,7 @@ import { openAiImportSheet, readAiConfig, writeAiConfig } from '../ai-ui.js';
 import { PROVIDERS, callAi } from '../ai.js';
 import { it, en } from '../strings/set.js';
 import { it as itB, en as enB } from '../strings/uxb.js';
-import { renderViewsLog } from './more.js';   // registro ingressi (raggruppato per giorno)
+import { renderViewsLog, openFixPicker, openAssignCurrent } from './more.js';   // registro ingressi (raggruppato per giorno)
 registerStrings(it, en);
 registerStrings(itB, enB);
 loadCss('css/settings.css');
@@ -136,32 +136,44 @@ function normUrl(v) {
 // ============================================================================
 const SECTIONS = {
   profile: { ic: 'user', tone: '', title: 'set.profile', build: profile, sum: (c) => `${c.meName || '—'} · ${deviceInfo().label}` },
-  appearance: { ic: 'sparkles', tone: 'p', title: 'set.appearance', build: appearance, sum: (c) => t('set.theme.' + (c.prefs.theme || 'auto')) },
+  appearance: { ic: 'moon', tone: 'p', title: 'set.appearance', build: appearance, sum: (c) => t('set.theme.' + (c.prefs.theme || 'auto')) },
   home: { ic: 'home2', tone: 'g', title: 'set.homeLayout', build: homeEditor, sum: (c) => t('setX.sum.widgets', { n: c.homeLayout().order.length - c.homeLayout().hidden.length, m: HOME_WIDGETS.length }) },
   notifications: { ic: 'bell', tone: 'r', title: 'set.notifications', build: notifications, sum: (c) => { const s = push.status(c).state; return s === 'on' ? t('set.notif.status.on') : s === 'off' ? t('set.notif.status.off') : t('setX.notif.short.' + s); } },
-  house: { admin: true, ic: 'home', tone: '', title: 'set.house', build: houseSection, sum: (c) => c.house.name || '' },
+  house: { admin: true, ic: 'home', tone: '', title: 'uxb.adm.sec.house', build: houseSection, sum: (c) => c.house.name || '' },
   rules: { admin: true, ic: 'book', tone: 'o', title: 'set.turnRules', build: rulesSection, sum: (c) => t('setX.sum.rules', { a: (c.house.settings || {}).grace ?? DEFAULT_SETTINGS.grace, b: (c.house.settings || {}).minNights ?? DEFAULT_SETTINGS.minNights }) },
   roommates: { admin: true, ic: 'users', tone: 'g', title: 'set.roommates', build: roommatesSection, sum: (c) => (c.house.roommates || []).filter((r) => !r.to || r.to >= c.today()).map((r) => r.name).join(', ') },
   features: { admin: true, ic: 'list', tone: 'p', title: 'set.features', build: featuresSection, sum: (c) => { const k = Object.keys(DEFAULT_FEATURES); return t('setX.sum.features', { n: k.filter((x) => c.feature(x)).length, m: k.length }); } },
   links: { admin: true, ic: 'link', tone: '', title: 'set.links', build: linksSection, sum: (c) => { const l = c.house.links || {}; const n = [l.tricount && l.tricount.url, l.whatsapp && l.whatsapp.url].filter(Boolean).length + ((l.custom || []).length); return t('setX.sum.links', { n }); } },
-  'notif-house': { admin: true, ic: 'clock', tone: 'r', title: 'set.houseNotif', build: notifHouse, sum: (c) => (notifCfg(c.house).enabled ? t('on') : t('off')) },
-  invite: { admin: true, open: true, ic: 'qr', tone: '', title: 'set.invite', build: inviteSection, sum: (c) => c.code() },
+  'notif-house': { admin: true, ic: 'clock', tone: 'r', title: 'uxb.adm.sec.notifHouse', build: notifHouse, sum: (c) => (notifCfg(c.house).enabled ? t('on') : t('off')) },
+  invite: { admin: true, open: true, ic: 'qr', tone: 'g', title: 'uxb.adm.invite', build: inviteSection, sum: (c) => c.code() },
   access: { admin: true, ic: 'eye', tone: 'o', title: 'set.access', build: accessSection, sum: (c) => t('setX.sum.devices', { n: Object.keys(c.state.members || {}).length }) },
-  data: { admin: true, ic: 'download', tone: 'g', title: 'set.data', build: dataSection, sum: (c) => (c.cloud ? t('misc.synced') : t('misc.localOnly')) },
-  ai: { admin: true, ic: 'sparkles', tone: 'p', title: 'set.ai', build: aiSection, sum: (c) => ((c.house.ai || {}).enabled ? t('on') : t('off')) },
-  security: { admin: true, ic: 'shield', tone: 'r', title: 'set.security', build: securitySection, sum: (c) => (c.isAdmin ? t('sec.unlocked') : t('sec.locked')) },
+  data: { admin: true, ic: 'download', tone: '', title: 'uxb.adm.data', build: dataSection, sum: () => t('moreX.d.export') },
+  ai: { admin: true, ic: 'edit', tone: 'p', title: 'set.ai', build: aiSection, sum: (c) => ((c.house.ai || {}).enabled ? t('on') : t('off')) },
+  security: { admin: true, ic: 'shield', tone: 'r', title: 'uxb.adm.sec.security', build: securitySection, sum: (c) => t('uxb.adm.secSum', { names: (c.house.adminIds || []).map((i) => c.name(i)).join(', ') || '—' }) },
 };
+/**
+ * Indice raggruppato per intento e, dentro ogni gruppo, per frequenza d'uso. Le chiavi «act:…» non sono sezioni ma
+ * azioni che aprono un foglio (solo admin). Le 15 sezioni restano tutte, ognuna una volta sola.
+ */
 const INDEX = [
-  ['setX.group.me', ['profile', 'appearance', 'home', 'notifications']],
-  ['setX.group.house', ['house', 'rules', 'roommates', 'features', 'links'], true],
-  ['setX.group.comms', ['notif-house', 'invite', 'access'], true],
-  ['set.advanced', ['data', 'ai', 'security'], true],
+  ['setX.group.me', ['profile', 'notifications', 'appearance', 'home']],
+  ['uxb.adm.group', ['act:balance', 'roommates', 'invite', 'rules', 'notif-house', 'security', 'data'], true],
+  ['uxb.adm.g.setup', ['house', 'features', 'links'], true],
+  ['set.advanced', ['access', 'ai'], true],
 ];
+/** Azioni admin raggiungibili dall'indice e dalla ricerca (aprono il foglio dell'altro modulo). */
+const ACTIONS = {
+  balance: { ic: 'wallet', tone: 'p', title: () => t('bal.btn'), desc: () => t('bal.btnHint'), run: async (ctx) => (await import('../balance.js')).openBalanceSheet(ctx) },
+  assign: { ic: 'calendar', tone: '', title: () => t('uxb.adm.assign'), desc: () => t('uxb.adm.thisWeek'), run: (ctx) => openAssignCurrent(ctx) },   // solo nella ricerca (in Altro è un riquadro)
+  fix: { ic: 'check', tone: 'g', title: () => t('uxb.adm.fix'), desc: () => t('uxb.adm.fixD'), run: (ctx) => openFixPicker(ctx) },
+};
+const actionRow = (ctx, k) => { const a = ACTIONS[k]; return h('button', { type: 'button', class: 'li', 'data-testid': 'st-act-' + k, onclick: async () => { try { await a.run(ctx); } catch (e) { fail(ctx, e); } } },
+  h('div', { class: 'ico ' + (a.tone || '') }, icon(a.ic)), h('div', { class: 'grow' }, h('div', { class: 't' }, a.title()), h('div', { class: 'd' }, a.desc())), h('div', { class: 'end' }, icon('chevron'))); };
 
 export async function render(ctx, params = {}) {
   const sub = String(params.sub || '').trim();
   const def = SECTIONS[sub];
-  if (sub !== curSub) { resetDrafts(); curSub = sub; if (def) freqBump(sub); }
+  if (sub !== curSub) { resetDrafts(); curSub = sub; if (def) freqBump(sub); if (sub === 'invite' && params.parts && params.parts[2] === 'rotate') S.jumpRot = true; }
   if (!sub || !def) return indexPage(ctx);
   if (def.admin && !def.open && !ctx.isAdmin) return page(ctx, t(def.title), h('div', { class: 'empty', 'data-testid': 'admin-only' }, icon('lock'), h('div', { style: { fontWeight: 650, color: 'var(--text)' } }, t('ai.adminOnly')), h('div', { class: 'small' }, t('setX.adminOnly.hint'))), sub);
   let body;
@@ -180,7 +192,7 @@ function page(ctx, title, body, sub) {
 /** Sezioni visibili a chi guarda (le admin solo all'admin). */
 const visibleSections = (ctx) => Object.entries(SECTIONS).filter(([, d]) => !d.admin || d.open || ctx.isAdmin).map(([k]) => k);
 const sectionSum = (ctx, k) => { try { return SECTIONS[k].sum(ctx); } catch { return ''; } };
-const sectionRow = (ctx, k) => { const d = SECTIONS[k]; return liRow({ ic: d.ic, tone: d.tone, title: t(d.title), desc: sectionSum(ctx, k), href: '#/settings/' + k }); };
+const sectionRow = (ctx, k) => { if (k.startsWith('act:')) return actionRow(ctx, k.slice(4)); const d = SECTIONS[k]; return liRow({ ic: d.ic, tone: d.tone, title: t(d.title), desc: sectionSum(ctx, k), href: '#/settings/' + k }); };
 
 /** Impostazioni rapide: tema e notifiche, senza aprire nessuna sezione. */
 function quickCard(ctx) {
@@ -202,11 +214,10 @@ function quickCard(ctx) {
 /** Cerca nelle sezioni (titolo, riepilogo e parole chiave) senza aprire nulla. */
 function searchResults(ctx, q) {
   const toks = fold_(q).split(/\s+/).filter(Boolean);
-  const hits = toks.length ? visibleSections(ctx).filter((k) => {
-    const hay = fold_([t(SECTIONS[k].title), sectionSum(ctx, k), t('uxb.kw.' + k)].join(' '));
-    return toks.every((x) => hay.includes(x));
-  }) : [];
-  return hits;
+  const match = (parts) => { const hay = fold_(parts.join(' ')); return toks.every((x) => hay.includes(x)); };
+  if (!toks.length) return [];
+  const acts = ctx.isAdmin ? Object.keys(ACTIONS).filter((k) => match([ACTIONS[k].title(), ACTIONS[k].desc(), t('uxb.kw.act.' + k)])).map((k) => 'act:' + k) : [];
+  return [...acts, ...visibleSections(ctx).filter((k) => match([t(SECTIONS[k].title), sectionSum(ctx, k), t('uxb.kw.' + k)]))];
 }
 
 function indexPage(ctx) {
@@ -474,20 +485,22 @@ function rulesSection(ctx) {
     seg([1, 2, 3, 4, 5].map((n) => [n, String(n)]), Number(eff[c]), (v) => setHouse(ctx, { effort: { [c]: v } }))));
   const rank = seg([['turns', t('setX.rules.rankTurns')], ['effort', t('setX.rules.rankEffort')]], S_.rankBy === 'effort' ? 'effort' : 'turns', (v) => setHouse(ctx, { settings: { rankBy: v } }));
   rank.setAttribute('data-testid', 'seg-rankBy'); rank.setAttribute('aria-label', t('setX.rules.rankBy'));
+  // in vista i valori che si toccano davvero; quelli rari (vantaggio iniziale, classifica, punti fatica) in «Avanzate»
   return h('div', { class: 'stack' },
     note('', 'info', t('setX.rules.recalc')),
     group(t('set.turnRules'), [
       st('grace', t('set.grace'), t('set.graceHint'), 0, 7),
-      st('minRest', t('uxb.rules.minRest'), t('setX.rules.minRestHint'), 1, 4),
-      st('startPriority', t('uxb.rules.startPriority'), t('setX.rules.startPriorityHint'), 0, 12),
-      st('window', t('uxb.rules.window'), t('uxb.rules.windowHint'), 0, 260, 4, (v) => (v === 0 ? t('setX.rules.always') : String(v))),
       st('minNights', t('set.minNights'), t('setX.rules.minNightsHint'), 1, 7),
+      st('minRest', t('uxb.rules.minRest'), t('setX.rules.minRestHint'), 1, 4),
     ]),
     group(t('moreY.pen.group'), [stepRow({ title: t('moreY.pen.setting'), desc: t('moreY.pen.settingHint'), value: Number(S_.taskPenalty !== undefined ? S_.taskPenalty : DEFAULT_TASK_PENALTY), min: 0, max: 3, step: 0.5, id: 'step-taskPenalty', fmt: (v) => Number(v).toLocaleString(ctx.lang, { maximumFractionDigits: 1 }), onchange: (v) => setHouse(ctx, { settings: { taskPenalty: v } }) })], t('moreY.pen.settingFoot')),
-    h('section', { class: 'card st-card stack' },
-      h('div', null, h('div', { class: 't', style: { fontWeight: 700 } }, t('setX.rules.effort')), h('p', { class: 'small muted' }, t('setX.rules.effortHint'))),
-      effort),
-    h('section', { class: 'card st-card stack tight' }, h('div', { class: 'lbl' }, t('setX.rules.rankBy')), rank, h('p', { class: 'small muted' }, t('setX.rules.rankByHint'))));
+    fold('rules-adv', t('set.advanced'), [
+      h('div', { class: 'list' },
+        st('startPriority', t('uxb.rules.startPriority'), t('setX.rules.startPriorityHint'), 0, 12),
+        st('window', t('uxb.rules.window'), t('uxb.rules.windowHint'), 0, 260, 4, (v) => (v === 0 ? t('setX.rules.always') : String(v)))),
+      h('div', { class: 'stack tight' }, h('div', { class: 'lbl' }, t('setX.rules.rankBy')), rank, h('p', { class: 'small muted' }, t('setX.rules.rankByHint'))),
+      h('div', { class: 'stack' }, h('div', null, h('div', { class: 't', style: { fontWeight: 700 } }, t('setX.rules.effort')), h('p', { class: 'small muted' }, t('setX.rules.effortHint'))), effort),
+    ], { id: 'fold-rules-adv', sub: t('uxb.adm.rules.advSub') }));
 }
 
 // ============================================================================
@@ -856,7 +869,14 @@ async function inviteSection(ctx) {
       share),
     qr ? h('div', { class: 'center' }, qr) : null,
     h('p', { class: 'small muted' }, t('inv.hint')));
-  return h('div', { class: 'stack' }, top, ctx.isAdmin ? rotateBlock(ctx) : null);
+  if (!ctx.isAdmin) return h('div', { class: 'stack' }, top);
+  const rot = rotateBlock(ctx);
+  const jump = () => { rot.scrollIntoView({ block: 'start', behavior: document.documentElement.classList.contains('no-motion') ? 'auto' : 'smooth' }); const f = rot.querySelector('input,button'); if (f) f.focus({ preventScroll: true }); };
+  // subito sotto il codice: chi cerca «cambia codice» lo trova senza scorrere oltre link e QR
+  top.querySelector('[data-testid="invite-code"]').after(h('div', { class: 'btn-row' }, btn(t('uxb.adm.rot'), jump, { cls: 'soft', ic: 'refresh', id: 'invite-rotate' })));
+  // #/settings/invite/rotate apre la pagina già sul blocco (una volta sola: i rerender non la spostano più)
+  if (S.jumpRot) { S.jumpRot = false; setTimeout(() => { if (rot.isConnected) jump(); }, 60); }
+  return h('div', { class: 'stack' }, top, rot);
 }
 
 function rotateBlock(ctx) {
@@ -887,7 +907,7 @@ function rotateBlock(ctx) {
     h('div', { class: 'btn-row' },
       btn(t('inv.copyLink'), async () => { ctx.toast(await copyText(R.result.link) ? t('copied') : t('error')); }, { ic: 'copy', id: 'rot-copy' }),
       h('a', { class: 'btn', href: waLink(t('setX.rot.msg', { house: R.result.name, link: R.result.link, code: R.result.code, url: ctx.baseUrl() })), target: '_blank', rel: 'noopener', 'data-testid': 'rot-wa' }, icon('whatsapp'), t('inv.shareWa')))) : null;
-  return h('div', { class: 'stack' },
+  return h('div', { class: 'stack st-rot', 'data-testid': 'rot-block' },
     sectionTitle(t('setX.rot.title')),
     card(h('p', { class: 'muted' }, t('setX.rot.explain')), h('ul', { class: 'st-bullets small muted' }, ['setX.rot.b1', 'setX.rot.b2', 'setX.rot.b3'].map((k) => h('li', null, t(k)))),
       h('div', { class: 'lbl' }, t('setX.rot.who')), h('div', { class: 'stack tight' }, rows), go),
@@ -1148,10 +1168,10 @@ function securitySection(ctx) {
       if (await save(ctx, () => ctx.actions.setHouse({ adminSalt: salt, adminHash: hash }), t('sec.pinChanged'))) { cur.value = n1.value = n2.value = ''; }
     } catch (ex) { fail(ctx, ex); }
   } }, h('div', { class: 't', style: { fontWeight: 700 } }, t('sec.changePin')), cur, n1, n2, err, btn(t('sec.changePin'), null, { cls: '', type: 'submit', id: 'pin-save' }));
+  // il cambio admin è il motivo per cui si apre questa pagina: viene per primo; lo stato «sbloccato» è già implicito (la pagina è solo admin)
   return h('div', { class: 'stack' },
-    card(h('div', { class: 'row' }, h('div', { class: 'ico g' }, icon('unlock')), h('div', { class: 'grow t', style: { fontWeight: 650 } }, t('sec.unlocked')))),
-    card(form),
     card(adminChangeForm(ctx)),
+    card(form),
     group(null, [h('button', { class: 'li', type: 'button', 'data-testid': 'sec-lock', onclick: () => { ctx.lockAdmin(); ctx.toast(t('sec.locked')); ctx.nav('settings'); } }, h('div', { class: 'ico r' }, icon('lock')), h('div', { class: 'grow t' }, t('sec.lock')))]),
     foot(t('sec.note')));
 }
