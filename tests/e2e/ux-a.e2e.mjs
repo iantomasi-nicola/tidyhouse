@@ -73,8 +73,9 @@ const run = async () => {
     const s = mk({ me: 'anna', admin: true, houseExtra: withDario, weeks: { ...DONE, [CUR]: { swap: { ...a, kitchen: 'dario' } } } });
     const page = await open({ s });
     const before = await wk(page); assert.deepEqual(Object.keys(before.swap).sort(), ['bathroom', 'floor', 'kitchen']);
+    // «Gestisci (admin)» → «Chi lo fa» → «Come da regole»: toglie lo scambio Pavimenti↔Bagno intero, non quello della cucina
     await openChore(page, 'floor');
-    await page.click('[data-act="swap-cancel"]'); await page.waitForTimeout(700);
+    await page.click('[data-act="who-floor"][data-who="rules"]'); await page.waitForTimeout(700);
     const after = await wk(page);
     assert.deepEqual(after.swap || {}, { kitchen: 'dario' }, 'deve restare lo scambio della cucina: ' + JSON.stringify(after.swap));
     assert.ok(ruledKitchen);
@@ -104,10 +105,11 @@ const run = async () => {
     const s = mk({ me: 'anna', admin: true, houseExtra: withDario, weeks: { ...DONE, [CUR]: { awayMap: { dario: true } } } });
     const page = await open({ s });
     await openChore(page, 'floor');
-    await page.click('[data-act="cover"]'); await page.waitForTimeout(450);
-    assert.equal(await page.locator('#layer .sheet [data-who="dario"]').count(), 1, 'Dario (assente) e\' nell\'elenco');
-    assert.match(await page.locator('#layer .sheet [data-who="dario"]').innerText(), /Assent/);
-    await page.click('#layer .sheet [data-who="dario"]'); await page.click('[data-choice="all"]'); await page.waitForTimeout(700);
+    // admin: «Com'è andata» elenca tutti, anche chi è assente
+    const dar = page.locator('#layer .sheet [data-act="res-floor"][data-value="by:dario"]');
+    assert.equal(await dar.count(), 1, 'Dario (assente) e\' nell\'elenco');
+    assert.match(await dar.innerText(), /assent/i);
+    await dar.click(); await page.click('[data-choice="all"]'); await page.waitForTimeout(700);
     assert.equal((await wk(page)).result.floor, 'by:dario');
     noErrors(page); await page.close();
   });
@@ -119,20 +121,20 @@ const run = async () => {
     const sub = (await wk(page)).agreed;
     assert.ok(!sub);
     await openChore(page, 'floor');
-    await page.click('[data-act="assign"]'); await page.waitForTimeout(500);
-    assert.equal(await page.locator('#layer .sheet [data-testid="terms-effect-repay"]').count(), 1, 'spiegazione con recupero');
-    assert.equal(await page.locator('#layer .sheet [data-terms="gift"]').count(), 0, 'nessun regalo');
     const other = [F === 'anna' ? 'bruno' : 'anna'][0] === F ? 'carla' : (F === 'anna' ? 'bruno' : 'anna');
-    // concordato col sostituto: nessuno scambio, l'assegnato resta tale (recupero)
-    await page.click(`#layer .sheet .cs-pick[data-who="${other}"]`); await page.waitForTimeout(800);
+    await page.click(`#layer .sheet [data-act="who-floor"][data-who="${other}"]`); await page.waitForTimeout(400);
+    assert.equal(await page.locator('#layer .sheet [data-testid="mg-terms-floor-repay"]').count(), 1, 'spiegazione con recupero');
+    assert.equal(await page.locator('#layer .sheet [data-terms="gift"]').count(), 0, 'nessun regalo');
+    // con recupero: nessuno scambio, l'assegnato resta tale (recupero)
+    await page.click('#layer .sheet [data-testid="mg-terms-floor-repay"]'); await page.waitForTimeout(800);
     let w = await wk(page);
     assert.equal(w.agreed.floor, other); assert.ok(!(w.swap || {}).floor, 'nessuno scambio');
     // con recupero (predefinito) su un altro turno -> solo concordato
     await closeSheets(page);
     await openChore(page, 'bathroom');
-    await page.click('[data-act="assign"]'); await page.waitForTimeout(500);
     const who2 = B === 'anna' ? 'carla' : 'anna';
-    await page.click(`#layer .sheet .cs-pick[data-who="${who2}"]`); await page.waitForTimeout(800);
+    await page.click(`#layer .sheet [data-act="who-bathroom"][data-who="${who2}"]`); await page.waitForTimeout(400);
+    await page.click('#layer .sheet [data-testid="mg-terms-bathroom-repay"]'); await page.waitForTimeout(800);
     w = await wk(page);
     assert.equal(w.agreed.bathroom, who2); assert.ok(!(w.swap || {}).bathroom, 'con recupero: nessuno swap');
     noErrors(page); await page.close();
