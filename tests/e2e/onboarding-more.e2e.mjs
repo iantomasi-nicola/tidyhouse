@@ -819,7 +819,8 @@ await scenario('tasks: CRUD admin, suggerimenti, sola lettura', async () => {
 });
 
 await scenario('requests: in arrivo, inviate, storico', async () => {
-  const s = S();
+  // turni della settimana fissati come nelle richieste: accettare uno scambio non più valido (turni cambiati) ora è rifiutato
+  const s = S({ weeks: { '2026-11-01': { swap: { floor: 'bruno', bathroom: 'anna', kitchen: 'carla' } } } });
   s['cp:h:' + HID].requests = {
     r1: { week: '2026-11-01', from: 'bruno', to: 'anna', fromChore: 'floor', toChore: 'bathroom', status: 'pending', at: '2026-10-27T10:00:00.000Z' },
     r2: { week: '2026-11-01', from: 'anna', to: 'carla', fromChore: 'bathroom', toChore: 'kitchen', status: 'pending', at: '2026-10-27T11:00:00.000Z' },
