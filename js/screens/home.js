@@ -247,7 +247,7 @@ function requestRows(ctx, M) {
   const answer = (fn, okMsg) => async (e) => {
     const box = e.currentTarget.closest('.hm-alertactions'); const bs = box ? [...box.querySelectorAll('button')] : [];
     bs.forEach((b) => { b.disabled = true; });
-    try { await fn(); haptic(ctx.prefs.haptics, 10); ctx.toast(okMsg); } catch { bs.forEach((b) => { b.disabled = false; }); ctx.toast(t('error')); }
+    try { await fn(); haptic(ctx.prefs.haptics, 10); ctx.toast(okMsg); } catch (err) { bs.forEach((b) => { b.disabled = false; }); ctx.toast(err && err.message === 'expired' ? t('flow.req.expired') : t('error')); }
   };
   for (const [id, q] of reqs) {
     const wr = M.out.rows.find((r) => r.sunday === q.week);

@@ -48,7 +48,7 @@ function dayLabel(ctx, day) {
 const personName = (ctx, id) => (id === 'admin' ? t('misc.admin') : id ? ctx.name(id) : '—');
 /** Esegue un'azione mostrando un toast se fallisce. */
 async function attempt(ctx, fn) {
-  try { return await fn(); } catch (e) { console.error(e); ctx.toast(e && e.message === 'permission' ? t('err.permission') : t('error')); return undefined; }
+  try { return await fn(); } catch (e) { console.error(e); ctx.toast(e && e.message === 'permission' ? t('err.permission') : e && e.message === 'expired' ? t('flow.req.expired') : t('error')); return undefined; }
 }
 const chip = (cls, ...kids) => h('span', { class: 'chip ' + cls }, ...kids);
 const card = (...kids) => h('section', { class: 'card stack' }, ...kids);
