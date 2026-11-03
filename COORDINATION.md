@@ -20,6 +20,7 @@
 | Audit UX nucleo + difetti noti (`js/app.js`, `js/ui.js`, `css/app.css`, `js/actions.js`, onboarding) — `docs/ux/core.md` | **Claude (sessione 2, agente UX-C)** | in corso | idem |
 | Manutenzione: `tests/e2e/settings.e2e.mjs`, `npm run e2e`, CI (`.github/workflows/ci.yml`), `README.md` | **Claude (sessione 2, agente manutenzione)** | in corso | idem |
 | Controllo admin su recuperi/riposi e «con/senza recupero» (`js/engine.js` solo blocco `adj`, `js/actions.js` adjustBalance, nuovo `js/balance.js`, `js/weekassign.js`, `js/choresheet.js` export, `js/strings/balance.js`) | **Claude (sessione 3)** | pronto sul branch, non ancora su main | |
+| Motore a N persone (fino a 8) / M mansioni (`js/engine.js` su richiesta esplicita dell'utente, `js/extras.js`, `js/actions.js`, `js/assignlogic.js`, `js/ai.js`, `js/doaction.js`, `scripts/notify-core.mjs`, test `tests/engine-n|chores-core.test.mjs`) | **Claude (agente motore-N)** | pronto sul branch, non su main | la UI (schermate) la adatta un altro agente: vedi ARCHITECTURE.md «Motore: N persone, M mansioni» |
 | Verifiche sul campo (notifiche push su iPhone/iPad/Android) | utente + IA | in corso | vedi `HANDOFF.md` |
 
 ## Domande aperte / messaggi tra IA
