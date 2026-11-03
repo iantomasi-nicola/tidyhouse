@@ -6,6 +6,14 @@
 ## 1. Audit di usabilità — FATTO (sessione di ottobre 2026)
 Report: `UX_AUDIT.md` (sintesi) e `docs/ux/home-calendar-trips-stats.md`, `docs/ux/more-settings.md`, `docs/ux/core.md` (criticità, passi, correzioni, metriche prima/dopo). Test: `tests/e2e/ux-a|ux-b|ux-c.e2e.mjs`. Restano solo le voci «rimaste» nei report (bassa gravità) e quanto richiede un telefono vero (§2). Rifare l'audit quando si aggiungono schermate importanti: stesso metodo (percorsi con 2 persone, conteggio tap, tap target ≥ 44 px, overflow 320–1440, contrasto, testo 130%).
 
+## 1b. «Cosa mi tocca» — questa settimana e le prossime (richiesto dall'utente)
+Oggi: la Home mostra i miei turni solo per la settimana corrente (hero); «Prossime settimane» mostra le prossime 3 con TUTTE le mansioni di TUTTI (nessuna evidenza dei miei) e le anteprime non spiegano che cambiano con assenze/risultati. Da fare:
+- Widget Home «I miei turni»: settimana corrente + prossime 4, solo i miei; per ogni settimana mansione, giorno scelto, «recupero + turno normale» se ho un arretrato, «riposo» o «nessun turno» se è così; etichetta «provvisorio» sulle future con il perché («cambia se qualcuno è assente o salta»).
+- Settimane: filtro «Solo i miei» e il mio nome evidenziato nelle righe/schede.
+- Anteprima delle future spiegata (assenze note, recuperi aperti) e aggiornata subito quando cambiano assenze o risultati.
+- Esporta nel calendario (.ics) i miei turni delle prossime 8 settimane in un tocco, dal widget.
+- Notifica del sabato «cosa ti tocca» con il riepilogo anche della settimana dopo se ho un recupero.
+
 ## 2. Verifiche sul campo (richiedono dispositivi reali — guidare l'utente)
 - Generare le chiavi push (Impostazioni → Notifiche → Programma notifiche della casa → Genera chiavi), creare il secret `VAPID_PRIVATE_KEY`, lanciare "Notifiche e backup" (Actions → Run workflow).
 - Provare le notifiche su Android (Chrome) e iPhone (Safari, app installata, iOS ≥ 16.4): venerdì/sabato/domenica/ritardo, spesa, richieste.
