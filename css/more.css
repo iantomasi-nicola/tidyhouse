@@ -110,10 +110,6 @@ button.mx-chip::after { inset: 0; }
 .mx-ct { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: #fff; flex: none; font-style: normal; }
 .mx-ct svg.i { width: 16px; height: 16px; }
 .mx-ct.floor { background: var(--c-floor); } .mx-ct.bathroom { background: var(--c-bathroom); } .mx-ct.kitchen { background: var(--c-kitchen); }
-.mx-tpl { display: grid; gap: 8px; }
-.mx-tplbtn { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 52px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); text-align: left; transition: transform .2s var(--spring); }
-.mx-tplbtn:active { transform: scale(.985); }
-.mx-tplbtn .chip { flex: none; }
 
 /* scambi, registro */
 .mx-req .grow .t { overflow-wrap: anywhere; }
@@ -157,7 +153,6 @@ button.mx-chip::after { inset: 0; }
 .mx-prev { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--tonal); color: var(--accent-ink); font-size: .875rem; font-weight: 560; line-height: 1.35; }
 .mx-prev svg.i { margin-top: 1px; width: 1.15em; height: 1.15em; }
 .mx-prev.off { background: var(--surface-3); color: var(--text-2); }
-.mx-sugg .btn.block { justify-content: flex-start; text-align: left; min-height: 48px; padding: 8px 18px; }
 @media (max-width: 440px) { .mx-chsw .mx-lblb { display: none; } }
 
 /* richieste */
@@ -187,11 +182,9 @@ button.mx-chip::after { inset: 0; }
 .mxa-dev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mxa-time { font-size: .9375rem; font-weight: 600; color: var(--text); flex: none; }
 
-/* compiti condivisi */
-.mx-ct.shared { background: var(--accent); }
-.mx-shared.due { box-shadow: inset 3px 0 0 var(--warn), var(--shadow-1); }
+/* compiti: a turno + extra delle mansioni (pagina unica) */
+.mx-ct.shared, .mx-ct.extra { background: var(--accent); }
 .mx-turn { gap: 10px; }
-.mx-sharedbtn { min-height: 56px; margin-top: 4px; }
 .mx-recent { display: grid; gap: 6px; margin-top: 6px; }
 .mx-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .mx-histrow { display: flex; align-items: center; gap: 10px; font-size: .875rem; color: var(--text-2); min-height: 32px; }
@@ -253,3 +246,46 @@ button.mx-chip::after { inset: 0; }
 /* scelta della mansione con più di 3 mansioni: i bottoni vanno a capo invece di uscire dallo schermo */
 .mx-form .seg { flex-wrap: wrap; }
 .mx-form .seg button { flex: 1 1 auto; }
+/* Compiti: sezioni, righe espandibili con editor in linea */
+.tk-sec { gap: 12px; }
+.tk-sechead { display: flex; align-items: flex-start; gap: 10px; padding: 0 4px; }
+.tk-sechead .grow { min-width: 0; }
+.tk-sechead > .chip { flex: none; margin-top: 4px; }
+.tk-h2 { margin: 0; display: flex; align-items: center; gap: 10px; font-size: 1.25rem; font-weight: 750; letter-spacing: -.02em; }
+.tk-sechead p { margin: 4px 0 0; }
+.tk-jump { display: flex; gap: 8px; flex-wrap: wrap; }
+.tk-jump .btn { flex: 1 1 140px; justify-content: center; gap: 8px; }
+.tk-jump .chip { height: 22px; }
+.tk-item.due { box-shadow: inset 3px 0 0 var(--warn); }
+.tk-item.open { background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+.tk-row { align-items: center; }
+.tk-row .mx-taskmain { align-items: center; gap: 12px; }
+.tk-row .mx-taskmain .grow { min-width: 0; }
+.tk-row .mx-ct.lg { align-self: flex-start; }
+.tk-tick { width: 44px; height: 44px; flex: none; display: grid; place-items: center; margin: -8px -6px -8px -12px; align-self: flex-start; border-radius: 50%; }
+.tk-tick .checkcircle.idle { opacity: .35; border-style: dashed; }
+.tk-row > .switch { margin-top: 0; align-self: center; }
+.tk-turn { margin-top: 6px; }
+.tk-done { flex: none; min-width: 44px; }
+.tk-panel { padding: 4px 18px 16px; display: grid; gap: 12px; }
+.tk-ed { gap: 14px; }
+.tk-newcard { display: grid; gap: 14px; }
+.tk-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.tk-opt { min-height: 44px; padding: 0 16px; border-radius: 999px; font-weight: 600; font-size: .9375rem; background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--hair); transition: background .2s, color .2s; }
+.tk-opt[aria-checked="true"] { background: var(--tonal-2); color: var(--accent-ink); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.tk-hint { margin: 2px 4px 0; }
+.tk-fine { margin-top: 2px; }
+.tk-lbl { font-size: .9375rem; font-weight: 600; color: var(--text); padding: 0; }
+.tk-more > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--accent-ink); font-weight: 600; font-size: .875rem; }
+.tk-more[open] > summary { margin-bottom: 6px; }
+.tk-more .field { margin-bottom: 8px; }
+.tk-actions .btn { min-height: 48px; }
+.tk-tplbox { padding-top: 6px; border-top: .5px solid var(--hair); }
+.tk-tpls { display: grid; gap: 8px; }
+.tk-tpl { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 14px; border-radius: var(--r-md); background: var(--surface-2); text-align: left; font-weight: 560; overflow-wrap: anywhere; }
+.tk-tpl:active { background: var(--surface-3); }
+.tk-tpl svg.i { color: var(--accent-ink); flex: none; }
+.tk-tplf { flex: none; font-size: .75rem; font-weight: 650; color: var(--text-2); }
+.tk-plus { flex: none; color: var(--accent-ink); }
+.tk-addhere { justify-content: center; }
+@media (max-width: 380px) { .tk-panel { padding-inline: 12px; } .tk-opt { padding: 0 12px; } .tk-row.li { padding-inline: 12px; gap: 10px; } }

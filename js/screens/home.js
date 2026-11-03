@@ -367,7 +367,7 @@ function widgetChecklist(ctx, M) {
           : x.status === 'overdue' ? chip('warn', t('tasks.overdue', { date: fmtDate(x.since) }), 'clock') : null,
         isDone && x.done && x.done.by ? h('span', null, taskNote(ctx, x)) : null)));
   });
-  return h('section', { class: 'hm-w', 'data-widget': 'checklist' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.checklist')), h('span', { class: 'hm-prog', 'data-testid': 'checklist-progress' }, `${done}/${list.length}`)), h('div', { class: 'list' }, rows));
+  return h('section', { class: 'hm-w', 'data-widget': 'checklist' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.checklist')), h('span', { class: 'hm-eyeend' }, h('span', { class: 'hm-prog', 'data-testid': 'checklist-progress' }, `${done}/${list.length}`), h('a', { href: '#/tasks', 'data-testid': 'w-extras-all' }, t('flow.tk.all')))), h('div', { class: 'list' }, rows));
 }
 
 // ---------------- COMPITI CONDIVISI (es. spazzatura) ----------------
@@ -387,17 +387,18 @@ function sharedWhen(ctx, iso) {
 function widgetShared(ctx, M) {
   const t = ctx.t;
   if (!ctx.feature('shared')) return null;
-  const list = sharedStatus(M.eh, M.out, M.today);
+  const list = sharedStatus(M.eh, M.out, M.today).sort((a, b) => a.dueIn - b.dueIn || String(a.task.text).localeCompare(String(b.task.text)));   // per scadenza: prima i più in ritardo
   if (!list.length) {
     if (!ctx.isAdmin || ctx.prefs.sharedInviteOff) return null;
     // invito per l'admin: si può togliere dalla Home (resta in Altro)
     return h('section', { class: 'hm-w', 'data-widget': 'shared' }, h('div', { class: 'eyebrow' }, h('span', null, t('widget.shared')), h('button', { class: 'hm-dismiss', type: 'button', 'data-act': 'shared-invite-off', onclick: () => ctx.savePrefs({ sharedInviteOff: true }) }, t('home.ignore'))),
-      h('a', { class: 'li hm-sharedinvite card', href: '#/more/shared', 'data-testid': 'shared-invite' }, h('div', { class: 'ico' }, icon('plus')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('flow.shared.invite')), h('div', { class: 'd' }, t('flow.shared.inviteHint'))), icon('chevron')));
+      h('a', { class: 'li hm-sharedinvite card', href: '#/tasks', 'data-testid': 'shared-invite' }, h('div', { class: 'ico' }, icon('plus')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('flow.shared.invite')), h('div', { class: 'd' }, t('flow.shared.inviteHint'))), icon('chevron')));
   }
   const nm = (id) => (id === 'admin' || !id ? t('misc.admin') : ctx.name(id));
   const rows = list.map((x) => {
     const mine = !!ctx.me && x.suggested === ctx.me;
-    const status = x.due ? chip('bad', t('flow.shared.due'), 'clock') : chip('', x.dueIn === 1 ? t('flow.shared.tomorrow') : t('flow.shared.in', { n: x.dueIn }), 'clock');
+    const status = x.dueIn < 0 ? chip('bad', x.dueIn === -1 ? t('flow.tk.late1') : t('flow.tk.lateN', { n: -x.dueIn }), 'alert')
+      : x.due ? chip('warn', x.last ? t('flow.tk.today') : t('flow.shared.due'), 'clock') : chip('', x.dueIn === 1 ? t('flow.shared.tomorrow') : t('flow.shared.in', { n: x.dueIn }), 'clock');
     const done = async (e) => {
       const b = e.currentTarget; b.disabled = true;
       try {
@@ -414,7 +415,7 @@ function widgetShared(ctx, M) {
         h('div', { class: 'd hm-wrap', 'data-testid': 'shared-last' }, x.last ? t('flow.shared.last', { name: nm(x.last.by), when: sharedWhen(ctx, x.last.at) }) : t('flow.shared.never'))),
       h('button', { class: 'btn sm hm-shareddone' + (x.due ? '' : ' tonal'), type: 'button', 'data-act': 'shared-done', 'aria-label': `${t('flow.shared.done')}: ${x.task.text}`, onclick: done }, icon('check'), t('flow.shared.done')));
   });
-  return h('section', { class: 'hm-w', 'data-widget': 'shared' }, h('div', { class: 'eyebrow' }, h('span', null, t('widget.shared'))), h('div', { class: 'list' }, rows));
+  return h('section', { class: 'hm-w', 'data-widget': 'shared' }, h('div', { class: 'eyebrow' }, h('span', null, t('widget.shared')), h('a', { href: '#/tasks', 'data-testid': 'w-tasks-all' }, t('flow.tk.all'))), h('div', { class: 'list' }, rows));
 }
 
 // ---------------- QUICK ----------------

@@ -131,7 +131,7 @@ export const it = {
   'flow.shoppingBadge': '{n} da comprare',
   'flow.heroUndoChore': 'Rimetti da fare: {chore}',
   // compiti condivisi
-  'widget.shared': 'Compiti condivisi',
+  'widget.shared': 'Da fare a turno',
   'flow.shared.due': 'Da fare',
   'flow.shared.in': 'tra {n} giorni',
   'flow.shared.tomorrow': 'domani',
@@ -142,7 +142,7 @@ export const it = {
   'flow.shared.ago': '{n} giorni fa',
   'flow.shared.done': 'Fatto',
   'flow.shared.doneToast': '{text}: fatto, grazie!',
-  'flow.shared.invite': 'Aggiungi compiti condivisi',
+  'flow.shared.invite': 'Aggiungi compiti a turno',
   'flow.shared.inviteHint': 'Per cose come buttare la spazzatura: le fa chi può, a turno e in modo equo.',
   // modalità "lo faccio io": sempre con recupero
   'flow.terms.title': 'Come funziona?',
@@ -157,6 +157,11 @@ export const it = {
   'flow.offerTitle': 'Lo faccio io',
   'flow.offerSend': 'Invia offerta',
   'flow.assignNote': 'Per le regole il turno resta di {name}: chi lo fa segna "ha pulito".',
+  // compiti a turno: stato di scadenza (Home e pagina Compiti)
+  'flow.tk.late1': 'Scaduto da 1 giorno',
+  'flow.tk.lateN': 'Scaduto da {n} giorni',
+  'flow.tk.today': 'Da fare oggi',
+  'flow.tk.all': 'Tutti i compiti',
 };
 
 export const en = {
@@ -277,7 +282,7 @@ export const en = {
   'flow.shopping': 'Shopping list',
   'flow.shoppingBadge': '{n} to buy',
   'flow.heroUndoChore': 'Put back to "to do": {chore}',
-  'widget.shared': 'Shared tasks',
+  'widget.shared': 'Tasks in turns',
   'flow.shared.due': 'To do',
   'flow.shared.in': 'in {n} days',
   'flow.shared.tomorrow': 'tomorrow',
@@ -288,7 +293,7 @@ export const en = {
   'flow.shared.ago': '{n} days ago',
   'flow.shared.done': 'Done',
   'flow.shared.doneToast': '{text}: done, thanks!',
-  'flow.shared.invite': 'Add shared tasks',
+  'flow.shared.invite': 'Add tasks in turns',
   'flow.shared.inviteHint': 'For things like taking out the trash: whoever can does them, fairly in turn.',
   'flow.terms.title': 'How does it work?',
   'flow.terms.group': 'Pick one of the two options',
@@ -302,4 +307,8 @@ export const en = {
   'flow.offerTitle': 'I\'ll do it',
   'flow.offerSend': 'Send offer',
   'flow.assignNote': 'By the rules the chore stays {name}\'s: whoever does it logs "cleaned".',
+  'flow.tk.late1': 'Overdue by 1 day',
+  'flow.tk.lateN': 'Overdue by {n} days',
+  'flow.tk.today': 'Due today',
+  'flow.tk.all': 'All tasks',
 };

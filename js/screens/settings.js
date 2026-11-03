@@ -776,7 +776,7 @@ function choresSection(ctx) {
 // ============================================================================
 const FEAT_IC = { shared: 'refresh', needs: 'cart', stats: 'chart', tasks: 'list', lastout: 'lock', requests: 'swap', planDay: 'calendar', whatsapp: 'whatsapp', activity: 'history', trips: 'plane', rules: 'book', ranking: 'trophy', ics: 'calendar', refresh: 'refresh', selfDone: 'check', selfAway: 'plane', coverOthers: 'users' };
 function featuresSection(ctx) {
-  const mk = (k) => switchRow({ ic: FEAT_IC[k] || 'list', title: t('set.feat.' + k), desc: t('uxb.featd.' + k), checked: ctx.feature(k), id: 'feat-' + k, onchange: (v) => setHouse(ctx, { features: { [k]: v } }) });
+  const mk = (k) => switchRow({ ic: FEAT_IC[k] || 'list', title: k === 'tasks' ? t('tk.feat.tasks') : t('set.feat.' + k), desc: t('uxb.featd.' + k), checked: ctx.feature(k), id: 'feat-' + k, onchange: (v) => setHouse(ctx, { features: { [k]: v } }) });
   const keys = Object.keys(DEFAULT_FEATURES);
   const perm = ['selfDone', 'selfAway', 'coverOthers'];
   return h('div', { class: 'stack' },

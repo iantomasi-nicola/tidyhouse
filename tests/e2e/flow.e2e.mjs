@@ -572,7 +572,7 @@ const run = async () => {
     const w = page.locator('[data-widget=shared]');
     await w.waitFor();
     const t = await w.innerText();
-    assert.match(t, /Compiti condivisi/); assert.match(t, /Butta la spazzatura/); assert.match(t, /Da fare/); assert.match(t, /Tocca a/);
+    assert.match(t, /Da fare a turno/); assert.match(t, /Butta la spazzatura/); assert.match(t, /Da fare/); assert.match(t, /Tocca a/);
     assert.match(await w.locator('[data-testid=shared-last]').innerText(), /Ultimo: Bruno, 2 giorni fa/);
     const btn = w.locator('[data-act=shared-done]');
     const box = await btn.boundingBox(); assert.ok(box.height >= 44 && box.width >= 44, 'area >= 44px');
@@ -588,7 +588,7 @@ const run = async () => {
     noErrors(page);
     // nessun compito: l'invito si vede solo all'admin
     const adm = await open({ s: mk({ me: 'anna', admin: true }) });
-    assert.equal(await adm.getAttribute('[data-testid=shared-invite]', 'href'), '#/more/shared');
+    assert.equal(await adm.getAttribute('[data-testid=shared-invite]', 'href'), '#/tasks');
     await adm.locator('[data-widget=shared]').scrollIntoViewIfNeeded(); await shot(adm, 'shared-invite-390');
     const usr = await open({ s: mk({ me: 'anna', admin: false }) });
     assert.equal(await usr.locator('[data-widget=shared]').count(), 0);
@@ -597,13 +597,13 @@ const run = async () => {
     assert.equal(await off.locator('[data-widget=shared]').count(), 0);
     // inglese + dark
     const en = await open({ s: mk({ me: 'anna', admin: false, houseExtra: hx, extra: { 'cp:prefs': { lang: 'en' } } }), dark: true, lang: 'en-US', viewport: SMALL });
-    assert.match(await text(en, '[data-widget=shared]'), /Shared tasks[\s\S]*To do[\s\S]*Last: Bruno, 2 days ago/);
+    assert.match(await text(en, '[data-widget=shared]'), /Tasks in turns[\s\S]*Due today[\s\S]*Last: Bruno, 2 days ago/);
     await noOverflow(en, 'shared en 320');
     await en.locator('[data-widget=shared]').scrollIntoViewIfNeeded(); await shot(en, 'shared-en-dark-320');
     // l'editor del layout Home elenca il widget
     await page.evaluate(() => { location.hash = '#/settings/home'; });
     await page.waitForSelector('[data-testid=w-shared]');
-    assert.match(await page.locator('[data-testid=w-shared]').locator('xpath=ancestor::*[contains(@class,"li")][1]').innerText(), /Compiti condivisi/);
+    assert.match(await page.locator('[data-testid=w-shared]').locator('xpath=ancestor::*[contains(@class,"li")][1]').innerText(), /Da fare a turno/);
     noErrors(en);
   });
 
