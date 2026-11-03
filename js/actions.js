@@ -1,11 +1,14 @@
 // Operazioni di alto livello sullo store, con controllo dei permessi. Testabile senza DOM.
-import { CHORES, NOBODY, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
-import { PLAN_EXTRA_DAYS, uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, cleanNote, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
+import { NOBODY, MAX_SLOTS, choresOf, compute, dayNum, addDays, weekEnd, isSunday, parseResult, DEFAULT_SETTINGS } from './engine.js';
+import { PLAN_EXTRA_DAYS, choreIds, newChoreId, uid, randomCode, normCode, feature, nameOf, swapPatch, autoSub, cleanNote, DEFAULT_HOME, weekOfDate, DEFAULT_NOTIF, personById, checklistFor, checklistOwners, staleRequestIds, isRequestStale } from './extras.js';
 import { engineHouse } from './store.js';
 import { ruleAssigned, finalSwap, diffAssign, applySwap } from './assignlogic.js';
 
-/** Patch completo di una correzione {floor,bathroom,kitchen,credit}: i campi assenti diventano null (con il merge profondo cancellano il valore). */
-const adjPatch = (o) => Object.fromEntries([...CHORES, 'credit'].map((k) => [k, Number(o[k]) || null]));
+/** Patch completo di una correzione {<choreId>…, credit}: i campi assenti diventano null (con il merge profondo cancellano il valore). */
+const adjPatch = (o, ids) => Object.fromEntries([...new Set([...ids, ...Object.keys(o || {}).filter((k) => k !== 'credit')]), 'credit'].map((k) => [k, Number((o || {})[k]) || null]));
+const clampEffort = (v) => Math.max(1, Math.min(5, Math.round(Number(v)) || 1));
+/** Nome di una mansione: stringa (max 40) oppure {it,en}. */
+const cleanChoreName = (n) => (n && typeof n === 'object' ? Object.fromEntries(['it', 'en'].map((l) => [l, String(n[l] || n.it || n.en || '').trim().slice(0, 40)])) : String(n || '').trim().slice(0, 40));
 
 // ---------- PIN admin ----------
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -44,6 +47,9 @@ export class Actions {
   get admin() { return !!this.ctx.isAdmin; }
   today() { return localDate(this.ctx.now()); }
   out() { return compute(engineHouse(this.s.state), this.today(), 12); }
+  /** Id delle mansioni della casa (ordine del motore) e indice di una mansione (-1 se non esiste). */
+  get choreIds() { return choreIds(this.house); }
+  ci(chore) { return this.choreIds.indexOf(chore); }
   row(sunday) { return this.out().rows.find((r) => r.sunday === sunday); }
 
   // ---- permessi (usati anche dalla UI per mostrare/nascondere) ----
@@ -52,7 +58,7 @@ export class Actions {
     const f = (k) => feature(this.house, k);
     if (!this.me || !f('selfDone')) return false;
     const r = this.row(sunday); if (!r) return false;
-    const a = r.assigned[CHORES.indexOf(chore)];
+    const a = r.assigned[this.ci(chore)];
     const age = dayNum(this.today()) - dayNum(sunday);
     if (age > 21) return false;                                     // storico vecchio: solo admin
     const p = parseResult(value);
@@ -62,11 +68,11 @@ export class Actions {
     return false;                                                    // saltato / saltato(nome): solo admin
   }
   canAway(personId) { return this.admin || (!!this.me && personId === this.me && feature(this.house, 'selfAway')); }
-  canPlan(sunday, chore) { if (!feature(this.house, 'planDay')) return false; if (this.admin) return true; const r = this.row(sunday); return !!r && !!this.me && r.assigned[CHORES.indexOf(chore)] === this.me; }
+  canPlan(sunday, chore) { if (!feature(this.house, 'planDay')) return false; if (this.admin) return true; const r = this.row(sunday); return !!r && !!this.me && r.assigned[this.ci(chore)] === this.me; }
   canTrip(personId) { return feature(this.house, 'trips') && (this.admin || personId === this.me); }
   canTask(sunday, chore) {   // l'assegnato, l'admin, o chi è responsabile di un arretrato di quella mansione
     if (this.admin) return true; if (!this.me) return false;
-    const row = this.row(sunday); if (row && row.assigned[CHORES.indexOf(chore)] === this.me) return true;
+    const row = this.row(sunday); if (row && row.assigned[this.ci(chore)] === this.me) return true;
     try { const weeks = { ...(this.s.state.weeks || {}) }; return checklistOwners({ ...this.house, weeks }, this.out(), weeks, sunday).some((x) => x.chore === chore && x.owner === this.me); } catch { return false; }
   }
   need(ok) { if (!ok) throw new Error('permission'); }
@@ -93,7 +99,7 @@ export class Actions {
    * (con «Nessuno questa settimana» non c'è nulla da registrare) e «saltato anche ID» non può essere l'assegnato (conterebbe due volte il debito).
    */
   validResult(sunday, chore, value) {
-    const c = CHORES.indexOf(chore); if (c < 0) throw new Error('invalid');
+    const c = this.ci(chore); if (c < 0) throw new Error('invalid');   // mansione inesistente (id non in choresOf)
     if (!value) return;
     const p = parseResult(value);
     if (!p.kind || (p.id !== undefined && !personById(this.house, p.id))) throw new Error('invalid');
@@ -106,7 +112,7 @@ export class Actions {
   pendingChecklist(sunday, chore, { all = false } = {}) {
     if (!feature(this.house, 'tasks')) return [];   // funzione spenta: nessun blocco
     const weeks = { ...(this.s.state.weeks || {}) }; const eh = { ...this.house, weeks }; const out = this.out();
-    const row = out.rows.find((r) => r.sunday === sunday); const assignee = row && row.assigned[CHORES.indexOf(chore)];
+    const row = out.rows.find((r) => r.sunday === sunday); const assignee = row && row.assigned[this.ci(chore)];
     return checklistOwners(eh, out, weeks, sunday)
       .filter((x) => x.chore === chore && x.status !== 'done' && (all || x.owner === assignee))   // gli arretrati di un altro (se a casa) non bloccano chi ha la mansione ora
       .map((x) => ({ id: x.task.id, text: x.task.text, status: x.status, owner: x.owner, reason: x.reason }));
@@ -137,7 +143,7 @@ export class Actions {
   }
   /** Qualcuno pulisce una mansione che non gli spetta, di sua iniziativa: segnalato all'assegnato. */
   async volunteer(sunday, chore, { force = false, checkAll = false } = {}) {
-    const row = this.row(sunday); const a = row && row.assigned[CHORES.indexOf(chore)];
+    const row = this.row(sunday); const a = row && row.assigned[this.ci(chore)];
     this.need(!!this.me && !!a && a !== this.me);
     const r = await this.completeChore(sunday, chore, { value: 'by:' + this.me, force, checkAll });
     if (!r.ok) return r;
@@ -166,8 +172,8 @@ export class Actions {
   }
   /** L'assegnato chiede una sostituzione (a una persona precisa o a chiunque). */
   async requestCover({ week, chore, to = null, terms = 'repay', note = '' }) {
-    const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
-    const id = uid(); const from = row.assigned[CHORES.indexOf(chore)];
+    const row = this.row(week); this.need(feature(this.house, 'requests') && !!row && (this.admin || row.assigned[this.ci(chore)] === this.me));
+    const id = uid(); const from = row.assigned[this.ci(chore)];
     if (!from) throw new Error('invalid');                    // «Nessuno questa settimana»: non c'è un turno da far coprire
     await this.s.setDoc('requests', id, { kind: 'cover', week, chore, from, to, terms: 'repay', ...(cleanNote(note) ? { note: cleanNote(note) } : {}), status: 'pending', at: this.ctx.now().toISOString() });
     return id;
@@ -175,7 +181,7 @@ export class Actions {
   /** Qualcuno si offre di fare il turno di un altro: serve il consenso dell'assegnato. */
   /** Sempre «con recupero» (regole del foglio: chi pulisce guadagna il riposo, l'assegnato recupera). Il «regalo» senza recupero non esiste più. */
   async offerCover({ week, chore, terms = 'repay' }) {
-    const row = this.row(week); const a = row && row.assigned[CHORES.indexOf(chore)];
+    const row = this.row(week); const a = row && row.assigned[this.ci(chore)];
     this.need(feature(this.house, 'requests') && !!this.me && !!a && a !== this.me);
     const id = uid();
     await this.s.setDoc('requests', id, { kind: 'offer', week, chore, from: this.me, to: a, terms: 'repay', status: 'pending', at: this.ctx.now().toISOString() });
@@ -203,7 +209,7 @@ export class Actions {
   }
   /** Toglie l'accordo («passato a X») su una mansione: chi lo ha creato (l'assegnato) o l'admin. */
   async clearAgreed(sunday, chore) {
-    const row = this.row(sunday); const assigned = row && row.assigned[CHORES.indexOf(chore)];
+    const row = this.row(sunday); const assigned = row && row.assigned[this.ci(chore)];
     this.need(!!row && !!assigned && (this.admin || assigned === this.me));
     await this.s.setDoc('weeks', sunday, { agreed: { [chore]: null }, agreedNote: { [chore]: null } });
   }
@@ -213,7 +219,7 @@ export class Actions {
    * nelle settimane dopo (di solito con un turno doppio). Ritorna l'id del sostituto.
    */
   async autoCover(sunday, chore, note = '') {
-    const row = this.row(sunday); const c = CHORES.indexOf(chore);
+    const row = this.row(sunday); const c = this.ci(chore);
     const assigned = row && row.assigned[c];
     this.need(!!row && !!assigned && !row.closed && !row.res[c].kind && (this.admin || assigned === this.me));
     const sub = autoSub(row, c);
@@ -227,7 +233,7 @@ export class Actions {
   }
   /** "Pulirò in ritardo": annuncia quando (entro 14 giorni dopo la domenica). */
   async setDelay(sunday, chore, date) {
-    const row = this.row(sunday); this.need(!!row && (this.admin || row.assigned[CHORES.indexOf(chore)] === this.me));
+    const row = this.row(sunday); this.need(!!row && (this.admin || row.assigned[this.ci(chore)] === this.me));
     if (date && !(dayNum(date) > dayNum(sunday) && dayNum(date) <= dayNum(sunday) + 14)) throw new Error('invalid');
     await this.s.setDoc('weeks', sunday, { delay: { [chore]: date || null } });
     if (date) await this.log('delay', { week: sunday, chore, day: date });
@@ -243,7 +249,7 @@ export class Actions {
    */
   async planMakeup(sunday, chore, date) {
     const g = (this.house.settings && this.house.settings.grace) ?? DEFAULT_SETTINGS.grace;
-    const c = CHORES.indexOf(chore); const out = this.out();
+    const c = this.ci(chore); const out = this.out();
     const X = (out.rows.find((r) => r.sunday === sunday) || {}).assigned?.[c];
     let target = '';
     for (let k = 1; k <= Math.max(1, g); k++) { const s2 = addDays(date, -k); if (isSunday(s2) && dayNum(s2) > dayNum(sunday)) { target = s2; break; } }
@@ -295,11 +301,13 @@ export class Actions {
     if (!row) throw new Error('invalid');
     const active = new Set(row.nm.filter(Boolean));
     const w = wanted && typeof wanted === 'object' ? wanted : {};
-    for (const c of CHORES) if (w[c] && w[c] !== NOBODY && (typeof w[c] !== 'string' || !active.has(w[c]))) throw new Error('invalid');
+    const ids = this.choreIds;
+    for (const c of Object.keys(w)) if (!ids.includes(c)) throw new Error('invalid');
+    for (const c of ids) if (w[c] && w[c] !== NOBODY && (typeof w[c] !== 'string' || !active.has(w[c]))) throw new Error('invalid');
     const prev = { ...(this.weekDoc(sunday).swap || {}) };
     const ruled = ruleAssigned(eh, this.today(), sunday);
-    const { patch, swap } = finalSwap({ existing: prev, ruled, wanted: w, merge, explicit });
-    const changes = diffAssign(row.assigned, applySwap(ruled, swap));
+    const { patch, swap } = finalSwap({ existing: prev, ruled, wanted: w, merge, explicit, ids });
+    const changes = diffAssign(row.assigned, applySwap(ruled, swap, ids), ids);
     await this.s.setDoc('weeks', sunday, { swap: Object.keys(swap).length ? patch : null });
     await this.log('assign', { week: sunday, text: logText || changes.map((x) => `${x.chore}: ${x.to}`).join(', ') || sunday, n: changes.length });
     return { prev, swap, changes };
@@ -326,8 +334,9 @@ export class Actions {
     const slot = row.nm.indexOf(personId); if (slot < 0) throw new Error('invalid');
     const cur = { ...((this.weekDoc(row.sunday).adj || {})[personId] || {}) };
     const applied = {}; const next = { ...cur };
-    const have = { ...Object.fromEntries(CHORES.map((c, k) => [c, row.debts[slot][k]])), credit: Math.max(0, row.credits[slot]) };
-    for (const k of [...CHORES, 'credit']) {
+    const ids = row.chores || this.choreIds;
+    const have = { ...Object.fromEntries(ids.map((c, k) => [c, row.debts[slot][k]])), credit: Math.max(0, row.credits[slot]) };
+    for (const k of [...ids, 'credit']) {
       const d = Math.trunc(+delta[k]) || 0; if (!d) continue;
       const a = Math.max(-have[k], Math.min(d, 99));        // non scendere sotto zero
       if (!a) continue;
@@ -335,14 +344,14 @@ export class Actions {
       if (!next[k]) delete next[k];
     }
     if (!Object.keys(applied).length) return { week: row.sunday, applied, prev: cur };
-    await this.s.setDoc('weeks', row.sunday, { adj: { [personId]: adjPatch(next) } });
+    await this.s.setDoc('weeks', row.sunday, { adj: { [personId]: adjPatch(next, ids) } });
     await this.log('adjust', { week: row.sunday, who: personId, d: applied, text: logText || Object.entries(applied).map(([k, v]) => `${k}: ${v > 0 ? '+' : ''}${v}`).join(', ') });
     return { week: row.sunday, applied, prev: cur };
   }
   /** Annulla un adjustBalance (ripristina la correzione precedente di quella persona in quella settimana). */
   async restoreAdjust(week, personId, prev) {
     this.need(this.admin);
-    await this.s.setDoc('weeks', week, { adj: { [personId]: adjPatch(prev || {}) } });
+    await this.s.setDoc('weeks', week, { adj: { [personId]: adjPatch(prev || {}, this.choreIds) } });
   }
   /** Toglie (off=true) o rimette il badge TR/CDM a una persona (solo admin): `house.badgeOff`. Il badge guadagnato per le regole resta calcolato, ma non si mostra. */
   async setBadgeOff(personId, kind, off = true) {
@@ -371,7 +380,7 @@ export class Actions {
     if (!accept) return this.s.setDoc('requests', reqId, { status: 'declined', answeredAt: this.ctx.now().toISOString() });
     const row = this.row(rq.week); this.need(!!row);
     // settimana chiusa, o nel frattempo i turni sono cambiati (l'admin ha riassegnato): lo scambio toglierebbe il turno a un terzo
-    if (isRequestStale(rq, this.out().rows, this.today()) || row.assigned[CHORES.indexOf(rq.fromChore)] !== rq.from || row.assigned[CHORES.indexOf(rq.toChore)] !== rq.to) throw new Error('expired');
+    if (isRequestStale(rq, this.out().rows, this.today()) || row.assigned[this.ci(rq.fromChore)] !== rq.from || row.assigned[this.ci(rq.toChore)] !== rq.to) throw new Error('expired');
     const patch = swapPatch(row, { chore: rq.fromChore, personId: rq.from }, { chore: rq.toChore, personId: rq.to });
     await this.s.setDoc('weeks', rq.week, { swap: patch });
     await this.s.setDoc('requests', reqId, { status: 'accepted', answeredAt: this.ctx.now().toISOString() });
@@ -446,10 +455,46 @@ export class Actions {
     await this.s.setHouse(patch);
     if (ack) await this.touchMember({ rulesAck: { version: v, at: this.ctx.now().toISOString() } }).catch(() => {});
   }
+  /**
+   * Salva l'elenco delle mansioni (solo admin): `list` = [{id?, name, icon, effort 1-5}] nell'ordine voluto (è l'ordine del motore).
+   * Senza id (o con id nuovo) = mansione nuova: id `c_<random>` e `from` = lunedì della settimana prossima (niente debiti nel passato).
+   * Una mansione esistente che non compare più non si cancella (servirebbe allo storico): riceve `to` = domenica scorsa, quindi
+   * sparisce dalla settimana corrente in poi; se non era mai entrata in turno (from futuro) si toglie davvero.
+   * Una mansione con `to` già passato che ricompare nell'elenco torna in turno dalla settimana prossima. Ritorna l'elenco salvato.
+   */
+  async saveChores(list) {
+    this.need(this.admin);
+    const cur = currentSunday(this.house, this.ctx.now());
+    const next = addDays(cur, 1), lastSun = addDays(cur, -7);
+    const old = choresOf(this.house); const oldById = Object.fromEntries(old.map((c) => [c.id, c]));
+    const out = []; const seen = new Set();
+    for (const x of list || []) {
+      if (!x) continue;
+      const name = cleanChoreName(x.name);
+      const o = x.id && oldById[x.id];
+      if (!o && !(typeof name === 'string' ? name : name.it || name.en)) continue;   // nuova senza nome: ignorata
+      const id = o ? x.id : (x.id && /^c_[a-z0-9]{4,16}$/.test(x.id) && !seen.has(x.id) ? x.id : newChoreId());
+      if (seen.has(id)) continue; seen.add(id);
+      const c = { id, name: o && !x.name ? o.name : name, icon: String(x.icon || (o && o.icon) || 'dot').slice(0, 24), effort: clampEffort(x.effort ?? (o && o.effort)) };
+      if (!o) c.from = next;
+      else { if (o.from) c.from = o.from; if (o.to && dayNum(o.to) >= dayNum(cur) - 6) c.to = o.to; else if (o.to) c.from = next; }
+      out.push(c);
+    }
+    for (const o of old) {
+      if (seen.has(o.id)) continue;
+      if (o.from && dayNum(o.from) > dayNum(cur)) continue;          // mai entrata in turno: si toglie davvero
+      out.push({ id: o.id, name: o.name, icon: o.icon, effort: o.effort, ...(o.from ? { from: o.from } : {}), to: o.to && o.to < lastSun ? o.to : lastSun });
+    }
+    if (!out.some((c) => !c.to)) throw new Error('invalid');          // almeno una mansione in turno
+    if (out.length > 12) throw new Error('invalid');
+    await this.s.setHouse({ chores: out });
+    await this.log('settings', {});
+    return out;
+  }
   async setRoommates(list) {
     this.need(this.admin);
     // `to` = uscita CERTA (cambia i turni); `expectedTo` = uscita solo prevista/indicativa (non influisce sul piano); vuoti = "non si sa"
-    const clean = list.map((r) => ({ id: r.id || uid(), name: String(r.name || '').trim(), slot: +r.slot || 1, from: r.from || null, to: r.to || null, ...(!r.to && r.expectedTo ? { expectedTo: r.expectedTo } : {}), ...(r.color ? { color: r.color } : {}) })).filter((r) => r.name);
+    const clean = list.map((r) => ({ id: r.id || uid(), name: String(r.name || '').trim(), slot: Math.max(1, Math.min(MAX_SLOTS, Math.trunc(+r.slot) || 1)), from: r.from || null, to: r.to || null, ...(!r.to && r.expectedTo ? { expectedTo: r.expectedTo } : {}), ...(r.color ? { color: r.color } : {}) })).filter((r) => r.name);
     await this.s.write({ coll: 'house', data: { roommates: clean } });
     await this.log('roommates', {});
   }

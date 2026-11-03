@@ -795,8 +795,8 @@ export function openWeekSheet(ctx, sunday) {
 // ================================================================ WHATSAPP
 export function openWhatsAppSheet(ctx, sunday) {
   const out0 = ctx.calc.out;
-  const st = { week: sunday, link: ctx.cloud, tasks: true, plan: true, away: true, deadline: true };
-  const gen = () => whatsappText(ctx.house, ctx.calc.out, st.week, { link: st.link, url: ctx.joinLink(), tasks: st.tasks, plan: st.plan, away: st.away, deadline: st.deadline }, ctx.lang, ctx.state.weeks || {});
+  const st = { week: sunday, link: ctx.cloud, tasks: true, plan: true, away: true, deadline: true, lang: (ctx.prefs && ctx.prefs.waLang) || ctx.lang };   // lingua del messaggio per il gruppo (anche diversa da quella dell'app)
+  const gen = () => whatsappText(ctx.house, ctx.calc.out, st.week, { link: st.link, url: ctx.joinLink(), tasks: st.tasks, plan: st.plan, away: st.away, deadline: st.deadline }, st.lang, ctx.state.weeks || {});
 
   // settimane selezionabili: scorsa / questa / prossima (+ quella da cui si arriva, se diversa)
   const opts = [];
@@ -808,11 +808,15 @@ export function openWhatsAppSheet(ctx, sunday) {
   const ta = h('textarea', { class: 'input cs-wa', rows: 10, 'aria-label': ctx.t('wa.preview') });
   const waUrl = (txt) => 'https://wa.me/?text=' + encodeURIComponent(txt);
   const send = h('a', { class: 'btn', target: '_blank', rel: 'noopener', 'data-act': 'wa-send' }, icon('whatsapp'), ctx.t('wa.send'));
-  const refresh = () => { ta.value = gen(); send.href = waUrl(ta.value); };
+  const rankHolder = h('div');
+  const drawRank = () => { rankHolder.replaceChildren(...(ctx.feature('ranking') ? [rankingBlock(ctx, st.lang)].filter(Boolean) : [])); };
+  const refresh = () => { ta.value = gen(); send.href = waUrl(ta.value); drawRank(); };
   ta.addEventListener('input', () => { send.href = waUrl(ta.value); });
 
   const sw = (label, key, show = true) => (show ? h('div', { class: 'li' }, h('div', { class: 'grow' }, label), toggle(st[key], (v) => { st[key] = v; refresh(); }, label)) : null);
+  const langSeg = h('div', { class: 'field', 'data-testid': 'wa-lang' }, h('label', null, ctx.t('wa.lang')), seg([['it', 'Italiano'], ['en', 'English']], st.lang, (v) => { st.lang = v; try { ctx.savePrefs({ waLang: v }); } catch { /* ignore */ } refresh(); }));
   const body = h('div', { class: 'stack' },
+    langSeg,
     opts.length > 1 ? h('div', { class: 'field' }, h('label', null, ctx.t('wa.scope')), seg(opts, st.week, (v) => { st.week = v; refresh(); })) : null,
     h('div', { class: 'field' }, h('label', null, ctx.t('wa.preview')), ta),
     h('div', { class: 'btn-row' },
@@ -822,16 +826,16 @@ export function openWhatsAppSheet(ctx, sunday) {
     h('div', { class: 'list' },
       sw(ctx.t('wa.opt.link'), 'link'), sw(ctx.t('wa.opt.tasks'), 'tasks', ctx.feature('tasks')), sw(ctx.t('wa.opt.plan'), 'plan', ctx.feature('planDay')),
       sw(ctx.t('wa.opt.away'), 'away'), sw(ctx.t('wa.opt.deadline'), 'deadline')),
-    ctx.feature('ranking') ? rankingBlock(ctx) : null);
+    rankHolder);
   const sheetApi = ctx.sheet({ title: ctx.t('wa.title'), full: true, body });
   refresh();
   return sheetApi;
 }
 
-function rankingBlock(ctx) {
+function rankingBlock(ctx, lang = ctx.lang) {
   const out = ctx.calc.out;
   let text = '';
-  try { const stats = buildStats(houseW(ctx), out); if (!stats.people.length) return null; text = rankingText(ctx.house, out, stats, ctx.lang); } catch { return null; }
+  try { const stats = buildStats(houseW(ctx), out); if (!stats.people.length) return null; text = rankingText(ctx.house, out, stats, lang); } catch { return null; }
   return h('div', { class: 'stack tight cs-rank' },
     h('div', { class: 'eyebrow' }, ctx.t('stats.ranking')),
     h('pre', { class: 'cs-pre', 'data-testid': 'ranking-text' }, text),

@@ -1,11 +1,10 @@
 // Logica del "server" notifiche, indipendente da Firebase e web-push (iniettati) per poterla testare.
 // Eseguita ogni ora da GitHub Actions (vedi .github/workflows/notify.yml).
-import { planNotifications, targetsFor, notifMessage, notifCfg, nameOf, awayToday, localParts } from '../js/extras.js';
+import { planNotifications, targetsFor, notifMessage, notifCfg, nameOf, awayToday, localParts, choreName } from '../js/extras.js';
 import { engineHouse } from '../js/store.js';
 import { tr, registerStrings, dowLong } from '../js/i18n.js';
 import { it as nIt, en as nEn } from '../js/strings/notify.js';
 registerStrings(nIt, nEn);
-const CH = (l, c) => tr(l, 'chore.' + c);
 
 const DAY = 86400000;
 
@@ -25,6 +24,7 @@ export async function runNotify({ db, send, now = new Date(), vapidPublic, log =
       if (vapidPublic && house.vapidPublic && house.vapidPublic !== vapidPublic) { summary.skipped.push(label + ':vapid-mismatch'); log(`[${label}] chiave VAPID diversa da quella del server: salto`); continue; }
       const [weeks, trips, members, sentDocs, requests, needs] = await Promise.all(['weeks', 'trips', 'members', 'sent', 'requests', 'needs'].map((c) => db.coll(hid, c)));
       const eh = engineHouse({ house, weeks, trips });
+      const CH = (l, c) => choreName(house, c, l);   // nome della mansione (anche quelle aggiunte dall'admin)
       const sent = new Set(Object.keys(sentDocs));
       const cfg = notifCfg(house);
       const lang = (m) => (m && m.lang) || house.lang || 'it';

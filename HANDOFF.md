@@ -11,7 +11,7 @@ La lista di cose da fare, in ordine di priorità, è in [`TODO.md`](TODO.md). Le
 - Nome app: "Tidy House". Colore predefinito `#1a73e8`. Stile: **Apple minimale + Material (Google)**, colori Material, **niente gradienti, niente scintille, niente effetto "IA"**, forme arrotondate, tipografia grande, movimento sobrio.
 
 ## Stato (cosa è fatto e verificato)
-- **Motore dei turni** (`js/engine.js`): porting fedele dell'Excel, 0 differenze su 36 scenari. **Non va cambiato.**
+- **Motore dei turni** (`js/engine.js`): porting fedele dell'Excel, 0 differenze su 36 scenari. **Non va cambiato.**  Generalizzato (su richiesta dell'utente) a fino a 8 persone e mansioni extra con parità identica per 4/3: regole in ARCHITECTURE.md «Motore: N persone, M mansioni».
 - **Dati/cloud** (`js/store.js`, `js/actions.js`): backend memoria/locale/Firestore, permessi, codice casa con rotazione, cambio admin, PIN admin. Verificato con l'emulatore Firestore (`tests/e2e/cloud-emulator.e2e.mjs`).
 - **Turni**: segna fatto con checklist obbligatoria e Annulla, volontari, sostituzioni sempre «con recupero» (il «regalo» è stato rimosso) con **motivo** visibile a tutti (nota), **«Non posso questa settimana»** (sostituto automatico = `autoSub` in `js/extras.js`, `Actions.autoCover`; chi non può resta l'assegnato e recupera dopo), ritardo annunciato, scambi, assegnazione manuale della settimana (admin, `js/weekassign.js`, `Actions.setWeekAssignments`) anche da IA (`js/ai.js`).
 - **Recupero programmato** (`Actions.planMakeup`/`clearMakeup`): se X annuncia «recupero lunedì» entro la tolleranza dopo la fine di una settimana, X prende il turno di quella settimana (swap + `autoMakeup`) e chi lo aveva è liberato con avviso `makeupFree`; annullando il ritardo si ripristina.
