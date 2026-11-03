@@ -108,6 +108,7 @@
 .hm-task[disabled] { cursor: default; opacity: .85; }
 .hm-taskmeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .hm-taskmeta .chip { height: 22px; font-size: .6875rem; padding: 0 8px; max-width: 100%; }
+.hm-eyeend { display: inline-flex; align-items: center; gap: 12px; }
 .hm-prog { font-variant-numeric: tabular-nums; color: var(--text-2); font-weight: 650; }
 
 /* azioni rapide */
