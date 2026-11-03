@@ -129,7 +129,7 @@ const ctx = {
       // più i compiti condivisi «tocca a te» (stesso conteggio del blocco «Da fare ora» dell'hub)
       if (me && this.feature('shared')) { try { out.more += sharedStatus(this.calc.eh, o, today).filter((x) => x.due && x.suggested === me).length; } catch { /* ignore */ } }
       if (me && o.cur >= 0) {
-        for (let i = Math.max(0, o.cur - 1); i <= o.cur; i++) { const r = o.rows[i]; for (let c = 0; c < 3; c++) if (r.assigned[c] === me && !r.res[c].kind && (i < o.cur || r.isCur)) out.home += i < o.cur ? 1 : 0; }
+        for (let i = Math.max(0, o.cur - 1); i <= o.cur; i++) { const r = o.rows[i]; for (let c = 0; c < r.assigned.length; c++) if (r.assigned[c] === me && !r.res[c].kind && (i < o.cur || r.isCur)) out.home += i < o.cur ? 1 : 0; }
       }
     } catch { /* ignore */ }
     return out;

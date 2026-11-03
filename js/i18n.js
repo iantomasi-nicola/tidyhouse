@@ -10,7 +10,7 @@ const D = {
     'loading': 'Caricamento…', 'error': 'Qualcosa è andato storto', 'saved': 'Salvato', 'confirm': 'Confermi?', 'open': 'Apri', 'show': 'Mostra', 'hide': 'Nascondi',
     // chores
     'chore.floor': 'Pavimenti', 'chore.bathroom': 'Bagno', 'chore.kitchen': 'Cucina', 'chore.any': 'Qualsiasi', 'chore.rest': 'Riposo',
-    'chore.floor.short': 'Pavimenti', 'chore.bathroom.short': 'Bagno', 'chore.kitchen.short': 'Cucina',
+    'chore.floor.short': 'Pavimenti', 'chore.bathroom.short': 'Bagno', 'chore.kitchen.short': 'Cucina', 'chore.unknown': 'Mansione tolta',
     // stato
     'st.todo': 'Da fare', 'st.done': 'Fatto', 'st.doneBy': 'Fatto da {name}', 'st.skipped': 'Saltato', 'st.skippedBy': 'Saltato anche da {name}', 'st.late': 'In ritardo',
     'st.makeup': 'Recupero', 'st.payback': 'Restituzione', 'st.swapped': 'Scambio concordato', 'st.preview': 'Anteprima', 'st.empty': 'Casa vuota', 'st.rest': 'Riposo',
@@ -190,7 +190,7 @@ const D = {
     'refresh.title': 'Aggiorna la pagina', 'refresh.text': 'Sei sulla stessa pagina da un po\': ricaricala per avere i dati più recenti.', 'refresh.now': 'Aggiorna ora', 'refresh.later': 'Più tardi',
     'update.available': 'È disponibile una nuova versione', 'update.apply': 'Aggiorna',
     // whatsapp / export text
-    'wa.title': 'Messaggio WhatsApp', 'wa.header': '🧹 *Turni della settimana* {range}', 'wa.floor': '🧽 Pavimenti: {who}', 'wa.bathroom': '🚿 Bagno: {who}', 'wa.kitchen': '🍳 Cucina: {who}', 'wa.rest': '😴 Riposo: {who}',
+    'wa.title': 'Messaggio WhatsApp', 'wa.header': '🧹 *Turni della settimana* {range}', 'wa.floor': '🧽 Pavimenti: {who}', 'wa.bathroom': '🚿 Bagno: {who}', 'wa.kitchen': '🍳 Cucina: {who}', 'wa.chore': '▫️ {chore}: {who}', 'wa.rest': '😴 Riposo: {who}',
     'wa.away': '✈️ Assenti: {who}', 'wa.makeup': '↺ Recupero: {what}', 'wa.plan': '📅 {who} lo fa {day}', 'wa.tasks': '✅ Extra: {what}', 'wa.link': 'Segnate "fatto" qui: {url}', 'wa.deadline': '⏰ Entro domenica!',
     'wa.copy': 'Copia messaggio', 'wa.send': 'Invia su WhatsApp', 'wa.scope': 'Quale settimana', 'wa.thisWeek': 'Questa', 'wa.nextWeek': 'Prossima', 'wa.lastWeek': 'Scorsa', 'wa.options': 'Includi',
     'wa.opt.link': 'Link all\'app', 'wa.opt.tasks': 'Compiti extra', 'wa.opt.plan': 'Giorni scelti', 'wa.opt.away': 'Assenti', 'wa.opt.deadline': 'Promemoria scadenza', 'wa.nobody': 'nessuno', 'wa.preview': 'Anteprima',
@@ -239,7 +239,7 @@ D.en = {
   'today': 'Today', 'tomorrow': 'Tomorrow', 'yesterday': 'Yesterday', 'never': 'Never', 'none': 'None', 'all': 'All', 'on': 'On', 'off': 'Off', 'optional': 'optional',
   'loading': 'Loading…', 'error': 'Something went wrong', 'saved': 'Saved', 'confirm': 'Are you sure?', 'open': 'Open', 'show': 'Show', 'hide': 'Hide',
   'chore.floor': 'Floor', 'chore.bathroom': 'Bathroom', 'chore.kitchen': 'Kitchen', 'chore.any': 'Any', 'chore.rest': 'Rest',
-  'chore.floor.short': 'Floor', 'chore.bathroom.short': 'Bathroom', 'chore.kitchen.short': 'Kitchen',
+  'chore.floor.short': 'Floor', 'chore.bathroom.short': 'Bathroom', 'chore.kitchen.short': 'Kitchen', 'chore.unknown': 'Removed chore',
   'st.todo': 'To do', 'st.done': 'Done', 'st.doneBy': 'Done by {name}', 'st.skipped': 'Skipped', 'st.skippedBy': 'Also skipped by {name}', 'st.late': 'Late',
   'st.makeup': 'Make-up', 'st.payback': 'Payback', 'st.swapped': 'Agreed swap', 'st.preview': 'Preview', 'st.empty': 'Empty house', 'st.rest': 'Rest',
   'st.planned': 'Doing it {day}', 'st.closed': 'Closed', 'st.pending': 'To log', 'st.inprogress': 'In progress',
@@ -395,7 +395,7 @@ D.en = {
   'sec.pinChanged': 'PIN changed', 'sec.note': 'Note: access to the house is protected by the code; the PIN protects the admin controls in the app. Share the code only with your roommates.',
   'refresh.title': 'Refresh the page', 'refresh.text': 'You\'ve been on this page for a while: reload it to get the latest data.', 'refresh.now': 'Refresh now', 'refresh.later': 'Later',
   'update.available': 'A new version is available', 'update.apply': 'Update',
-  'wa.title': 'WhatsApp message', 'wa.header': '🧹 *This week\'s rota* {range}', 'wa.floor': '🧽 Floor: {who}', 'wa.bathroom': '🚿 Bathroom: {who}', 'wa.kitchen': '🍳 Kitchen: {who}', 'wa.rest': '😴 Rest: {who}',
+  'wa.title': 'WhatsApp message', 'wa.header': '🧹 *This week\'s rota* {range}', 'wa.floor': '🧽 Floor: {who}', 'wa.bathroom': '🚿 Bathroom: {who}', 'wa.kitchen': '🍳 Kitchen: {who}', 'wa.chore': '▫️ {chore}: {who}', 'wa.rest': '😴 Rest: {who}',
   'wa.away': '✈️ Away: {who}', 'wa.makeup': '↺ Make-up: {what}', 'wa.plan': '📅 {who} does it {day}', 'wa.tasks': '✅ Extras: {what}', 'wa.link': 'Log "done" here: {url}', 'wa.deadline': '⏰ By Sunday!',
   'wa.copy': 'Copy message', 'wa.send': 'Send on WhatsApp', 'wa.scope': 'Which week', 'wa.thisWeek': 'This', 'wa.nextWeek': 'Next', 'wa.lastWeek': 'Last', 'wa.options': 'Include',
   'wa.opt.link': 'App link', 'wa.opt.tasks': 'Extra tasks', 'wa.opt.plan': 'Chosen days', 'wa.opt.away': 'Away', 'wa.opt.deadline': 'Deadline reminder', 'wa.nobody': 'nobody', 'wa.preview': 'Preview',

@@ -2,7 +2,7 @@
 // L'app le riceve come rotta #/do/done/<domenica>/<mansione> · #/do/accept/<id> · #/do/decline/<id> (vedi sw.js e js/app.js).
 // Non aggira nulla: la checklist resta obbligatoria (se incompleta si apre la scheda mansione) e i permessi sono quelli di ctx.actions.
 import { registerStrings } from './i18n.js';
-import { CHORES } from './engine.js';
+import { choreName } from './extras.js';
 import { markDoneFlow, openChoreSheet, rowOf } from './choresheet.js';
 import { it, en } from './strings/doaction.js';
 
@@ -38,12 +38,12 @@ async function findRequest(ctx, id) {
 }
 
 async function doDone(ctx, sunday, chore) {
-  const t = ctx.t; const c = CHORES.indexOf(chore);
+  const t = ctx.t; const c = ctx.actions.ci(chore);
   if (!DATE.test(sunday || '') || c < 0) return ctx.toast(t('doact.badLink'));
   const row = rowOf(ctx, sunday);
   if (!row) return ctx.toast(t('doact.noTurn'));
   const assigned = row.assigned[c];
-  if (assigned !== ctx.me) return ctx.toast(t('doact.notYours', { chore: t('chore.' + chore), name: assigned ? ctx.name(assigned) : '-' }), 5000);
+  if (assigned !== ctx.me) return ctx.toast(t('doact.notYours', { chore: choreName(ctx.house, chore, ctx.lang), name: assigned ? ctx.name(assigned) : '-' }), 5000);
   const res = row.res[c];
   if (res && res.kind) return ctx.toast(t(res.kind === 'done' || res.kind === 'by' ? 'doact.alreadyDone' : 'doact.alreadyRecorded'));
   if (!ctx.actions.canResult(sunday, chore, 'done')) return ctx.toast(t('err.permission'));

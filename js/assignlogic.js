@@ -1,5 +1,6 @@
 // Logica pura (nessun DOM) dell'assegnazione manuale della settimana: usata da Actions, dal foglio «Assegna la settimana»
 // e dall'anteprima IA. NON tocca il motore: scrive solo `swap` (le «celle grigie» del foglio Excel).
+// `ids` = id delle mansioni nell'ordine del motore (choreIds(house) / row.chores); senza, le 3 predefinite.
 import { CHORES, NOBODY, compute } from './engine.js';
 
 /** Persone presenti (a casa) in una riga del motore. */
@@ -21,11 +22,11 @@ export function ruleAssigned(eh, today, sunday) {
  * salvo `explicit` (scelta esplicita, es. dall'IA: resta valida anche se le regole poi cambiano).
  * Ritorna { patch, swap } con patch = { floor, bathroom, kitchen } (id oppure null per cancellare) e swap = oggetto compatto.
  */
-export function finalSwap({ existing = {}, ruled, wanted = {}, merge = false, explicit = false }) {
+export function finalSwap({ existing = {}, ruled, wanted = {}, merge = false, explicit = false, ids = CHORES }) {
   const patch = {}, swap = {};
-  for (const c of CHORES) {
+  for (const c of ids) {
     let id = null;
-    if (c in wanted) id = wanted[c] && (explicit || wanted[c] !== ruled[CHORES.indexOf(c)]) ? wanted[c] : null;
+    if (c in wanted) id = wanted[c] && (explicit || wanted[c] !== ruled[ids.indexOf(c)]) ? wanted[c] : null;
     else if (merge) id = existing[c] || null;
     patch[c] = id; if (id) swap[c] = id;
   }
@@ -33,18 +34,18 @@ export function finalSwap({ existing = {}, ruled, wanted = {}, merge = false, ex
 }
 
 /** Differenze prima → dopo per mansione: [{chore, from, to}] (id, '' se nessuno). `after` = assegnati dopo l'override. */
-export function diffAssign(before, after) {
+export function diffAssign(before, after, ids = CHORES) {
   const out = [];
-  CHORES.forEach((chore, i) => { if ((before[i] || '') !== (after[i] || '')) out.push({ chore, from: before[i] || '', to: after[i] || '' }); });
+  ids.forEach((chore, i) => { if ((before[i] || '') !== (after[i] || '')) out.push({ chore, from: before[i] || '', to: after[i] || '' }); });
   return out;
 }
 
 /** Assegnati dopo aver applicato `swap` alle regole. */
-export const applySwap = (ruled, swap) => CHORES.map((c, i) => (swap && swap[c] ? (swap[c] === NOBODY ? '' : swap[c]) : ruled[i]) || '');
+export const applySwap = (ruled, swap, ids = CHORES) => ids.map((c, i) => (swap && swap[c] ? (swap[c] === NOBODY ? '' : swap[c]) : ruled[i]) || '');
 
 /** Mansioni per persona in un'assegnazione: { id: [chore, …] }. */
-export function loadOf(assigned) {
+export function loadOf(assigned, ids = CHORES) {
   const m = {};
-  assigned.forEach((id, i) => { if (id) (m[id] ||= []).push(CHORES[i]); });
+  assigned.forEach((id, i) => { if (id) (m[id] ||= []).push(ids[i]); });
   return m;
 }

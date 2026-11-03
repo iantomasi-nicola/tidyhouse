@@ -253,8 +253,8 @@ export const LASTOUT_DEFAULT_KEYS = ['lastout.i1', 'lastout.i2', 'lastout.i3', '
 export function buildStats(house, out) {
   const { rows, cur, summary, settings } = out;
   const eff = effortOf(house);
-  const ids = out.chores ? out.chores.map((c) => c.id) : choreIds(house);
-  const M = ids.length; const zeros = () => ids.map(() => 0);
+  const chIds = out.chores ? out.chores.map((c) => c.id) : choreIds(house);
+  const M = chIds.length; const zeros = () => chIds.map(() => 0);
   const fromP = summary.from || 1;
   const J = cur < 0 ? 0 : cur + 1;
   const ids = (cur >= 0 ? rows[cur].nm : []).filter(Boolean);
@@ -290,11 +290,11 @@ export function buildStats(house, out) {
       if (!a) continue;
       const cl = r.cleaner[c];
       if (by[a]) { by[a].assigned[c]++; by[a].ownAssigned++; if (cl === a) by[a].ownDone++; }
-      if (cl && by[cl]) { by[cl].cleaned[c]++; by[cl].effort += Number(eff[ids[c]]) || 0; }
+      if (cl && by[cl]) { by[cl].cleaned[c]++; by[cl].effort += Number(eff[chIds[c]]) || 0; }
       if (cl && cl !== a) { if (by[cl]) by[cl].covers++; if (by[a]) by[a].covered++; }
       if (r.sk[c] && by[r.sk[c]]) { by[r.sk[c]].skipped++; failed.add(r.sk[c]); }
       monthly.get(m)[cl ? 'done' : 'skipped']++;
-      const at = (wkDoc.resultAt || {})[ids[c]];
+      const at = (wkDoc.resultAt || {})[chIds[c]];
       if (cl === a && at && by[a]) { by[a].onTimeBase++; if (at.slice(0, 10) <= addDays(r.sunday, 0)) by[a].onTime++; }
     }
     for (const p of people) {

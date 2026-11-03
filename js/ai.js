@@ -1,10 +1,10 @@
 // IA opzionale (solo admin): trasforma messaggi in testo libero in assenze/risultati/assegnazioni da confermare.
 // La API key resta sul dispositivo dell'admin; nessuna funzione applica nulla senza conferma.
-import { CHORES, dayNum, addDays, isSunday, weekEnd } from './engine.js';
-import { nameOf } from './extras.js';
+import { dayNum, addDays, isSunday, weekEnd } from './engine.js';
+import { nameOf, choreIds, choreName } from './extras.js';
 import { presentIds } from './assignlogic.js';
 
-/** Finestra delle assegnazioni accettate: da 4 settimane indietro a 8 avanti, al massimo 3 per settimana. */
+/** Finestra delle assegnazioni accettate: da 4 settimane indietro a 8 avanti, al massimo una per mansione della casa per settimana. */
 export const ASSIGN_BACK_WEEKS = 4, ASSIGN_AHEAD_WEEKS = 8;
 
 export const PROVIDERS = {
@@ -17,9 +17,11 @@ export function buildPrompt({ text, house, today, rows, admin }) {
   const names = house.roommates.map((r) => r.name).join(', ');
   const adminName = admin ? String(admin) : '';
   const away = (r) => (Array.isArray(r.nm) && Array.isArray(r.pr) ? r.nm.filter((id, s) => id && r.pr[s] !== 1).map((id) => nameOf(house, id)).filter(Boolean) : []);
-  const weeks = rows.map((r) => `${r.sunday}: ${CHORES.map((c, i) => `${c}=${nameOf(house, r.assigned[i]) || '-'}`).join(' ')}${away(r).length ? ` (assenti: ${away(r).join(', ')})` : ''}`).join('\n');
+  const ids = choreIds(house);
+  const weeks = rows.map((r) => `${r.sunday}: ${ids.map((c, i) => `${c}=${nameOf(house, r.assigned[i]) || '-'}`).join(' ')}${away(r).length ? ` (assenti: ${away(r).join(', ')})` : ''}`).join('\n');
   const system = `Sei un assistente che estrae dati strutturati da messaggi di coinquilini. Rispondi SOLO con JSON valido, senza testo extra.
-Schema: {"trips":[{"person":string,"from":"YYYY-MM-DD","to":"YYYY-MM-DD"|null,"note":string}],"results":[{"week":"YYYY-MM-DD","chore":"floor"|"bathroom"|"kitchen","outcome":"done"|"skipped"|"by","by":string|null}],"assignments":[{"week":"YYYY-MM-DD","chore":"floor"|"bathroom"|"kitchen","person":string}]}
+Schema: {"trips":[{"person":string,"from":"YYYY-MM-DD","to":"YYYY-MM-DD"|null,"note":string}],"results":[{"week":"YYYY-MM-DD","chore":${ids.map((c) => JSON.stringify(c)).join('|')},"outcome":"done"|"skipped"|"by","by":string|null}],"assignments":[{"week":"YYYY-MM-DD","chore":${ids.map((c) => JSON.stringify(c)).join('|')},"person":string}]}
+- "chore" è l'id della mansione: ${ids.map((c) => `${c} = ${choreName(house, c, 'it')}`).join(', ')}.
 - "person"/"by" devono essere uno tra: ${names}. Se il nome non è in elenco, ometti la voce.
 - Le date sono nel formato ISO. Oggi è ${today}. "to" è il giorno di RIENTRO (null se non noto).
 - "week" è la DOMENICA che chiude la settimana lun-dom. Questa settimana finisce domenica ${weekEnd(today)}; "la prossima" finisce ${addDays(weekEnd(today), 7)}.
@@ -46,6 +48,7 @@ const isDate = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && 
  * `reason` in 'person' | 'week' | 'range' | 'chore' | 'absent' | 'dup' | 'limit'.
  */
 export function validateAiOutput(json, house, { today, firstSunday, rows = [] }) {
+  const ids = choreIds(house);
   const idOf = (n) => { const r = house.roommates.find((x) => x.name.toLowerCase() === String(n || '').trim().toLowerCase()); return r ? r.id : null; };
   const out = { trips: [], results: [], assignments: [], rejected: [] };
   const lo = dayNum(firstSunday) - 7, hi = dayNum(today) + 3 * 366;
@@ -59,7 +62,7 @@ export function validateAiOutput(json, house, { today, firstSunday, rows = [] })
   }
   for (const r of Array.isArray(json && json.results) ? json.results.slice(0, 30) : []) {
     if (!isDate(r.week) || !isSunday(r.week) || dayNum(r.week) < lo || dayNum(r.week) > dayNum(today) + 7) continue;
-    if (!CHORES.includes(r.chore)) continue;
+    if (!ids.includes(r.chore)) continue;
     if (r.outcome === 'done') out.results.push({ week: r.week, chore: r.chore, value: 'done' });
     else if (r.outcome === 'skipped') out.results.push({ week: r.week, chore: r.chore, value: 'skipped' });
     else if (r.outcome === 'by') { const id = idOf(r.by); if (id) out.results.push({ week: r.week, chore: r.chore, value: 'by:' + id }); }
@@ -71,7 +74,7 @@ export function validateAiOutput(json, house, { today, firstSunday, rows = [] })
   for (const a of Array.isArray(json && json.assignments) ? json.assignments.slice(0, 30) : []) {
     if (!a || typeof a !== 'object') continue;
     if (!isDate(a.week) || !isSunday(a.week)) { rej(a, 'week'); continue; }
-    if (!CHORES.includes(a.chore)) { rej(a, 'chore'); continue; }
+    if (!ids.includes(a.chore)) { rej(a, 'chore'); continue; }
     if (dayNum(a.week) < wlo || dayNum(a.week) > whi || dayNum(a.week) < dayNum(firstSunday)) { rej(a, 'range'); continue; }
     const id = idOf(a.person);
     if (!id) { rej(a, 'person'); continue; }
@@ -80,7 +83,7 @@ export function validateAiOutput(json, house, { today, firstSunday, rows = [] })
     if (!presentIds(row).includes(id)) { rej(a, 'absent'); continue; }
     const got = perWeek.get(a.week) || new Map();
     if (got.has(a.chore)) { rej(a, 'dup'); continue; }
-    if (got.size >= 3) { rej(a, 'limit'); continue; }
+    if (got.size >= ids.length) { rej(a, 'limit'); continue; }
     got.set(a.chore, id); perWeek.set(a.week, got);
     out.assignments.push({ week: a.week, chore: a.chore, personId: id });
   }
