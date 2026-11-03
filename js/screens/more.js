@@ -1012,7 +1012,7 @@ function tasksPage(ctx, sub = 'tasks') {
   const jump = fT && fX ? h('div', { class: 'tk-jump', 'data-testid': 'tk-jump' },
     h('button', { type: 'button', class: 'btn sm tonal', 'data-testid': 'tk-jump-turn', onclick: go(secT) }, t('tk.jump.turn'), dueT ? chip('warn', String(dueT)) : null),
     h('button', { type: 'button', class: 'btn sm tonal', 'data-testid': 'tk-jump-extra', onclick: go(secX.el) }, t('tk.jump.extra'), secX.left ? chip('warn', String(secX.left)) : null)) : null;
-  const kids = [head(t('tk.title'), { right: admin ? h('button', { type: 'button', class: 'btn sm', 'data-testid': 'tk-add', onclick: () => (ED && ED.key === 'new' ? closeEd(ctx) : openEd(ctx, newDraft(fT ? 'turn' : 'floor'))) }, icon('plus'), t('add')) : null })];
+  const kids = [head(t('tk.title'), { right: admin ? h('button', { type: 'button', class: 'btn sm', 'data-testid': 'tk-add', onclick: () => (ED && ED.key === 'new' ? closeEd(ctx) : openEd(ctx, newDraft(fT ? 'turn' : cActive(null)[0]))) }, icon('plus'), t('add')) : null })];
   if (ED && ED.key === 'new') kids.push(h('section', { class: 'card tk-newcard', 'data-testid': 'tk-new' }, h('div', { class: 'mx-ch-name' }, t('tk.new')), editorCard(ctx)));
   if (jump) kids.push(jump);
   if (secT) kids.push(secT);
