@@ -192,7 +192,7 @@ const D = {
     // whatsapp / export text
     'wa.title': 'Messaggio WhatsApp', 'wa.header': '🧹 *Turni della settimana* {range}', 'wa.floor': '🧽 Pavimenti: {who}', 'wa.bathroom': '🚿 Bagno: {who}', 'wa.kitchen': '🍳 Cucina: {who}', 'wa.chore': '▫️ {chore}: {who}', 'wa.rest': '😴 Riposo: {who}',
     'wa.away': '✈️ Assenti: {who}', 'wa.makeup': '↺ Recupero: {what}', 'wa.plan': '📅 {who} lo fa {day}', 'wa.tasks': '✅ Extra: {what}', 'wa.link': 'Segnate "fatto" qui: {url}', 'wa.deadline': '⏰ Entro domenica!',
-    'wa.copy': 'Copia messaggio', 'wa.send': 'Invia su WhatsApp', 'wa.scope': 'Quale settimana', 'wa.thisWeek': 'Questa', 'wa.nextWeek': 'Prossima', 'wa.lastWeek': 'Scorsa', 'wa.options': 'Includi',
+    'wa.copy': 'Copia messaggio', 'wa.send': 'Invia su WhatsApp', 'wa.scope': 'Quale settimana', 'wa.lang': 'Lingua del messaggio', 'wa.thisWeek': 'Questa', 'wa.nextWeek': 'Prossima', 'wa.lastWeek': 'Scorsa', 'wa.options': 'Includi',
     'wa.opt.link': 'Link all\'app', 'wa.opt.tasks': 'Compiti extra', 'wa.opt.plan': 'Giorni scelti', 'wa.opt.away': 'Assenti', 'wa.opt.deadline': 'Promemoria scadenza', 'wa.nobody': 'nessuno', 'wa.preview': 'Anteprima',
     'wa.ranking': '🏆 *Classifica* ({window})', 'wa.rankingLine': '{medal} {name}: {n} puliti', 'wa.cdmLine': '💩 CDM: {who}', 'wa.trLine': '👑 TR: {who}', 'wa.summary': '📊 *Riepilogo settimana* {range}',
     'wa.summaryLine': '{chore}: {status}', 'wa.restOf': 'Riposo',
@@ -397,7 +397,7 @@ D.en = {
   'update.available': 'A new version is available', 'update.apply': 'Update',
   'wa.title': 'WhatsApp message', 'wa.header': '🧹 *This week\'s rota* {range}', 'wa.floor': '🧽 Floor: {who}', 'wa.bathroom': '🚿 Bathroom: {who}', 'wa.kitchen': '🍳 Kitchen: {who}', 'wa.chore': '▫️ {chore}: {who}', 'wa.rest': '😴 Rest: {who}',
   'wa.away': '✈️ Away: {who}', 'wa.makeup': '↺ Make-up: {what}', 'wa.plan': '📅 {who} does it {day}', 'wa.tasks': '✅ Extras: {what}', 'wa.link': 'Log "done" here: {url}', 'wa.deadline': '⏰ By Sunday!',
-  'wa.copy': 'Copy message', 'wa.send': 'Send on WhatsApp', 'wa.scope': 'Which week', 'wa.thisWeek': 'This', 'wa.nextWeek': 'Next', 'wa.lastWeek': 'Last', 'wa.options': 'Include',
+  'wa.copy': 'Copy message', 'wa.send': 'Send on WhatsApp', 'wa.scope': 'Which week', 'wa.lang': 'Message language', 'wa.thisWeek': 'This', 'wa.nextWeek': 'Next', 'wa.lastWeek': 'Last', 'wa.options': 'Include',
   'wa.opt.link': 'App link', 'wa.opt.tasks': 'Extra tasks', 'wa.opt.plan': 'Chosen days', 'wa.opt.away': 'Away', 'wa.opt.deadline': 'Deadline reminder', 'wa.nobody': 'nobody', 'wa.preview': 'Preview',
   'wa.ranking': '🏆 *Ranking* ({window})', 'wa.rankingLine': '{medal} {name}: {n} cleaned', 'wa.cdmLine': '💩 CDM: {who}', 'wa.trLine': '👑 TR: {who}', 'wa.summary': '📊 *Week summary* {range}',
   'wa.summaryLine': '{chore}: {status}', 'wa.restOf': 'Rest',
