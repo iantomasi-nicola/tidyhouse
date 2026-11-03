@@ -319,6 +319,14 @@ await scenario('WhatsApp: testo, opzioni, settimana, invio e classifica', async 
   assert.match(txt, /Anna lo fa venerdì 30 ott/);
   assert.match(txt, /Cambia il tappetino/);
   assert.match(txt, /⏰ Entro domenica!/);
+  // messaggio per il gruppo in inglese (l'app resta in italiano)
+  await topSheet(page).locator('[data-testid=wa-lang] button', { hasText: 'English' }).click(); await page.waitForTimeout(300);
+  const en = await ta.inputValue();
+  assert.match(en, /\*Chore schedule\*|\*Week schedule\*|Floors|Bathroom|Kitchen/i);
+  assert.doesNotMatch(en, /Pavimenti|Bagno|Cucina|Entro domenica/);
+  assert.equal(await page.evaluate(() => window.__app.prefs.waLang), 'en');
+  await topSheet(page).locator('[data-testid=wa-lang] button', { hasText: 'Italiano' }).click(); await page.waitForTimeout(300);
+  assert.match(await ta.inputValue(), /Pavimenti/);
   await shot(page, 'whatsapp-390');
   const href = await topSheet(page).locator('[data-act=wa-send]').getAttribute('href');
   assert.ok(href.startsWith('https://wa.me/?text='));
