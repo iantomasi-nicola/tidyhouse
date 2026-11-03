@@ -74,6 +74,10 @@ button.week.compact:active { transform: none; background: var(--surface-2); }
 .wk-sub { font-size: .75rem; color: var(--text-2); font-weight: 600; }
 .week.cur .wk-sub { color: var(--accent-ink); }
 .wk-chore .l .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-rest); flex: none; }
+/* 4 mansioni: 2×2 invece di 3+1; nomi lunghi delle mansioni aggiunte: troncati */
+.wk-chores.n4, .wk-minis.n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wk-chore .l { min-width: 0; max-width: 100%; }
+.wk-chore .l .lt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dot.floor { background: var(--c-floor) !important; } .dot.bathroom { background: var(--c-bathroom) !important; } .dot.kitchen { background: var(--c-kitchen) !important; }
 .wk-chore { width: 100%; align-content: start; }
 .wk-chore .m { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; min-height: 26px; }

@@ -188,6 +188,10 @@ button.li:active, a.li:active { background: var(--surface-2); }
 .chip svg.i { width: .95em; height: .95em; }
 .tile { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; flex: none; color: #fff; }
 .tile.floor { background: var(--c-floor); } .tile.bathroom { background: var(--c-bathroom); } .tile.kitchen { background: var(--c-kitchen); } .tile.rest { background: var(--c-rest); }
+/* mansioni aggiunte dall'admin (id c_*): colore di ripiego per indice (js/choreui.js cCls / cSeg) */
+.cx0 { --cx: #8e24aa; } .cx1 { --cx: #3949ab; } .cx2 { --cx: #d81b60; } .cx3 { --cx: #388e3c; } .cx4 { --cx: #6d4c41; } .cx5 { --cx: #00838f; } .cx6 { --cx: #e64a19; } .cx7 { --cx: #546e7a; }
+.tile.cx, .dot.cx, .hm-minitile.cx, .mx-ct.cx { background: var(--cx) !important; }
+.seg-cx { fill: var(--cx); background: var(--cx); }
 .tile svg.i { width: 1.45rem; height: 1.45rem; }
 
 /* hero */

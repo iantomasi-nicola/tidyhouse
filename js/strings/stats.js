@@ -2,6 +2,7 @@
 export const it = {
   'stats.byTurns': 'Turni', 'stats.byEffort': 'Punti fatica', 'stats.rankBy': 'Ordina la classifica per', 'stats.pts': 'punti', 'stats.cleanedUnit': 'puliti',
   'stats.effortHint': 'Punti fatica: ogni turno vale i punti decisi dall\'admin (Pavimenti {f}, Bagno {b}, Cucina {k}).',
+  'stats.effortHintN': 'Punti fatica: ogni turno vale i punti decisi dall\'admin ({list}).',
   'stats.noDataHint': 'La classifica compare dopo la prima settimana conclusa: segna i risultati dei turni dalla Home.',
   'stats.tapHint': 'Tocca una persona per i dettagli', 'stats.podium': 'Podio', 'stats.position': '{n}º posto',
   'stats.kpis': 'La casa in numeri', 'stats.closedWeeks': 'Settimane chiuse', 'stats.balanceOf': '{n} su 100',
@@ -19,6 +20,7 @@ export const it = {
 export const en = {
   'stats.byTurns': 'Chores', 'stats.byEffort': 'Effort points', 'stats.rankBy': 'Rank by', 'stats.pts': 'pts', 'stats.cleanedUnit': 'cleaned',
   'stats.effortHint': 'Effort points: each chore is worth the points set by the admin (Floor {f}, Bathroom {b}, Kitchen {k}).',
+  'stats.effortHintN': 'Effort points: each chore is worth the points set by the admin ({list}).',
   'stats.noDataHint': 'The ranking shows up after the first closed week: log the chore results from Home.',
   'stats.tapHint': 'Tap a person for details', 'stats.podium': 'Podium', 'stats.position': 'Place {n}',
   'stats.kpis': 'The house in numbers', 'stats.closedWeeks': 'Closed weeks', 'stats.balanceOf': '{n} out of 100',

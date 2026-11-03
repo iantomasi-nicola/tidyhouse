@@ -467,6 +467,7 @@ export class Actions {
     const cur = currentSunday(this.house, this.ctx.now());
     const next = addDays(cur, 1), lastSun = addDays(cur, -7);
     const old = choresOf(this.house); const oldById = Object.fromEntries(old.map((c) => [c.id, c]));
+    const oldPos = Object.fromEntries(old.map((c, i) => [c.id, i]));
     const out = []; const seen = new Set();
     for (const x of list || []) {
       if (!x) continue;
@@ -483,7 +484,11 @@ export class Actions {
     for (const o of old) {
       if (seen.has(o.id)) continue;
       if (o.from && dayNum(o.from) > dayNum(cur)) continue;          // mai entrata in turno: si toglie davvero
-      out.push({ id: o.id, name: o.name, icon: o.icon, effort: o.effort, ...(o.from ? { from: o.from } : {}), to: o.to && o.to < lastSun ? o.to : lastSun });
+      const item = { id: o.id, name: o.name, icon: o.icon, effort: o.effort, ...(o.from ? { from: o.from } : {}), to: o.to && o.to < lastSun ? o.to : lastSun };
+      // resta nella sua posizione rispetto alle altre mansioni già esistenti: l'ordine di choresOf decide anche le settimane
+      // passate, spostarla in fondo riscriverebbe lo storico (es. togliendo «Pavimenti», la prima)
+      const k = out.findIndex((c) => c.id in oldPos && oldPos[c.id] > oldPos[o.id]);
+      if (k < 0) out.push(item); else out.splice(k, 0, item);
     }
     if (!out.some((c) => !c.to)) throw new Error('invalid');          // almeno una mansione in turno
     if (out.length > 12) throw new Error('invalid');

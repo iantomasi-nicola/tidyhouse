@@ -23,7 +23,7 @@ button.rank-row:active { background: var(--surface-2); }
 .rk-top { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-bottom: 8px; }
 .rk-name { font-weight: 700; letter-spacing: -.01em; }
 .rk-bar { height: 8px; }
-.rk-sub { display: flex; gap: 12px; margin-top: 7px; }
+.rk-sub { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 7px; }
 .rk-chore { display: inline-flex; align-items: center; gap: 5px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .dot.floor { background: var(--c-floor); } .dot.bathroom { background: var(--c-bathroom); } .dot.kitchen { background: var(--c-kitchen); }

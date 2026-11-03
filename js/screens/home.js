@@ -2,7 +2,8 @@
 // L'ordine e la visibilita' vengono da ctx.homeLayout(). choresheet.js e trips.js si importano solo al click.
 import { h, icon, avatar, loadCss, confetti, haptic, promptDialog } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
-import { CHORES, validateRoommates } from '../engine.js';
+import { validateRoommates } from '../engine.js';
+import { cIds, cName, cIcon, cCls, cIdx } from '../choreui.js';
 import { flowChips, markDoneFlow, undoFlow, resultToggle, incompleteOf, ownedItems, canTick, tickTask, taskNote, termsLine } from '../choresheet.js';
 import { planOf, buildStats, planDays, sharedStatus, cleanNote } from '../extras.js';
 import { it, en } from '../strings/home.js';
@@ -12,7 +13,6 @@ registerStrings(it, en);
 registerStrings(itZ, enZ);
 registerStrings(itU, enU);
 
-const IC = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 const WEIGHT = { hero: 3.2, alerts: 1.2, week: 3.4, checklist: 2, shared: 1.8, quick: 1.4, links: 0.7, away: 1, upcoming: 2.4, makeups: 1.6, ranking: 2.2, needs: 1.6 };
 const popKeys = new Set();      // turni appena segnati da questo dispositivo: animazione del check
 let lastRender = 0;
@@ -34,16 +34,17 @@ function model(ctx, shown = new Set()) {
   const cur = out.cur, me = ctx.me;
   const row = cur >= 0 ? out.rows[cur] : null;
   const prev = cur >= 1 ? out.rows[cur - 1] : null;
-  const idx = [0, 1, 2];
-  const mine = row && me ? idx.filter((c) => row.assigned[c] === me) : [];
-  const late = prev && me ? idx.filter((c) => prev.assigned[c] === me && !prev.res[c].kind) : [];
-  const M = { out, eh, cur, row, prev, me, mine, late, today: ctx.today(), shown };
+  // mansioni nell'ordine del motore (row.assigned[c] ↔ ids[c]); solo quelle in turno in quella settimana (row.active)
+  const ids = Array.isArray(out.chores) ? out.chores.map((x) => x.id) : cIds(ctx);
+  const mine = row && me ? cIdx(row).filter((c) => row.assigned[c] === me) : [];
+  const late = prev && me ? cIdx(prev).filter((c) => prev.assigned[c] === me && !prev.res[c].kind) : [];
+  const M = { out, eh, cur, row, prev, me, mine, late, ids, today: ctx.today(), shown };
   // l'Hero ha già il controllo «sono via / ci sono» (un tocco): il riquadro Assenti non lo ripete
   M.heroAway = !!(row && me && shown.has('hero') && !late.length && canSelfAway(ctx) && row.nm.includes(me) && (!row.away.includes(me) || manualAway(M)));
   return M;
 }
 // voci di checklist ancora da fare di cui sono responsabile io (anche arretrati di un'altra mansione)
-const extrasLeft = (ctx, M, sunday, c) => ownedItems(ctx, sunday).filter((x) => x.owner === M.me && x.status !== 'done' && (x.chore === CHORES[c] || x.reason === 'arrears')).length;
+const extrasLeft = (ctx, M, sunday, c) => ownedItems(ctx, sunday).filter((x) => x.owner === M.me && x.status !== 'done' && (x.chore === M.ids[c] || x.reason === 'arrears')).length;
 
 /** Chip di stato di un turno. */
 function turnChips(ctx, M, row, c, isLate) {
@@ -55,9 +56,9 @@ function turnChips(ctx, M, row, c, isLate) {
   else if (isLate) out.push(['bad', t('st.late'), 'clock']);
   else out.push(['', t('st.todo')]);
   if (row.isMakeup[c]) out.push(['warn', t('st.makeup'), 'history']);
-  if (!r.kind) { const d = planOf(M.eh, row.sunday, CHORES[c]); if (d) out.push(['acc', t('st.planned', { day: dowLong(d) }), 'calendar']); }
+  if (!r.kind) { const d = planOf(M.eh, row.sunday, M.ids[c]); if (d) out.push(['acc', t('st.planned', { day: dowLong(d) }), 'calendar']); }
   if (row.swapped[c]) out.push(['', t('st.swapped'), 'swap']);
-  for (const f of flowChips(ctx, row.sunday, CHORES[c])) out.push([f.tone, f.text, f.ic]);
+  for (const f of flowChips(ctx, row.sunday, M.ids[c])) out.push([f.tone, f.text, f.ic]);
   return out;
 }
 
@@ -65,7 +66,7 @@ function turnChips(ctx, M, row, c, isLate) {
 async function markDone(ctx, sunday, c, ev) {
   const b = ev.currentTarget; b.disabled = true;
   popKeys.add(sunday + '|' + c);
-  const ok = await markDoneFlow(ctx, sunday, CHORES[c], { el: b, msg: ctx.t('home.doneToast') });
+  const ok = await markDoneFlow(ctx, sunday, cIds(ctx)[c], { el: b, msg: ctx.t('home.doneToast') });
   if (!ok) { popKeys.delete(sunday + '|' + c); b.disabled = false; }
 }
 const isOk = (r) => r.kind === 'done' || r.kind === 'by';
@@ -114,13 +115,13 @@ function widgetHero(ctx, M) {
   // --- in ritardo ---
   if (lateItems.length) {
     const f = lateItems[0], rest = [...lateItems.slice(1), ...curItems];
-    const canDone = ctx.actions.canResult(f.sunday, CHORES[f.c], 'done');
+    const canDone = ctx.actions.canResult(f.sunday, M.ids[f.c], 'done');
     wrap.append(heroCard({
-      variant: 'late', testid: 'hero-late', kicker: `${t('st.late')} · ${t('home.weekOf', { range: fmtWeekRange(f.sunday) })}`, ic: IC[CHORES[f.c]], big: t('chore.' + CHORES[f.c]), sub: t('home.lateHint'),
-      chips: [['', t('st.late'), 'clock'], ...(M.prev.isMakeup[f.c] ? [['', t('st.makeup'), 'history']] : []), ...flowChips(ctx, f.sunday, CHORES[f.c]).map((x) => [x.tone, x.text, x.ic])],
+      variant: 'late', testid: 'hero-late', kicker: `${t('st.late')} · ${t('home.weekOf', { range: fmtWeekRange(f.sunday) })}`, ic: cIcon(ctx, M.ids[f.c]), big: cName(ctx, M.ids[f.c]), sub: t('home.lateHint'),
+      chips: [['', t('st.late'), 'clock'], ...(M.prev.isMakeup[f.c] ? [['', t('st.makeup'), 'history']] : []), ...flowChips(ctx, f.sunday, M.ids[f.c]).map((x) => [x.tone, x.text, x.ic])],
       actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, f.sunday, f.c, e) }, icon('check'), t('home.markDone')) : null,
-        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cover', onclick: () => openChore(ctx, f.sunday, CHORES[f.c], { view: 'cover' }) }, t('home.didSomeoneElse')),
-        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-delay', onclick: () => openChore(ctx, f.sunday, CHORES[f.c], { view: 'delay' }) }, icon('clock'), t('flow.delayBtn'))],
+        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cover', onclick: () => openChore(ctx, f.sunday, M.ids[f.c], { view: 'cover' }) }, t('home.didSomeoneElse')),
+        h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-delay', onclick: () => openChore(ctx, f.sunday, M.ids[f.c], { view: 'delay' }) }, icon('clock'), t('flow.delayBtn'))],
       list: mini(rest),
     }));
     return wrap;
@@ -128,7 +129,7 @@ function widgetHero(ctx, M) {
   // --- ho turni ---
   if (curItems.length) {
     if (unresolvedCur) {
-      const f = pendCur[0], c = f.c, ch = CHORES[c];
+      const f = pendCur[0], c = f.c, ch = M.ids[c];
       const chips = [['', t('home.dueSunday'), 'clock']];
       if (row.isMakeup[c]) chips.push(['', t('st.makeup'), 'history']);
       const d = planOf(M.eh, row.sunday, ch); if (d) chips.push(['', t('st.planned', { day: dowLong(d) }), 'calendar']);
@@ -140,7 +141,7 @@ function widgetHero(ctx, M) {
       const agreedTo = (((ctx.state.weeks || {})[row.sunday] || {}).agreed || {})[ch];
       const canHand = !(agreedTo && agreedTo !== me);
       wrap.append(heroCard({
-        testid: 'hero-todo', sub: row.isMakeup[c] ? t('chore.makeupHint') : null, kicker: curItems.length > 1 ? `${t('home.yourTurn')} · ${t('home.nTurns', { n: curItems.length })}` : t('home.yourTurn'), ic: IC[ch], big: t('chore.' + ch), chips,
+        testid: 'hero-todo', sub: row.isMakeup[c] ? t('chore.makeupHint') : null, kicker: curItems.length > 1 ? `${t('home.yourTurn')} · ${t('home.nTurns', { n: curItems.length })}` : t('home.yourTurn'), ic: cIcon(ctx, ch), big: cName(ctx, ch), chips,
         actions: [canDone ? h('button', { class: 'btn lg', type: 'button', 'data-act': 'done', onclick: (e) => markDone(ctx, row.sunday, c, e) }, icon('check'), t('home.markDone')) : null,
           canHand ? h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-cantdo', onclick: () => openChore(ctx, row.sunday, ch, { view: 'cantdo' }) }, t('cantdo.btn'))
           : h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'hero-uncantdo', onclick: async (e) => { const b = e.currentTarget; b.disabled = true; try { await ctx.actions.clearAgreed(row.sunday, ch); ctx.toast(t('cantdo.undone')); } catch { b.disabled = false; ctx.toast(t('error')); } } }, t('cantdo.cancel'))],
@@ -150,13 +151,13 @@ function widgetHero(ctx, M) {
       return wrap;
     }
     const skipped = curItems.some((x) => row.res[x.c].kind === 'skipped' || row.res[x.c].kind === 'skippedBy');
-    const undos = curItems.filter((x) => isOk(row.res[x.c]) && ctx.actions.canResult(row.sunday, CHORES[x.c], ''));
-    const flows = curItems.flatMap((x) => flowChips(ctx, row.sunday, CHORES[x.c]).map((f) => [f.tone, curItems.length > 1 ? `${t('chore.' + CHORES[x.c])}: ${f.text}` : f.text, f.ic]));
+    const undos = curItems.filter((x) => isOk(row.res[x.c]) && ctx.actions.canResult(row.sunday, M.ids[x.c], ''));
+    const flows = curItems.flatMap((x) => flowChips(ctx, row.sunday, M.ids[x.c]).map((f) => [f.tone, curItems.length > 1 ? `${cName(ctx, M.ids[x.c])}: ${f.text}` : f.text, f.ic]));
     wrap.append(heroCard({
       variant: skipped ? '' : 'calm', testid: 'hero-done', kicker: t('home.thisWeek'), ic: 'check', big: skipped ? t('home.allWeeksDone') : t('home.allDone'),
       chips: [['', t('home.doneOf', { done: curItems.length, total: curItems.length }), 'check'], ...flows],
-      actions: undos.map((x) => h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'undo', 'data-chore': CHORES[x.c], onclick: async (e) => { const b = e.currentTarget; b.disabled = true; const ok = await undoFlow(ctx, row.sunday, CHORES[x.c]); if (!ok) b.disabled = false; } },
-        icon('refresh'), undos.length > 1 ? t('flow.heroUndoChore', { chore: t('chore.' + CHORES[x.c]) }) : t('chore.reset'))),
+      actions: undos.map((x) => h('button', { class: 'btn glass lg', type: 'button', 'data-act': 'undo', 'data-chore': M.ids[x.c], onclick: async (e) => { const b = e.currentTarget; b.disabled = true; const ok = await undoFlow(ctx, row.sunday, M.ids[x.c]); if (!ok) b.disabled = false; } },
+        icon('refresh'), undos.length > 1 ? t('flow.heroUndoChore', { chore: cName(ctx, M.ids[x.c]) }) : t('chore.reset'))),
       list: curItems.length > 1 ? mini(curItems) : null, foot: awayBtn,
     }));
     return wrap;
@@ -180,17 +181,17 @@ function widgetHero(ctx, M) {
 const shiftDays = (s, k) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + k); return d.toISOString().slice(0, 10); };
 
 function miniRow(ctx, M, it2) {
-  const t = ctx.t, r = it2.row.res[it2.c], ch = CHORES[it2.c];
+  const t = ctx.t, r = it2.row.res[it2.c], ch = M.ids[it2.c];
   const resolved = !!r.kind, ok = r.kind === 'done' || r.kind === 'by';
-  return h('button', { class: 'hm-mini' + (resolved ? ' is-done' : ''), type: 'button', 'aria-label': t('home.rowAria', { chore: t('chore.' + ch), who: resolved ? turnChips(ctx, M, it2.row, it2.c, it2.late)[0][1] : t('st.todo') }), onclick: () => openChore(ctx, it2.sunday, ch) },
-    h('span', { class: 'hm-minitile' }, icon(IC[ch])),
-    h('span', { class: 'grow hm-ellblock' }, h('b', null, t('chore.' + ch)), it2.late ? h('small', null, ' · ' + t('home.weekOf', { range: fmtWeekRange(it2.sunday) })) : (it2.row.isMakeup[it2.c] ? h('small', null, ' · ' + t('st.makeup')) : null)),
+  return h('button', { class: 'hm-mini' + (resolved ? ' is-done' : ''), type: 'button', 'aria-label': t('home.rowAria', { chore: cName(ctx, ch), who: resolved ? turnChips(ctx, M, it2.row, it2.c, it2.late)[0][1] : t('st.todo') }), onclick: () => openChore(ctx, it2.sunday, ch) },
+    h('span', { class: 'hm-minitile' }, icon(cIcon(ctx, ch))),
+    h('span', { class: 'grow hm-ellblock' }, h('b', null, cName(ctx, ch)), it2.late ? h('small', null, ' · ' + t('home.weekOf', { range: fmtWeekRange(it2.sunday) })) : (it2.row.isMakeup[it2.c] ? h('small', null, ' · ' + t('st.makeup')) : null)),
     ok ? h('span', { class: 'hm-minicheck' }, icon('check')) : resolved ? h('span', { class: 'hm-minicheck skip' }, icon('x')) : h('span', { class: 'hm-minigo' }, icon('chevron')));
 }
 
 /** Suggerimento "giorno scelto" con selettore rapido (solo se non ancora scelto). */
 function planTip(ctx, M, f) {
-  const row = M.row, ch = CHORES[f.c], t = ctx.t;
+  const row = M.row, ch = M.ids[f.c], t = ctx.t;
   if (!ctx.feature('planDay') || !ctx.actions.canPlan(row.sunday, ch) || planOf(M.eh, row.sunday, ch)) return null;
   const days = planDays(row.sunday, M.today);
   if (!days.length) return null;
@@ -207,16 +208,16 @@ function planTip(ctx, M, f) {
 function widgetWeek(ctx, M) {
   const { row, me } = M, t = ctx.t;
   if (!row) return null;
-  const items = [0, 1, 2].map((c) => {
-    const a = row.assigned[c], ch = CHORES[c];
+  const items = cIdx(row).map((c) => {
+    const a = row.assigned[c], ch = M.ids[c];
     const on = isOk(row.res[c]);
     const pop = popKeys.has(row.sunday + '|' + c);
     const who = a ? ctx.name(a) : t('chore.noOne');
     return h('div', { class: 'chore hm-chore' + (a && a === me ? ' mine' : '') + (on ? ' done' : ''), 'data-chore': ch },
-      h('button', { class: 'hm-chorebtn', type: 'button', 'aria-label': t('home.rowAria', { chore: t('chore.' + ch), who }), onclick: () => openChore(ctx, row.sunday, ch) },
-        h('div', { class: 'tile ' + ch }, icon(IC[ch])),
+      h('button', { class: 'hm-chorebtn', type: 'button', 'aria-label': t('home.rowAria', { chore: cName(ctx, ch), who }), onclick: () => openChore(ctx, row.sunday, ch) },
+        h('div', { class: 'tile ' + cCls(ctx, ch) }, icon(cIcon(ctx, ch))),
         h('div', { class: 'grow' },
-          h('div', { class: 't hm-ell' }, t('chore.' + ch)),
+          h('div', { class: 't hm-ell' }, cName(ctx, ch)),
           h('div', { class: 's' }, a ? avatar(who, ctx.color(a), 'sm') : null, h('span', { class: 'hm-who hm-ell' }, who), turnChips(ctx, M, row, c, false).map(([cls, text, ic]) => chip(cls, text, ic))))),
       a ? resultToggle(ctx, row.sunday, ch, { pop }) : null);
   });
@@ -254,11 +255,11 @@ function requestRows(ctx, M) {
     if (!wr) continue;
     const range = fmtWeekRange(q.week);
     if (q.kind === 'cover' || q.kind === 'offer') {
-      const c = CHORES.indexOf(q.chore);
+      const c = M.ids.indexOf(q.chore);
       if (c < 0 || wr.res[c].kind) continue;
       const mine = q.kind === 'cover' ? q.from !== me && (!q.to || q.to === me) : q.to === me;
       if (!mine) continue;
-      const chore = t('chore.' + q.chore);
+      const chore = cName(ctx, q.chore);
       const cover = q.kind === 'cover';
       rows.push(alertRow({ tone: 'p', ic: cover ? 'users' : 'user', testid: 'req-' + id,
         title: cover ? t(q.to ? 'flow.alert.coverTo' : 'flow.alert.cover', { name: ctx.name(q.from), chore }) : t('flow.alert.offer', { name: ctx.name(q.from), chore }),
@@ -268,7 +269,7 @@ function requestRows(ctx, M) {
     } else if (q.to === me) {
       rows.push(alertRow({ tone: 'p', ic: 'swap', testid: 'req-' + id,
         title: t('flow.alert.swap', { name: ctx.name(q.from) }),
-        desc: t('flow.alert.swapDesc', { mine: t('chore.' + q.fromChore), theirs: t('chore.' + q.toChore), range }),
+        desc: t('flow.alert.swapDesc', { mine: cName(ctx, q.fromChore), theirs: cName(ctx, q.toChore), range }),
         actions: [h('button', { class: 'btn sm', type: 'button', 'data-act': 'req-yes', onclick: answer(() => ctx.actions.answerSwap(id, true), t('req.accepted')) }, icon('check'), t('req.accept')),
           h('button', { class: 'btn sm soft', type: 'button', 'data-act': 'req-no', onclick: answer(() => ctx.actions.answerSwap(id, false), t('req.declined')) }, t('req.decline'))] }));
     }
@@ -282,9 +283,10 @@ function flowRows(ctx, M) {
   const list = idx >= 0 ? [M.out.rows[idx - 1], M.out.rows[idx], M.out.rows[idx + 1]].filter(Boolean) : [];
   for (const r of list) {
     const wk = (ctx.state.weeks || {})[r.sunday] || {};
-    CHORES.forEach((ch, c) => {
+    cIdx(r).forEach((c) => {
+      const ch = M.ids[c];
       const a = r.assigned[c]; if (!a) return;
-      const res = r.res[c], chore = t('chore.' + ch), range = fmtWeekRange(r.sunday), future = !!M.row && r.sunday > M.row.sunday;
+      const res = r.res[c], chore = cName(ctx, ch), range = fmtWeekRange(r.sunday), future = !!M.row && r.sunday > M.row.sunday;
       const ag = (wk.agreed || {})[ch];
       if (me && ag === me && a !== me && !res.kind) {
         rows.push(alertRow({ tone: 'g', ic: 'users', testid: 'alert-agreed', title: t('flow.alert.agreed', { chore }), desc: t('flow.alert.agreedDesc', { name: ctx.name(a), range }),
@@ -308,7 +310,7 @@ function widgetAlerts(ctx, M) {
   const reqRows = requestRows(ctx, M);
   rows.push(...reqRows, ...flowRows(ctx, M));
   if (prev) {
-    const pend = [0, 1, 2].filter((c) => prev.assigned[c] && !prev.res[c].kind);
+    const pend = cIdx(prev).filter((c) => prev.assigned[c] && !prev.res[c].kind);
     if (pend.length && (ctx.isAdmin || pend.some((c) => prev.assigned[c] !== me))) {
       rows.push(alertRow({ tone: 'o', ic: 'clock', title: pend.length === 1 ? t('home.lastWeekPending1') : t('home.lastWeekPending', { n: pend.length }), desc: t('home.lastWeekHint'), onclick: () => openWeek(ctx, prev.sunday), testid: 'alert-lastweek' }));
     }
@@ -317,7 +319,7 @@ function widgetAlerts(ctx, M) {
     const p = M.out.summary.people.find((x) => x.id === me);
     if (p) {
       const open = p.makeups.reduce((a, v) => a + Math.max(0, v), 0);
-      const thisWeek = [0, 1, 2].filter((c) => row.assigned[c] === me && row.isMakeup[c]).length;
+      const thisWeek = cIdx(row).filter((c) => row.assigned[c] === me && row.isMakeup[c]).length;
       const n = open - thisWeek;
       if (n > 0 && !M.shown.has('makeups')) rows.push(alertRow({ tone: 'p', ic: 'history', title: n === 1 ? t('home.myMakeups1') : t('home.myMakeups', { n }), desc: t('home.myMakeupsHint'), href: '#/calendar', testid: 'alert-makeups' }));
     }
@@ -359,7 +361,7 @@ function widgetChecklist(ctx, M) {
       onclick: async () => { try { await tickTask(ctx, row.sunday, x, !isDone); haptic(ctx.prefs.haptics, 8); } catch { ctx.toast(t('error')); } } },
     h('span', { class: 'checkcircle' + (isDone ? ' on' : '') }, icon('check')),
     h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text),
-      h('div', { class: 'd hm-taskmeta' }, chip('', t('chore.' + x.chore), IC[x.chore]),
+      h('div', { class: 'd hm-taskmeta' }, chip('', cName(ctx, x.chore), cIcon(ctx, x.chore)),
         owner && owner !== me ? h('span', { class: 'hm-person' }, avatar(ctx.name(owner), ctx.color(owner), 'sm'), h('span', { class: 'hm-ell' }, ctx.name(owner))) : null,
         x.reason === 'arrears' && !isDone ? h('span', { class: 'hm-arrears', 'data-testid': 'task-arrears' }, t(owner === me ? 'flow.arrearsMine' : 'flow.arrearsOther', { date: fmtDate(x.since), name: ctx.name(owner) }))
           : x.status === 'overdue' ? chip('warn', t('tasks.overdue', { date: fmtDate(x.since) }), 'clock') : null,
@@ -430,7 +432,7 @@ function widgetQuick(ctx, M) {
   if (ctx.feature('requests') && M.row && ctx.me) btns.push(q('swap', t('home.swapTurn'), () => {
     const c = M.mine.find((x) => !M.row.res[x].kind) ?? M.mine[0];
     if (c === undefined) return ctx.nav('requests');
-    return lazy(ctx, () => import('../choresheet.js'), (m) => m.openSwapRequestSheet(ctx, M.row.sunday, CHORES[c]));
+    return lazy(ctx, () => import('../choresheet.js'), (m) => m.openSwapRequestSheet(ctx, M.row.sunday, M.ids[c]));
   }, 'swap'));
   if (!btns.length) return null;
   return h('section', { class: 'hm-w', 'data-widget': 'quick' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.quick'))), h('div', { class: 'hm-quick' }, btns));
@@ -471,7 +473,7 @@ function widgetUpcoming(ctx, M) {
   if (!rows.length) return null;
   const items = rows.map((r) => h('button', { class: 'li hm-up', type: 'button', 'data-week': r.sunday, onclick: () => openWeek(ctx, r.sunday) },
     h('div', { class: 'grow' }, h('div', { class: 'hm-uphead' }, h('b', null, fmtWeekRange(r.sunday)), chip('', t('st.preview'))),
-      r.status === 'empty' ? h('div', { class: 'd' }, t('st.empty')) : h('div', { class: 'hm-upturns' }, [0, 1, 2].map((c) => h('span', { class: 'hm-upturn' }, h('span', { class: 'hm-minitile ' + CHORES[c] }, icon(IC[CHORES[c]])), h('span', { class: 'hm-ell' + (r.assigned[c] ? '' : ' muted') }, r.assigned[c] ? ctx.name(r.assigned[c]) : '–'))))),
+      r.status === 'empty' ? h('div', { class: 'd' }, t('st.empty')) : h('div', { class: 'hm-upturns' }, cIdx(r).map((c) => h('span', { class: 'hm-upturn' }, h('span', { class: 'hm-minitile ' + cCls(ctx, M.ids[c]) }, icon(cIcon(ctx, M.ids[c]))), h('span', { class: 'hm-ell' + (r.assigned[c] ? '' : ' muted') }, r.assigned[c] ? ctx.name(r.assigned[c]) : '–'))))),
     h('div', { class: 'end' }, icon('chevron'))));
   return h('section', { class: 'hm-w', 'data-widget': 'upcoming' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.upcoming')), h('a', { href: '#/calendar' }, t('home.seeAll'))), h('div', { class: 'list' }, items));
 }
@@ -482,8 +484,10 @@ function widgetMakeups(ctx, M) {
   const ppl = M.out.summary.people.map((p) => ({ p, mk: p.makeups.map((v) => Math.max(0, v)), rests: Math.max(0, p.rests) })).filter((x) => x.mk.some(Boolean) || x.rests);
   if (!ppl.length) return null;
   const num = (v) => h('td', null, v ? h('span', { class: 'hm-num on' }, v) : h('span', { class: 'hm-num' }, '·'));
-  const head = h('tr', null, h('th', { class: 'l' }, t('misc.person')), [0, 1, 2].map((c) => h('th', { 'aria-label': t('chore.' + CHORES[c]), title: t('chore.' + CHORES[c]) }, h('span', { class: 'hm-minitile ' + CHORES[c] }, icon(IC[CHORES[c]])))), h('th', { 'aria-label': t('stats.openRests'), title: t('stats.openRests') }, h('span', { class: 'hm-minitile rest' }, icon('moon'))));
-  const body = ppl.map(({ p, mk, rests }) => h('tr', null, h('td', { class: 'l' }, h('span', { class: 'hm-person' }, avatar(p.name, ctx.color(p.id), 'sm'), h('span', { class: 'hm-ell' }, p.name))), mk.map(num), num(rests)));
+  // solo le colonne delle mansioni con qualche recupero aperto (con 5+ mansioni la tabella resta stretta)
+  const cols = M.ids.map((_, c) => c).filter((c) => ppl.some((x) => x.mk[c]));
+  const head = h('tr', null, h('th', { class: 'l' }, t('misc.person')), cols.map((c) => h('th', { 'aria-label': cName(ctx, M.ids[c]), title: cName(ctx, M.ids[c]) }, h('span', { class: 'hm-minitile ' + cCls(ctx, M.ids[c]) }, icon(cIcon(ctx, M.ids[c]))))), h('th', { 'aria-label': t('stats.openRests'), title: t('stats.openRests') }, h('span', { class: 'hm-minitile rest' }, icon('moon'))));
+  const body = ppl.map(({ p, mk, rests }) => h('tr', null, h('td', { class: 'l' }, h('span', { class: 'hm-person' }, avatar(p.name, ctx.color(p.id), 'sm'), h('span', { class: 'hm-ell' }, p.name))), cols.map((c) => num(mk[c])), num(rests)));
   return h('section', { class: 'hm-w', 'data-widget': 'makeups' }, h('div', { class: 'eyebrow' }, h('span', null, t('home.makeups'))), h('div', { class: 'card hm-tablecard' }, h('table', { class: 'hm-table' }, h('thead', null, head), h('tbody', null, body)), h('p', { class: 'small muted hm-explain', 'data-testid': 'makeups-explain' }, t('uxa.makeupsExplain'))));
 }
 

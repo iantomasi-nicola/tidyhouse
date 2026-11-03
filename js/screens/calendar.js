@@ -4,7 +4,7 @@
 // Deep link: #/calendar?week=YYYY-MM-DD (qualsiasi giorno della settimana) apre il mese giusto, scorre fin lì e apre la scheda.
 import { h, icon, avatar, loadCss, cssReady } from '../ui.js';
 import { fmtWeekRange, fmtDate, dowLong, registerStrings } from '../i18n.js';
-import { CHORES } from '../engine.js';
+import { cIds, cName, cShort, cCls, cIdx } from '../choreui.js';
 import { planOf } from '../extras.js';
 import { openWeekSheet, renderWeekDetail, weekStatus, outcomeOf, flowChips } from '../choresheet.js';
 import { it as itV, en as enV } from '../strings/calview.js';
@@ -81,7 +81,10 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
   const empty = row.status === 'empty' || row.status === 'none';
 
   const flows = [];
-  const chores = CHORES.map((chore, c) => {
+  const ids = cIds(ctx, row);
+  const vis = cIdx(row);
+  const chores = vis.map((c) => {
+    const chore = ids[c];
     const id = row.assigned[c];
     const oc = outcomeOf(ctx, row, c);
     const plan = planOf(house, row.sunday, chore);
@@ -92,9 +95,9 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
     if (id && plan) inds.push(h('span', { class: 'ind plan', title: ctx.t('cal.chosenDay', { day: `${dowLong(plan, ctx.lang)} ${fmtDate(plan, ctx.lang)}` }) }, ctx.t('dow.' + dowIdx(plan))));
     const fl = id ? flowChips(ctx, row.sunday, chore) : [];
     for (const f of fl) inds.push(h('span', { class: 'ind ' + f.tone, title: f.text, 'aria-label': f.text, 'data-flow': f.key }, icon(f.ic)));
-    flows.push(...fl.filter((f) => f.key === 'incomplete').map((f) => ctx.t('chore.' + chore)));
+    flows.push(...fl.filter((f) => f.key === 'incomplete').map(() => cName(ctx, chore)));
     return h('span', { class: 'wk-chore', 'data-chore': chore },
-      h('span', { class: 'l' }, h('i', { class: 'dot ' + chore }), ctx.t('chore.' + chore + '.short')),
+      h('span', { class: 'l' }, h('i', { class: 'dot ' + cCls(ctx, chore) }), h('span', { class: 'lt' }, cShort(ctx, chore))),
       h('span', { class: 'm' }, id ? avatar(ctx.name(id), ctx.color(id), 'sm') : h('span', { class: 'av sm cs-none' }, '–'), h('span', { class: 'inds' }, inds)),
       h('span', { class: 'n' + (id ? '' : ' none') }, id ? ctx.name(id) : (empty ? '' : ctx.t('chore.noOne'))));
   });
@@ -114,7 +117,7 @@ function weekCard(ctx, row, { wide, selectedSunday }) {
     h('span', { class: 'grow' }, h('span', { class: 'wk-title' }, range), h('span', { class: 'wk-sub' }, row.isCur ? ctx.t('cal.current') + ' · ' : '', ctx.t('cal.week', { n: row.P }))),
     wkDoc.note ? h('span', { class: 'ind note', title: ctx.t('cal.hasNote') }, icon('edit')) : null,
     h('span', { class: 'chip ' + stat.tone }, stat.label)),
-  h('span', { class: 'wk-chores' }, chores),
+  h('span', { class: 'wk-chores' + (vis.length === 4 ? ' n4' : '') }, chores),
   foot.length ? h('span', { class: 'wk-foot' }, foot) : null);
 }
 
@@ -125,13 +128,16 @@ function weekRow(ctx, row, { wide, selectedSunday }) {
   const range = fmtWeekRange(row.sunday, ctx.lang);
   const empty = row.status === 'empty' || row.status === 'none';
   const incomplete = [];
-  const cells = CHORES.map((chore, c) => {
+  const ids = cIds(ctx, row);
+  const vis = cIdx(row);
+  const cells = vis.map((c) => {
+    const chore = ids[c];
     const id = row.assigned[c];
     const oc = outcomeOf(ctx, row, c);
     const fl = id ? flowChips(ctx, row.sunday, chore) : [];
-    if (fl.some((f) => f.key === 'incomplete')) incomplete.push(ctx.t('chore.' + chore));
+    if (fl.some((f) => f.key === 'incomplete')) incomplete.push(cName(ctx, chore));
     return h('span', { class: 'wk-mc', 'data-chore': chore },
-      h('i', { class: 'dot ' + chore }),
+      h('i', { class: 'dot ' + cCls(ctx, chore), title: cName(ctx, chore) }),
       h('span', { class: 'n' + (id ? '' : ' none') }, id ? ctx.name(id) : (empty ? '' : ctx.t('chore.noOne'))),
       oc ? h('span', { class: 'ind ' + oc.tone, title: oc.label }, icon(oc.ic)) : (id && row.isMakeup[c] ? h('span', { class: 'ind acc', title: ctx.t('st.makeup') }, icon('refresh')) : null),
       id && row.swapped[c] ? h('span', { class: 'ind acc', title: ctx.t('st.swapped') }, icon('swap')) : null,
@@ -147,7 +153,7 @@ function weekRow(ctx, row, { wide, selectedSunday }) {
     onclick: () => openOrSelect(ctx, row.sunday),
   },
   h('span', { class: 'wk-head' }, h('span', { class: 'grow' }, h('span', { class: 'wk-title' }, range)), extra, h('span', { class: 'chip ' + stat.tone }, stat.label)),
-  h('span', { class: 'wk-minis' }, cells));
+  h('span', { class: 'wk-minis' + (vis.length === 4 ? ' n4' : '') }, cells));
 }
 
 /** Gruppo di un mese passato: intestazione richiudibile (aria-expanded) + corpo creato solo quando è aperto. */

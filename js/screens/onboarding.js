@@ -5,12 +5,12 @@ import { t, getLang, fmtDate, fmtWeekRange, registerStrings } from '../i18n.js';
 import { normalizeStartSunday } from '../actions.js';
 import { it, en } from '../strings/onb.js';
 import { normCode, fmtCode, colorOf, PALETTE } from '../extras.js';
-import { todayStr, dayNum } from '../engine.js';
+import { todayStr, dayNum, MAX_SLOTS } from '../engine.js';
 
 registerStrings(it, en);
 
 const README = 'https://github.com/iantomasi-nicola/tidyhouse#readme';
-const MAX_PEOPLE = 4;
+const MAX_PEOPLE = MAX_SLOTS;   // fino a 8 persone in turno (js/engine.js)
 const MIN_PIN = 4;
 
 // ---------------------------------------------------------------- utilità

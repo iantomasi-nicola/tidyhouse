@@ -2,7 +2,7 @@
 import { h, icon, loadCss, avatar, empty, copyText } from '../ui.js';
 import { t, registerStrings, fmtWeekRange } from '../i18n.js';
 import { buildStats, rankingText, DEFAULT_TASK_PENALTY } from '../extras.js';
-import { CHORES } from '../engine.js';
+import { cIds, cName, cIcon, cCls, cSeg, cActive } from '../choreui.js';
 import { it, en } from '../strings/stats.js';
 import { it as it2, en as en2 } from '../strings/more2.js';
 import { it as itBdg, en as enBdg } from '../strings/badge.js';
@@ -11,7 +11,6 @@ registerStrings(itBdg, enBdg);
 registerStrings(it2, en2);   // moreY.pen.* (penalità checklist)
 
 const SVGNS = 'http://www.w3.org/2000/svg';
-const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 const SPARK_WEEKS = 12;
 
 // stato effimero (sopravvive ai rerender)
@@ -38,8 +37,13 @@ function niceScale(max) {
   for (const step of [1, 2, 5, 10, 20, 50, 100, 200, 500]) if (max / step <= 4) return { top: Math.ceil(max / step) * step, step };
   return { top: Math.ceil(max / 1000) * 1000, step: 250 };
 }
-const choreName = (c) => t('chore.' + c);
-const monthLabel = (m) => { const [y, mo] = m.split('-').map(Number); return `${t('monl.' + (mo - 1))} ${y}`; };
+const choreName = (c) => cName(curHouse, c);
+let curHouse = {};   // casa del render in corso (nomi/colori delle mansioni)
+/** Indici delle mansioni da mostrare: quelle in turno e quelle tolte che hanno ancora pulizie nella finestra. */
+function shownChores(ctx, st, ids) {
+  const act = new Set(cActive(ctx, ctx.today()));
+  return ids.map((id, c) => [id, c]).filter(([id, c]) => act.has(id) || st.people.some((p) => (p.cleaned[c] || 0) > 0 || (p.makeups[c] || 0) > 0));
+}const monthLabel = (m) => { const [y, mo] = m.split('-').map(Number); return `${t('monl.' + (mo - 1))} ${y}`; };
 
 // ---------------------------------------------------------------- dati derivati
 function scoreView(ctx, st, mode, showRank) {
@@ -63,7 +67,7 @@ function weeklySeries(out, st, ids) {
   for (const id of ids) {
     series[id] = rows.map((r) => {
       const slot = r.nm.indexOf(id);
-      const v = CHORES.reduce((a, _c, c) => a + (r.cleaner[c] === id ? 1 : 0), 0);
+      const v = r.cleaner.reduce((a, x) => a + (x === id ? 1 : 0), 0);
       const skip = r.sk.some((x) => x === id);
       const away = slot < 0 || (r.pr[slot] === 0 && v === 0 && !skip);
       return { v: away ? null : v, skip, sunday: r.sunday, away };
@@ -80,8 +84,11 @@ export async function render(ctx) {
   const house = ctx.house;
   const { eh, out } = ctx.calc;
   const st = buildStats(eh, out);
+  curHouse = house;
+  const ids = Array.isArray(out.chores) ? out.chores.map((c) => c.id) : cIds(ctx);
+  st.shown = shownChores(ctx, st, ids);
   const defMode = (house.settings || {}).rankBy === 'effort' ? 'effort' : 'turns';
-  const effNon1 = ['floor', 'bathroom', 'kitchen'].some((k) => st.effort[k] !== 1);
+  const effNon1 = ids.some((k) => Number(st.effort[k] ?? 1) !== 1);
   const canSwitch = effNon1 || defMode === 'effort';
   const mode = canSwitch ? (modeOverride || defMode) : 'turns';
 
@@ -116,13 +123,13 @@ function rankingCard(ctx, st, view, mode, canSwitch, showStats, showRank) {
         ['turns', 'effort'].map((m) => h('button', { type: 'button', 'data-mode': m, 'aria-pressed': String(mode === m), onclick: () => { modeOverride = m; ctx.rerender(); } }, t(m === 'turns' ? 'stats.byTurns' : 'stats.byEffort')))) : null,
       h('button', { class: 'btn soft sm', type: 'button', id: 'stats-share', onclick: () => openShare(ctx, st, view, showRank) }, icon('share'), t('stats.share'))));
   const card = h('div', { class: 'card rank-card' }, head);
-  if (mode === 'effort') card.append(h('p', { class: 'small muted' }, t('stats.effortHint', { f: st.effort.floor, b: st.effort.bathroom, k: st.effort.kitchen })), h('p', { class: 'small muted mx-pen', 'data-testid': 'pen-rule' }, t('moreY.pen.rule', { pts: penPts(ctx, ctx.house) })));
+  if (mode === 'effort') card.append(h('p', { class: 'small muted' }, t('stats.effortHintN', { list: st.shown.map(([id]) => `${choreName(id)} ${st.effort[id] ?? 1}`).join(', ') })), h('p', { class: 'small muted mx-pen', 'data-testid': 'pen-rule' }, t('moreY.pen.rule', { pts: penPts(ctx, ctx.house) })));
   // il podio ripete i primi tre della lista: lo si mostra solo se serve a distinguerli (a pari merito non dice nulla)
   if (people.length >= 3 && max > 0 && new Set(people.slice(0, 3).map((p) => p.pos)).size > 1) card.append(podium(ctx, people.slice(0, 3), unit));
   const list = h('ol', { class: 'rank-list' });
   for (const p of people) {
     const pct = max > 0 ? Math.max(p.score > 0 ? 4 : 0, Math.round((100 * p.score) / max)) : 0;
-    const dots = CHORES.map((c, i) => h('span', { class: 'rk-chore' }, h('i', { class: 'dot ' + c }), h('span', { class: 'sr' }, choreName(c) + ' '), p.cleaned[i]));
+    const dots = st.shown.map(([c, i]) => h('span', { class: 'rk-chore' }, h('i', { class: 'dot ' + cCls(ctx, c) }), h('span', { class: 'sr' }, choreName(c) + ' '), p.cleaned[i] || 0));
     const main = h('div', { class: 'rk-main' },
       h('div', { class: 'rk-top' }, avatar(p.name, ctx.color(p.id), 'sm'), h('span', { class: 'rk-name' }, p.name), p.id === ctx.me ? h('span', { class: 'chip acc' }, t('misc.you')) : null,
         p.tr ? h('span', { class: 'chip warn', title: t('stats.tr'), 'aria-label': t('stats.aria.rowTr') }, icon('crown'), 'TR') : null,
@@ -195,36 +202,36 @@ const legendItem = (cls, label) => h('span', { class: 'lgd' }, h('i', { class: '
 function chartsSection(ctx, st, view, out) {
   return h('section', { class: 'stats-sec', 'aria-labelledby': 'charts-h' },
     h('h2', { class: 'eyebrow', id: 'charts-h' }, t('stats.charts')),
-    h('div', { class: 'stack' }, choreChart(ctx, view), monthlyChart(st), sparkChart(ctx, st, view, out)));
+    h('div', { class: 'stack' }, choreChart(ctx, view, st), monthlyChart(st), sparkChart(ctx, st, view, out)));
 }
 
-function choreChart(ctx, view) {
+function choreChart(ctx, view, st) {
   const people = view.people;
   const W = 360, rowH = 34, labelW = 78, valW = 34, thick = 16, gap = 2;
   const barW = W - labelW - valW;
   const maxT = Math.max(1, ...people.map((p) => p.cleanedTotal));
   const scale = barW / maxT;
   const H = people.length * rowH + 4;
-  const desc = people.map((p) => `${p.name}: ${CHORES.map((c, i) => `${choreName(c)} ${p.cleaned[i]}`).join(', ')}`).join('. ');
+  const desc = people.map((p) => `${p.name}: ${st.shown.map(([c, i]) => `${choreName(c)} ${p.cleaned[i] || 0}`).join(', ')}`).join('. ');
   const svg = S('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('stats.aria.byChore', { list: desc }), 'data-chart': 'chore' });
   people.forEach((p, r) => {
     const y = r * rowH + (rowH - thick) / 2 + 2;
     svg.append(S('text', { x: 0, y: y + thick / 2, dy: '.35em', class: 'ax-name' }, clip(p.name, 11)));
-    const segs = CHORES.map((c, i) => ({ c, v: p.cleaned[i] })).filter((s) => s.v > 0);
+    const segs = st.shown.map(([c, i]) => ({ c, v: p.cleaned[i] || 0 })).filter((s) => s.v > 0);
     let x = labelW;
     segs.forEach((s, k) => {
       const full = s.v * scale; const last = k === segs.length - 1;
       const w = last ? full : Math.max(1, full - gap);
       const rad = last ? Math.min(4, w / 2) : 0;
-      svg.append(S('path', { d: rr(x, y, w, thick, [0, rad, rad, 0]), class: 'seg-' + s.c }, S('title', null, t('stats.chartChore', { name: p.name, chore: choreName(s.c), n: s.v }))));
+      svg.append(S('path', { d: rr(x, y, w, thick, [0, rad, rad, 0]), class: cSeg(ctx, s.c) }, S('title', null, t('stats.chartChore', { name: p.name, chore: choreName(s.c), n: s.v }))));
       if (w >= 20) svg.append(S('text', { x: x + w / 2, y: y + thick / 2, dy: '.35em', class: 'seg-txt', 'text-anchor': 'middle' }, s.v));
       x += full;
     });
     svg.append(S('text', { x: Math.max(x, labelW) + 6, y: y + thick / 2, dy: '.35em', class: 'val-txt' }, p.cleanedTotal));
   });
-  const table = dataTable([t('stats.person'), ...CHORES.map(choreName), t('stats.col.total')], people.map((p) => [p.name, ...p.cleaned, p.cleanedTotal]));
+  const table = dataTable([t('stats.person'), ...st.shown.map(([c]) => choreName(c)), t('stats.col.total')], people.map((p) => [p.name, ...st.shown.map(([, i]) => p.cleaned[i] || 0), p.cleanedTotal]));
   return h('div', { class: 'card chart-card', 'data-card': 'chore' }, h('h3', { class: 'chart-title' }, t('stats.byChore')),
-    h('div', { class: 'legend' }, CHORES.map((c) => legendItem('seg-' + c, choreName(c)))), svg, table);
+    h('div', { class: 'legend' }, st.shown.map(([c]) => legendItem(cSeg(ctx, c), choreName(c)))), svg, table);
 }
 
 function monthlyChart(st) {
@@ -309,11 +316,11 @@ function openPerson(ctx, st, p) {
   const penNote = h('div', { class: 'stack tight', 'data-testid': 'pen-detail' },
     p.penalties > 0 ? h('div', { class: 'note warn' }, icon('alert'), t('moreY.pen.line', { n: p.penalties, pts: fmtPts(ctx, p.penaltyPoints) })) : null,
     h('p', { class: 'small muted' }, t('moreY.pen.rule', { pts: penPts(ctx, ctx.house) })));
-  const mkList = h('ul', { class: 'pd-chores' }, CHORES.map((c, i) => {
+  const mkList = h('ul', { class: 'pd-chores' }, st.shown.map(([c, i]) => {
     const open = Math.max(0, p.makeups[i] || 0);
     return h('li', { class: 'pd-chore', 'data-chore': c },
-      h('span', { class: 'tile ' + c }, icon(CHORE_ICON[c])),
-      h('div', { class: 'grow' }, h('div', { class: 'pd-cn' }, choreName(c)), h('div', { class: 'small muted' }, t('stats.cleanedBy') + ': ' + p.cleaned[i])),
+      h('span', { class: 'tile ' + cCls(ctx, c) }, icon(cIcon(ctx, c))),
+      h('div', { class: 'grow' }, h('div', { class: 'pd-cn' }, choreName(c)), h('div', { class: 'small muted' }, t('stats.cleanedBy') + ': ' + (p.cleaned[i] || 0))),
       h('span', { class: 'chip ' + (open ? 'warn' : 'ok') }, open ? t('stats.makeupN', { n: open }) : t('stats.noMakeups')));
   }));
   // admin: toglie (o rimette) il badge TR / CDM a questa persona
