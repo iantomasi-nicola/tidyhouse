@@ -839,7 +839,8 @@ function editorCard(ctx) {
   paint();
   if (focusEd) {
     focusEd = false; let tries = 0;
-    const go = () => { try { if (document.contains(textI)) { textI.focus(); root.scrollIntoView({ block: 'nearest' }); } else if (++tries < 6) setTimeout(go, 120); } catch { /* ignore */ } };
+    let touched = false; root.addEventListener('pointerdown', () => { touched = true; });   // se l'utente ha già toccato altro, non rubo il focus
+    const go = () => { try { if (touched) return; if (document.contains(textI)) { textI.focus(); root.scrollIntoView({ block: 'nearest' }); } else if (++tries < 6) setTimeout(go, 120); } catch { /* ignore */ } };
     setTimeout(go, 120);
   }
   return root;

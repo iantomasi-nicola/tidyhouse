@@ -369,7 +369,7 @@ await scenario('tasks: extra delle mansioni per scadenza, anteprima somma, inter
   await wait(page, 500);
   await page.locator('[data-testid=task-tick-f1]').click();
   await page.waitForFunction(() => ((window.__app.state.weeks['2026-11-01'] || {}).tasksDone || {}).f1);
-  assert.match(await page.locator('[data-task=f1]').innerText(), /Fatto da Anna/);
+  await page.waitForFunction(() => /Fatto da Anna/.test(document.querySelector('[data-task=f1]').innerText));
   await page.locator('[data-testid=task-tick-f1]').click();
   await page.waitForFunction(() => !((window.__app.state.weeks['2026-11-01'] || {}).tasksDone || {}).f1);
   await noOverflow(page, 'tasks'); await noRawKeys(page, 'tasks');
