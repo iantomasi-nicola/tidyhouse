@@ -1,5 +1,5 @@
 // Logica applicativa pura (nessun DOM/rete): usata dall'app, dallo script notifiche e dai test.
-import { CHORES, compute, dayNum, dayStr, addDays, weekEnd, parseResult, awayFromTrips } from './engine.js';
+import { CHORES, DEFAULT_CHORES, choresOf, compute, dayNum, dayStr, addDays, weekEnd, parseResult, awayFromTrips } from './engine.js';
 import { tr, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
 
 export const DEFAULT_FEATURES = {
@@ -26,7 +26,37 @@ export const DEFAULT_HOME = { order: [...HOME_WIDGETS], hidden: ['makeups', 'nee
 export const PALETTE = ['#1a73e8', '#00796b', '#188038', '#e37400', '#d93025', '#c2185b', '#5f6368', '#00838f']; // Material: blu Google, teal, verde, arancio, rosso, rosa, grigio ardesia, ciano
 
 export const feature = (house, k) => ((house.features || {})[k] ?? DEFAULT_FEATURES[k]) !== false;
-export const effortOf = (house) => ({ ...DEFAULT_EFFORT, ...(house.effort || {}) });
+/** Fatica per mansione: { choreId: punti } (tutte le mansioni di choresOf(house); house.effort vale per le predefinite). */
+export const effortOf = (house) => ({ ...DEFAULT_EFFORT, ...(house.effort || {}), ...Object.fromEntries(choresOf(house).map((c) => [c.id, c.effort])) });
+
+// ============ Mansioni: nomi e icone ============
+/** Id delle mansioni della casa, nell'ordine del motore (= ordine di row.assigned, row.res, …). */
+export const choreIds = (house) => choresOf(house).map((c) => c.id);
+/** Indice di una mansione negli array per mansione del motore (-1 se non esiste). */
+export const choreIndex = (house, id) => choreIds(house).indexOf(id);
+const sameName = (a, b) => !!a && !!b && typeof a === 'object' && a.it === b.it && a.en === b.en;
+/** La mansione predefinita ha ancora il nome di serie (allora si usano le stringhe tradotte `chore.<id>`). */
+export function choreRenamed(house, id) {
+  const c = choresOf(house).find((x) => x.id === id); const def = DEFAULT_CHORES.find((d) => d.id === id);
+  return !!c && !(def && (!c.name || c.name === def.name || sameName(c.name, def.name)));
+}
+/** Nome visibile di una mansione nella lingua `lang` (predefinite: stringhe `chore.<id>`; nuove: name string oppure {it,en}). */
+export function choreName(house, id, lang = 'it') {
+  const c = choresOf(house || {}).find((x) => x.id === id);
+  if (!c) return DEFAULT_CHORES.some((d) => d.id === id) ? tr(lang, 'chore.' + id) : (id ? tr(lang, 'chore.unknown') : '');
+  if (!choreRenamed(house || {}, id) && c.builtin) return tr(lang, 'chore.' + id);
+  const n = c.name;
+  if (typeof n === 'string') return n.trim() || id;
+  return String((n && (n[lang] || n.it || n.en || Object.values(n).find(Boolean))) || id);
+}
+/** Nome dell'icona (js/ui.js `icon()`) di una mansione: predefinite broom/shower/pot, nuove quella scelta (o 'dot'). */
+export function choreIcon(house, id) {
+  const c = choresOf(house || {}).find((x) => x.id === id);
+  if (c) return c.icon || 'dot';
+  const def = DEFAULT_CHORES.find((d) => d.id === id); return def ? def.icon : 'dot';
+}
+/** Nuovo id per una mansione aggiunta dall'admin: `c_<random>`. */
+export const newChoreId = () => 'c_' + randomCode(8).toLowerCase();
 export const notifCfg = (house) => deepMerge(DEFAULT_NOTIF, house.notif || {});
 export const personById = (house, id) => (house.roommates || []).find((r) => r.id === id);
 export const nameOf = (house, id) => (personById(house, id) || {}).name || (id ? '?' : '');
@@ -149,10 +179,10 @@ export function checklistOwners(house, out, weeks, sunday) {
   const idx = weekIndex(house, sunday); const row = out.rows[idx];
   if (!row) return [];
   return tasksForWeek(eh, weeks, sunday).map((it) => {
-    const c = CHORES.indexOf(it.chore); const cur = row.assigned[c];
+    const c = (row.chores || CHORES).indexOf(it.chore); const cur = c >= 0 ? row.assigned[c] || '' : '';
     let owner = cur, reason = 'assignee', handedFrom = '';
     if (it.status === 'overdue') {
-      const prevRow = out.rows[weekIndex(house, it.since)]; const prev = prevRow && prevRow.assigned[c];
+      const prevRow = out.rows[weekIndex(house, it.since)]; const prev = prevRow && c >= 0 && prevRow.assigned[c];
       if (prev && prev !== cur) { const slot = row.nm.indexOf(prev); if (slot >= 0 && row.pr[slot] === 1) { owner = prev; reason = 'arrears'; } else if (slot >= 0) handedFrom = prev; /* assente: passa ad altri */ }
     }
     return { ...it, owner, reason, handedFrom };
@@ -223,11 +253,13 @@ export const LASTOUT_DEFAULT_KEYS = ['lastout.i1', 'lastout.i2', 'lastout.i3', '
 export function buildStats(house, out) {
   const { rows, cur, summary, settings } = out;
   const eff = effortOf(house);
+  const ids = out.chores ? out.chores.map((c) => c.id) : choreIds(house);
+  const M = ids.length; const zeros = () => ids.map(() => 0);
   const fromP = summary.from || 1;
   const J = cur < 0 ? 0 : cur + 1;
   const ids = (cur >= 0 ? rows[cur].nm : []).filter(Boolean);
   const people = ids.map((id) => ({
-    id, name: nameOf(house, id), assigned: [0, 0, 0], cleaned: [0, 0, 0], ownDone: 0, ownAssigned: 0, skipped: 0, covers: 0, covered: 0,
+    id, name: nameOf(house, id), assigned: zeros(), cleaned: zeros(), ownDone: 0, ownAssigned: 0, skipped: 0, covers: 0, covered: 0,
     weeksActive: 0, weeksHome: 0, effort: 0, streak: 0, bestStreak: 0, onTime: 0, onTimeBase: 0, restsUsed: 0,
   }));
   const by = Object.fromEntries(people.map((p) => [p.id, p]));
@@ -253,16 +285,16 @@ export function buildStats(house, out) {
     if (r.restName && by[r.restName] && r.ru) by[r.restName].restsUsed++;
     const wkDoc = (house.weeks || {})[r.sunday] || {};
     const failed = new Set();
-    for (let c = 0; c < 3; c++) {
+    for (let c = 0; c < M; c++) {
       const a = r.assigned[c];
       if (!a) continue;
       const cl = r.cleaner[c];
       if (by[a]) { by[a].assigned[c]++; by[a].ownAssigned++; if (cl === a) by[a].ownDone++; }
-      if (cl && by[cl]) { by[cl].cleaned[c]++; by[cl].effort += eff[CHORES[c]]; }
+      if (cl && by[cl]) { by[cl].cleaned[c]++; by[cl].effort += Number(eff[ids[c]]) || 0; }
       if (cl && cl !== a) { if (by[cl]) by[cl].covers++; if (by[a]) by[a].covered++; }
       if (r.sk[c] && by[r.sk[c]]) { by[r.sk[c]].skipped++; failed.add(r.sk[c]); }
       monthly.get(m)[cl ? 'done' : 'skipped']++;
-      const at = (wkDoc.resultAt || {})[CHORES[c]];
+      const at = (wkDoc.resultAt || {})[ids[c]];
       if (cl === a && at && by[a]) { by[a].onTimeBase++; if (at.slice(0, 10) <= addDays(r.sunday, 0)) by[a].onTime++; }
     }
     for (const p of people) {
@@ -285,10 +317,10 @@ export function buildStats(house, out) {
   const sumP = Object.fromEntries(summary.people.map((p) => [p.id, p]));
   const byEffort = (house.settings || {}).rankBy === 'effort';
   for (const p of people) {
-    p.cleanedTotal = p.cleaned[0] + p.cleaned[1] + p.cleaned[2];
+    p.cleanedTotal = p.cleaned.reduce((a, b) => a + b, 0);
     p.rate = p.ownAssigned ? Math.round((100 * p.ownDone) / p.ownAssigned) : null;
     p.tr = !!(sumP[p.id] && sumP[p.id].tr); p.cdm = !!(sumP[p.id] && sumP[p.id].cdm);
-    p.makeups = sumP[p.id] ? sumP[p.id].makeups : [0, 0, 0];
+    p.makeups = sumP[p.id] ? sumP[p.id].makeups : zeros();
     p.rests = sumP[p.id] ? sumP[p.id].rests : 0;
     p.presence = p.weeksActive ? Math.round((100 * p.weeksHome) / p.weeksActive) : null;
     p.onTimeRate = p.onTimeBase ? Math.round((100 * p.onTime) / p.onTimeBase) : null;
@@ -318,15 +350,16 @@ export function whatsappText(house, out, sunday, opts = {}, lang = 'it', weeks =
   const lines = [T('wa.header', { range: fmtWeekRange(sunday, lang) })];
   const who = (id) => (id ? nameOf(house, id) : T('wa.nobody'));
   const mk = (c) => (r.isMakeup[c] ? ` (${T('st.makeup').toLowerCase()})` : '');
-  CHORES.forEach((c, i) => lines.push(T('wa.' + c, { who: who(r.assigned[i]) + mk(i) })));
+  const ids = r.chores || CHORES;
+  ids.forEach((c, i) => { if (r.active && !r.active[i]) return; const w = who(r.assigned[i]) + mk(i); lines.push(!choreRenamed(house, c) && CHORES.includes(c) ? T('wa.' + c, { who: w }) : T('wa.chore', { chore: choreName(house, c, lang), who: w })); });
   if (r.rest.length) lines.push(T('wa.rest', { who: r.rest.map((id) => nameOf(house, id)).join(', ') }));
   if (opts.away !== false && r.away.length) lines.push(T('wa.away', { who: r.away.map((id) => nameOf(house, id)).join(', ') }));
   if (opts.plan !== false && feature(house, 'planDay')) {
-    CHORES.forEach((c, i) => { const d = planOf({ ...house, weeks }, sunday, c); if (d && r.assigned[i]) lines.push(T('wa.plan', { who: who(r.assigned[i]), day: `${dowLong(d, lang)} ${fmtDate(d, lang)}` })); });
+    ids.forEach((c, i) => { const d = planOf({ ...house, weeks }, sunday, c); if (d && r.assigned[i]) lines.push(T('wa.plan', { who: who(r.assigned[i]), day: `${dowLong(d, lang)} ${fmtDate(d, lang)}` })); });
   }
   if (opts.tasks !== false && feature(house, 'tasks')) {
     const due = tasksForWeek(house, weeks, sunday).filter((x) => x.status !== 'done');
-    if (due.length) lines.push(T('wa.tasks', { what: due.map((x) => `${x.task.text} (${nameOf(house, r.assigned[CHORES.indexOf(x.chore)])})`).join('; ') }));
+    if (due.length) lines.push(T('wa.tasks', { what: due.map((x) => `${x.task.text} (${nameOf(house, r.assigned[ids.indexOf(x.chore)])})`).join('; ') }));
   }
   if (opts.deadline !== false) lines.push(T('wa.deadline'));
   if (opts.link && opts.url) lines.push('', T('wa.link', { url: opts.url }));
@@ -351,14 +384,14 @@ export function makeIcs(house, out, personId, lang = 'it', weeks = {}, fromSunda
   const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Tidy House//IT', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
   const rows = out.rows.filter((r) => r.sunday >= fromSunday).slice(0, count);
   for (const r of rows) {
-    CHORES.forEach((c, i) => {
+    (r.chores || CHORES).forEach((c, i) => {
       if (r.assigned[i] !== personId) return;
       const day = planOf({ ...house, weeks }, r.sunday, c) || r.sunday;
       const next = addDays(day, 1);
       L.push('BEGIN:VEVENT', `UID:${r.sunday}-${c}-${personId}@tidyhouse`, `DTSTAMP:${icsDate(r.sunday)}T000000Z`,
         `DTSTART;VALUE=DATE:${icsDate(day)}`, `DTEND;VALUE=DATE:${icsDate(next)}`,
-        `SUMMARY:${icsEsc('🧹 ' + tr(lang, 'chore.' + c) + (r.isMakeup[i] ? ' (' + tr(lang, 'st.makeup') + ')' : ''))}`,
-        `DESCRIPTION:${icsEsc(house.name || '')}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(tr(lang, 'chore.' + c))}`, 'TRIGGER:-PT15H', 'END:VALARM', 'END:VEVENT');
+        `SUMMARY:${icsEsc('🧹 ' + choreName(house, c, lang) + (r.isMakeup[i] ? ' (' + tr(lang, 'st.makeup') + ')' : ''))}`,
+        `DESCRIPTION:${icsEsc(house.name || '')}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(choreName(house, c, lang))}`, 'TRIGGER:-PT15H', 'END:VALARM', 'END:VEVENT');
     });
   }
   L.push('END:VCALENDAR');
@@ -372,10 +405,14 @@ export function historyRows(house, out, lang = 'it', weeks = {}) {
     const p = parseResult(r.result[c]);
     return p.kind === 'done' ? 'Done' : p.kind === 'skipped' ? 'Skipped' : p.kind === 'by' ? N(p.id) : p.kind === 'skippedBy' ? `Skipped (${N(p.id)})` : '';
   };
+  // colonne per mansione: id per le predefinite (come prima), nome per le nuove (se il nome si ripete, l'id)
+  const ids = out.chores ? out.chores.map((c) => c.id) : choreIds(house);
+  const used = new Set(['week_ending', 'rest', 'away', 'status', 'note']);
+  const col = ids.map((id) => { let k = CHORES.includes(id) ? id : choreName(house, id, lang) || id; if (used.has(k) || used.has('result_' + k)) k = id; used.add(k); return k; });
   return out.rows.filter((r) => r.nAss > 0 || r.away.length || r.result.some(Boolean)).map((r) => ({
-    week_ending: r.sunday, floor: N(r.assigned[0]), bathroom: N(r.assigned[1]), kitchen: N(r.assigned[2]), rest: r.rest.map(N).join(', '),
-    away: r.away.map(N).join(', '), result_floor: res(r, 0), result_bathroom: res(r, 1), result_kitchen: res(r, 2),
-    makeup_floor: r.isMakeup[0] ? 1 : '', makeup_bathroom: r.isMakeup[1] ? 1 : '', makeup_kitchen: r.isMakeup[2] ? 1 : '',
+    week_ending: r.sunday, ...Object.fromEntries(col.map((k, c) => [k, N(r.assigned[c])])), rest: r.rest.map(N).join(', '),
+    away: r.away.map(N).join(', '), ...Object.fromEntries(col.map((k, c) => ['result_' + k, res(r, c)])),
+    ...Object.fromEntries(col.map((k, c) => ['makeup_' + k, r.isMakeup[c] ? 1 : ''])),
     status: r.status, note: ((weeks[r.sunday] || {}).note) || '',
   }));
 }
@@ -409,6 +446,7 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
   const today = lp.date;
   const h2 = { ...house, weeks };
   const out = compute(h2, today, 2);
+  const CH = out.chores.map((c) => c.id); const CI = CH.map((_, c) => c);
   const res = [];
   const catchUp = (cfg.catchUpHours || 5) * 60;
   const due = (dow, time) => (dow === undefined || lp.dow === dow) && lp.minutes >= hm(time) && lp.minutes - hm(time) <= catchUp;
@@ -417,7 +455,7 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
     const key = `${o.type}|${o.week}|${o.personId}|${today}|${o.slot ?? 0}`; if (sent.has(key) || res.some((x) => x.key === key)) return;
     // chi copre un turno concordato non è l'assegnato: «Segna fatto» dalla notifica non vale per lui (deve segnare «ha pulito»)
     const r = o.chores && o.chores.length ? byWeek.get(o.week) : null;
-    res.push({ ...o, ...(r && o.chores.some((ch) => r.assigned[CHORES.indexOf(ch)] !== o.personId) ? { agreed: true } : {}), key });
+    res.push({ ...o, ...(r && o.chores.some((ch) => r.assigned[CH.indexOf(ch)] !== o.personId) ? { agreed: true } : {}), key });
   };
   const cur = out.cur;
   if (cur < 0) return res;
@@ -425,10 +463,10 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
   const sunday = row.sunday;
   const pend = (r, c) => r.assigned[c] && !r.res[c].kind && !r.closed;      // ancora da segnare
   // giorno scelto dopo oggi (fino a martedì dopo la domenica) o ritardo annunciato: non è ancora in ritardo
-  const later = (r, c) => delayOf(h2, r.sunday, CHORES[c]) >= today || planOf(h2, r.sunday, CHORES[c]) > today;
-  const pendRow = (r) => [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind && !later(r, c));
+  const later = (r, c) => delayOf(h2, r.sunday, CH[c]) >= today || planOf(h2, r.sunday, CH[c]) > today;
+  const pendRow = (r) => CI.filter((c) => r.assigned[c] && !r.res[c].kind && !later(r, c));
   // turno concordato «con recupero» (weeks.agreed): i promemoria vanno a chi lo fa, non all'assegnato (che resta tale per il motore)
-  const doer = (r, c) => { const a = (((weeks || {})[r.sunday] || {}).agreed || {})[CHORES[c]]; return a && a !== r.assigned[c] && r.nm.includes(a) ? a : r.assigned[c]; };
+  const doer = (r, c) => { const a = (((weeks || {})[r.sunday] || {}).agreed || {})[CH[c]]; return a && a !== r.assigned[c] && r.nm.includes(a) ? a : r.assigned[c]; };
   const pairs = (r, list) => { const m = new Map(); for (const c of list) { const id = doer(r, c); if (!m.has(id)) m.set(id, []); m.get(id).push(c); } return m; };
   const owned = feature(house, 'tasks') ? checklistOwners(h2, out, weeks, sunday).filter((x) => x.status !== 'done') : [];
   const tasksOf = (id) => owned.filter((x) => x.owner === id).length;
@@ -437,35 +475,35 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
     row.nm.forEach((id, s) => { if (id && row.pr[s] === 1) push({ type: 'friAbsence', personId: id, week: sunday }); });
   }
   if (cfg.satDuty.on && due(cfg.satDuty.dow, cfg.satDuty.time)) {
-    for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => pend(row, c)))) push({ type: 'satDuty', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]), extra: tasksOf(id) });
+    for (const [id, cs] of pairs(row, CI.filter((c) => pend(row, c)))) push({ type: 'satDuty', personId: id, week: sunday, chores: cs.map((c) => CH[c]), extra: tasksOf(id) });
   }
   if (cfg.satDuty.on && cfg.tasks.on !== false && due(cfg.satDuty.dow, cfg.satDuty.time)) {   // chi ha solo arretrati di checklist (senza turno da fare)
-    const withChore = new Set([0, 1, 2].filter((c) => pend(row, c)).map((c) => row.assigned[c]));
+    const withChore = new Set(CI.filter((c) => pend(row, c)).map((c) => row.assigned[c]));
     for (const id of new Set(owned.filter((x) => x.status === 'overdue').map((x) => x.owner).filter(Boolean))) if (!withChore.has(id)) push({ type: 'tasks', personId: id, week: sunday, n: owned.filter((x) => x.owner === id && x.status === 'overdue').length });
   }
   if (cfg.sunMark.on && due(cfg.sunMark.dow, cfg.sunMark.time)) {
-    for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => pend(row, c) && !(planOf(h2, sunday, CHORES[c]) > today)))) push({ type: 'sunMark', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
+    for (const [id, cs] of pairs(row, CI.filter((c) => pend(row, c) && !(planOf(h2, sunday, CH[c]) > today)))) push({ type: 'sunMark', personId: id, week: sunday, chores: cs.map((c) => CH[c]) });
   }
   if (cfg.monNew.on && due(cfg.monNew.dow, cfg.monNew.time)) {
-    for (const [id, cs] of pairs(row, [0, 1, 2].filter((c) => row.assigned[c]))) push({ type: 'monNew', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
+    for (const [id, cs] of pairs(row, CI.filter((c) => row.assigned[c]))) push({ type: 'monNew', personId: id, week: sunday, chores: cs.map((c) => CH[c]) });
     for (const id of row.rest) push({ type: 'monNew', personId: id, week: sunday, chores: [], rest: true });
   }
   // giorno scelto
   if (cfg.planDay.on && feature(house, 'planDay') && lp.minutes >= hm(cfg.planDay.time) && lp.minutes - hm(cfg.planDay.time) <= catchUp) {
     const todays = [], lates = new Map();
-    for (let c = 0; c < 3; c++) {
-      const d = planOf(h2, sunday, CHORES[c]);
+    for (const c of CI) {
+      const d = planOf(h2, sunday, CH[c]);
       if (!d || !pend(row, c)) continue;
       if (d === today) todays.push(c);
       else if (d < today) { const id = doer(row, c); const k = id + '|' + d; if (!lates.has(k)) lates.set(k, { id, d, cs: [] }); lates.get(k).cs.push(c); }
     }
-    for (const [id, cs] of pairs(row, todays)) push({ type: 'planDay', personId: id, week: sunday, chores: cs.map((c) => CHORES[c]) });
-    for (const l of lates.values()) push({ type: 'planDayLate', personId: l.id, week: sunday, chores: l.cs.map((c) => CHORES[c]), day: l.d, slot: l.d });
+    for (const [id, cs] of pairs(row, todays)) push({ type: 'planDay', personId: id, week: sunday, chores: cs.map((c) => CH[c]) });
+    for (const l of lates.values()) push({ type: 'planDayLate', personId: l.id, week: sunday, chores: l.cs.map((c) => CH[c]), day: l.d, slot: l.d });
     // giorno scelto lunedì/martedì dopo la domenica: la settimana è già quella precedente
     if (cur > 0) {
       const pr = out.rows[cur - 1];
-      const cs0 = [0, 1, 2].filter((c) => pr.assigned[c] && !pr.res[c].kind && planOf(h2, pr.sunday, CHORES[c]) === today);
-      for (const [id, cs] of pairs(pr, cs0)) push({ type: 'planDay', personId: id, week: pr.sunday, chores: cs.map((c) => CHORES[c]) });
+      const cs0 = CI.filter((c) => pr.assigned[c] && !pr.res[c].kind && planOf(h2, pr.sunday, CH[c]) === today);
+      for (const [id, cs] of pairs(pr, cs0)) push({ type: 'planDay', personId: id, week: pr.sunday, chores: cs.map((c) => CH[c]) });
     }
   }
   // compiti condivisi (es. spazzatura): promemoria quotidiano a chi tocca, se è da fare
@@ -476,7 +514,7 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
   if (cfg.planDay.on && lp.minutes >= hm(cfg.planDay.time) && lp.minutes - hm(cfg.planDay.time) <= catchUp) {
     for (let i = Math.max(0, cur - 2); i < cur; i++) {
       const r = out.rows[i];
-      for (const [id, cs] of pairs(r, [0, 1, 2].filter((c) => r.assigned[c] && !r.res[c].kind && delayOf(h2, r.sunday, CHORES[c]) === today))) push({ type: 'planDay', personId: id, week: r.sunday, chores: cs.map((c) => CHORES[c]) });
+      for (const [id, cs] of pairs(r, CI.filter((c) => r.assigned[c] && !r.res[c].kind && delayOf(h2, r.sunday, CH[c]) === today))) push({ type: 'planDay', personId: id, week: r.sunday, chores: cs.map((c) => CH[c]) });
     }
   }
   // ritardi: settimane concluse con turni ancora senza risultato (da lunedi', fino a N giorni)
@@ -490,7 +528,7 @@ export function planNotifications({ house, weeks, now, sent = new Set() }) {
         const daysAfter = dayNum(today) - dayNum(r.sunday);
         if (daysAfter < 1 || daysAfter > (cfg.late.days || 4)) continue;
         const pc = pendRow(r);
-        for (const [id, cs] of pairs(r, pc)) push({ type: 'late', personId: id, week: r.sunday, chores: cs.map((c) => CHORES[c]), lateClosed: !!r.closed, slot });
+        for (const [id, cs] of pairs(r, pc)) push({ type: 'late', personId: id, week: r.sunday, chores: cs.map((c) => CH[c]), lateClosed: !!r.closed, slot });
       }
     });
   }
@@ -522,7 +560,7 @@ export function notifMessage(n, house, lang = 'it', weeks = {}) {
 }
 function baseMessage(n, house, lang = 'it', weeks = {}) {
   const T = (k, p) => tr(lang, k, p);
-  const chores = (n.chores || []).map((c) => T('chore.' + c)).join(' + ');
+  const chores = (n.chores || []).map((c) => choreName(house, c, lang)).join(' + ');
   const minN = (house.settings && house.settings.minNights) || 3;
   switch (n.type) {
     case 'friAbsence': return { title: T('n.fri.title'), body: T('n.fri.body', { n: minN }), url: '#/trips' };
@@ -544,11 +582,12 @@ function baseMessage(n, house, lang = 'it', weeks = {}) {
 /** Applica uno scambio accettato: scambia i due turni nella settimana come "swap" manuale. */
 export function swapPatch(row, a, b) {
   // a = {chore, personId}, b = {chore, personId}: chi aveva a.chore prende b.chore e viceversa
+  const ids = row.chores || CHORES;
   const swap = {};
-  CHORES.forEach((c, i) => { swap[c] = row.assigned[i]; });
+  ids.forEach((c, i) => { swap[c] = row.assigned[i]; });
   swap[a.chore] = b.personId; swap[b.chore] = a.personId;
   const out = {};
-  for (const c of CHORES) if (swap[c] !== row.assigned[CHORES.indexOf(c)]) out[c] = swap[c];
+  for (const c of ids) if (swap[c] !== row.assigned[ids.indexOf(c)]) out[c] = swap[c];
   return out;
 }
 
@@ -560,7 +599,7 @@ export function validateHouse(h) {
   if (!Array.isArray(h.roommates) || !h.roommates.length) issues.push('roommates');
   return issues;
 }
-export { CHORES, compute, awayFromTrips };
+export { CHORES, DEFAULT_CHORES, choresOf, compute, awayFromTrips };
 
 // ---------- richieste: «in attesa di me» e scadenza (nucleo: badge del nav, pulizia all'apertura) ----------
 /** Tipo di richiesta: 'swap' (scambio, senza kind), 'cover', 'offer', 'notice', 'nudge'. */
