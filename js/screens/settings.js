@@ -704,7 +704,9 @@ function choresSection(ctx) {
       el.addEventListener('input', () => { x[key] = el.value; setErr(''); refresh(); });
       return el;
     };
-    const tileCls = x.id ? cCls(ctx, x.id) : 'cx cx' + (S.ch.filter((y) => !y.id || !['floor', 'bathroom', 'kitchen'].includes(y.id)).indexOf(x) % 8);
+    // colore: quello che avrà nell'app (le nuove non salvate prendono i colori dopo quelli già usati)
+    const savedExtra = all.filter((c) => !c.builtin).length;
+    const tileCls = x.id ? cCls(ctx, x.id) : 'cx cx' + ((savedExtra + S.ch.filter((y) => !y.id).indexOf(x)) % 8);
     const pickOpen = S.chIcon === x._k;
     const tileBtn = h('button', { type: 'button', class: 'tile st-chtile ' + tileCls, 'aria-label': t('chx.iconOf', { name: label }), 'aria-expanded': String(pickOpen), 'data-testid': 'ch-icon-' + i, onclick: () => { S.chIcon = pickOpen ? null : x._k; draw(); } }, icon(x.icon || 'dot'));
     const picker = pickOpen ? h('div', { class: 'st-chicons', role: 'group', 'aria-label': t('chx.icon'), 'data-testid': 'ch-iconpick-' + i },

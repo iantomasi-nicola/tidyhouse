@@ -323,11 +323,11 @@ await scenario('create: default sensati + wizard locale completo -> Home', async
   await tapNext(page);
   assert.match(await page.locator('.onb-err').innerText(), /stesso nome/);
   await names.nth(1).fill('Bruno');
-  // aggiunta rapida: Invio nell'ultima riga compilata aggiunge una riga e ci porta il cursore (max 4)
+  // aggiunta rapida: Invio nell'ultima riga compilata aggiunge una riga e ci porta il cursore (max 8: vedi chores-people.e2e.mjs)
   await names.nth(2).fill('Carla');
   await names.nth(2).press('Enter');
   await page.waitForFunction(() => document.querySelectorAll('.onb-person').length === 4);
-  assert.ok(await page.getByRole('button', { name: /Aggiungi persona/ }).isDisabled());
+  assert.ok(!(await page.getByRole('button', { name: /Aggiungi persona/ }).isDisabled()), 'con 4 persone se ne possono aggiungere altre');
   assert.ok(await page.waitForFunction(() => document.activeElement === document.querySelectorAll('.onb-person input[type=text]')[3]));
   await page.locator('.onb-person').nth(3).getByRole('button', { name: /Rimuovi/ }).click();
   assert.equal(await page.locator('.onb-person').count(), 3);

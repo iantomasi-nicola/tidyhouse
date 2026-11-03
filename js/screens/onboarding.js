@@ -318,6 +318,7 @@ function createStage(boot) {
     while (W.people.length < 3) W.people.push(blankPerson());
     const list = h('div', { class: 'onb-people' });
     const addBtn = h('button', { type: 'button', class: 'btn tonal block', onclick: () => addRow() }, icon('plus'), t('setup.addPerson'));
+    const maxHint = h('p', { class: 'onb-hint center', 'aria-live': 'polite' });
     const addRow = () => { if (W.people.length >= MAX_PEOPLE) return false; W.people.push(blankPerson()); paint(W.people.length - 1); return true; };
     const paint = (focusIdx) => {
       clear(list);
@@ -348,10 +349,11 @@ function createStage(boot) {
       });
       addBtn.disabled = W.people.length >= MAX_PEOPLE;
       addBtn.title = W.people.length >= MAX_PEOPLE ? t('setup.maxPeople') : '';
+      maxHint.textContent = W.people.length >= MAX_PEOPLE ? t('setup.maxPeople') : '';
+      maxHint.hidden = W.people.length < MAX_PEOPLE;
     };
     paint();
-    return [h('h2', null, t('onb.s2.title')), h('p', { class: 'muted' }, t('onb.s2.lead')), list, addBtn,
-      W.people.length >= MAX_PEOPLE ? h('p', { class: 'onb-hint center' }, t('setup.maxPeople')) : null];
+    return [h('h2', null, t('onb.s2.title')), h('p', { class: 'muted' }, t('onb.s2.lead')), list, addBtn, maxHint];
   };
 
   /** Importa il foglio Excel: opzione secondaria, sotto le altre opzioni del passo 1. */
