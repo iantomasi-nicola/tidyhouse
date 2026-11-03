@@ -2,14 +2,12 @@
 // Scrive solo le correzioni `adj` tramite ctx.actions.adjustBalance: la logica di assegnazione del motore non cambia.
 import { h, icon, avatar, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange } from './i18n.js';
-import { CHORES } from './engine.js';
+import { cIds, cName, cIcon, cCls, cOn } from './choreui.js';
 import { liveSheet } from './choresheet.js';
 import { it, en } from './strings/balance.js';
 
 registerStrings(it, en);
 loadCss('css/balance.css');
-
-const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 
 /** Applica una correzione con avviso e Annulla. Ritorna true se qualcosa è cambiato. */
 async function apply(ctx, id, delta, what) {
@@ -48,18 +46,20 @@ export function balanceCard(ctx, id) {
     h('button', { type: 'button', 'data-act': `bal-add-${key}`, 'data-who': id, 'aria-label': lblAdd, onclick: () => apply(ctx, id, { [key]: 1 }, what) }, icon('plus')));
   const mkWhat = t('bal.what.mk', { name }); const restWhat = t('bal.what.rest', { name });
   const total = debts.reduce((a, v) => a + v, 0);
+  // mansioni in turno, più quelle tolte in cui resta un recupero (si può solo togliere)
+  const CH = cIds(ctx, row); const ks = CH.map((_, k) => k).filter((k) => cOn(row, k) || debts[k] > 0);
   return h('section', { class: 'bal-card', 'data-person': id },
     h('div', { class: 'bal-who' }, avatar(name, ctx.color(id), 'sm'), h('span', null, name)),
-    ...CHORES.map((c, k) => h('div', { class: 'bal-row', 'data-bal': c },
-      h('div', { class: 'tile sm ' + c }, icon(CHORE_ICON[c])),
-      h('div', { class: 'grow' }, t('chore.' + c)),
-      stepper(debts[k], c, t('bal.add', { chore: t('chore.' + c).toLowerCase(), name }), t('bal.sub', { chore: t('chore.' + c).toLowerCase(), name }), mkWhat))),
+    ...ks.map((k) => { const c = CH[k]; const cn = cName(ctx, c); return h('div', { class: 'bal-row', 'data-bal': c },
+      h('div', { class: 'tile sm ' + cCls(ctx, c) }, icon(cIcon(ctx, c))),
+      h('div', { class: 'grow bal-cn' }, cn),
+      stepper(debts[k], c, t('bal.add', { chore: cn.toLowerCase(), name }), t('bal.sub', { chore: cn.toLowerCase(), name }), mkWhat)); }),
     h('div', { class: 'bal-row', 'data-bal': 'rest' },
       h('div', { class: 'tile sm rest' }, icon('moon')),
       h('div', { class: 'grow' }, t('bal.rest')),
       stepper(credit, 'credit', t('bal.addRest', { name }), t('bal.subRest', { name }), restWhat)),
     total || credit ? h('div', { class: 'bal-clear' },
-      total ? h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'bal-clear-mk', 'data-who': id, onclick: () => apply(ctx, id, Object.fromEntries(CHORES.map((c, k) => [c, -debts[k]])), mkWhat) }, icon('x'), t('bal.clearMk')) : null,
+      total ? h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'bal-clear-mk', 'data-who': id, onclick: () => apply(ctx, id, Object.fromEntries(CH.map((c, k) => [c, -debts[k]]).filter(([, v]) => v)), mkWhat) }, icon('x'), t('bal.clearMk')) : null,
       credit ? h('button', { type: 'button', class: 'btn soft sm', 'data-act': 'bal-clear-rest', 'data-who': id, onclick: () => apply(ctx, id, { credit: -credit }, restWhat) }, icon('x'), t('bal.clearRest')) : null) : null);
 }
 

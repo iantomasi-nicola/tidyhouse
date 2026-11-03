@@ -137,3 +137,22 @@
 .st-freq-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .st-freq-chip { min-height: 44px; padding: 0 16px 0 12px; font-size: .9375rem; font-weight: 600; background: var(--tonal-2); color: var(--accent-ink); }
 .st-page [hidden] { display: none !important; }
+
+/* mansioni (Impostazioni → Mansioni) e posti 1..8 */
+.st-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+.st-slots button { padding: 0; }
+.st-ell { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-chore { padding: 16px; gap: 12px; }
+.st-chore > .row { gap: 12px; }
+.st-chtile { width: 44px; height: 44px; border-radius: 14px; }
+.st-chtile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-chicons { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.st-chic { min-height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-2); }
+.st-chic[aria-pressed="true"] { background: var(--tonal-2); color: var(--accent-ink); box-shadow: inset 0 0 0 2px var(--accent); }
+.st-chbi { gap: 10px; min-height: 44px; }
+.st-chfoot { gap: 8px; align-items: center; }
+.st-chfoot .st-chips { margin-top: 0; min-width: 0; }
+.st-charrows { display: flex; gap: 4px; flex: none; }
+.st-charrows .icon-btn[disabled] { opacity: .3; }
+.st-chmini { width: 32px; height: 32px; border-radius: 10px; }
+.st-chmini svg.i { width: 1.1rem; height: 1.1rem; }

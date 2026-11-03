@@ -5,10 +5,13 @@ import { h, icon, loadCss, avatar, stepper, seg, liRow, copyText, download, conf
 import { registerStrings as __reg } from '../i18n.js';
 import { it as __flowIt, en as __flowEn } from '../strings/flow.js';
 __reg(__flowIt, __flowEn);   // widget.shared & co. servono anche aprendo direttamente le impostazioni
-import { t, registerStrings, fmtDate, fmtWeekRange, LANGS } from '../i18n.js';
+import { t, tr, registerStrings, fmtDate, fmtWeekRange, LANGS } from '../i18n.js';
 import { hasKick, kickNow, repoOf } from '../kick.js';
 import { DEFAULT_TASK_PENALTY, DEFAULT_FEATURES, NOTIF_TYPES, HOME_WIDGETS, DEFAULT_HOME, PALETTE, planNotifications, notifCfg, effortOf, localParts, uid, buildStats, historyRows, toCsv, validateHouse } from '../extras.js';
-import { validateRoommates, addDays, DEFAULT_SETTINGS, CHORES } from '../engine.js';
+import { validateRoommates, addDays, DEFAULT_SETTINGS, MAX_SLOTS, MAX_CHORES, choresOf } from '../engine.js';
+import { choreRenamed } from '../extras.js';
+import { cName, cIcon, cCls, cActive, CHORE_ICONS } from '../choreui.js';
+import { it as itCh, en as enCh } from '../strings/chores.js';
 import { exportBackup, verifyPin, hashPin, newSalt } from '../actions.js';
 import { encryptBackup, decryptBackup } from '../backupcrypto.js';
 import * as push from '../push.js';
@@ -19,6 +22,7 @@ import { it as itB, en as enB } from '../strings/uxb.js';
 import { renderViewsLog, openFixPicker, openAssignCurrent } from './more.js';   // registro ingressi (raggruppato per giorno)
 registerStrings(it, en);
 registerStrings(itB, enB);
+registerStrings(itCh, enCh);
 loadCss('css/settings.css');
 
 const README = 'https://github.com/iantomasi-nicola/tidyhouse#readme';
@@ -27,8 +31,8 @@ const README = 'https://github.com/iantomasi-nicola/tidyhouse#readme';
 // Stato effimero (sopravvive ai rerender; si azzera cambiando sezione)
 // ============================================================================
 let curSub = null;
-const S = { rm: null, rmBase: '', rmColor: null, fresh: null, rot: null, homeBusy: false, open: {}, err: {} };
-function resetDrafts() { S.rm = null; S.rmBase = ''; S.rmColor = null; S.fresh = null; S.rot = null; S.open = {}; S.err = {}; }
+const S = { rm: null, rmBase: '', rmColor: null, ch: null, chBase: '', chInit: '', chIcon: null, fresh: null, rot: null, homeBusy: false, open: {}, err: {} };
+function resetDrafts() { S.rm = null; S.rmBase = ''; S.rmColor = null; S.ch = null; S.chBase = ''; S.chInit = ''; S.chIcon = null; S.fresh = null; S.rot = null; S.open = {}; S.err = {}; }
 let searchQ = '';   // testo cercato nell'indice: sopravvive ai rerender
 /** Messaggio d'errore di un modulo: ricordato in S.err, così un rerender (dati in arrivo da un altro telefono) non lo cancella. */
 function errLine(key, attrs = {}) {
@@ -142,6 +146,7 @@ const SECTIONS = {
   house: { admin: true, ic: 'home', tone: '', title: 'uxb.adm.sec.house', build: houseSection, sum: (c) => c.house.name || '' },
   rules: { admin: true, ic: 'book', tone: 'o', title: 'set.turnRules', build: rulesSection, sum: (c) => t('setX.sum.rules', { a: (c.house.settings || {}).grace ?? DEFAULT_SETTINGS.grace, b: (c.house.settings || {}).minNights ?? DEFAULT_SETTINGS.minNights }) },
   roommates: { admin: true, ic: 'users', tone: 'g', title: 'set.roommates', build: roommatesSection, sum: (c) => (c.house.roommates || []).filter((r) => !r.to || r.to >= c.today()).map((r) => r.name).join(', ') },
+  chores: { admin: true, ic: 'broom', tone: 'o', title: 'chx.title', build: choresSection, sum: (c) => { const a = cActive(c, c.today()); return t('chx.sum', { n: a.length, names: a.map((id) => cName(c, id)).join(', ') }); } },
   features: { admin: true, ic: 'list', tone: 'p', title: 'set.features', build: featuresSection, sum: (c) => { const k = Object.keys(DEFAULT_FEATURES); return t('setX.sum.features', { n: k.filter((x) => c.feature(x)).length, m: k.length }); } },
   links: { admin: true, ic: 'link', tone: '', title: 'set.links', build: linksSection, sum: (c) => { const l = c.house.links || {}; const n = [l.tricount && l.tricount.url, l.whatsapp && l.whatsapp.url].filter(Boolean).length + ((l.custom || []).length); return t('setX.sum.links', { n }); } },
   'notif-house': { admin: true, ic: 'clock', tone: 'r', title: 'uxb.adm.sec.notifHouse', build: notifHouse, sum: (c) => (notifCfg(c.house).enabled ? t('on') : t('off')) },
@@ -157,7 +162,7 @@ const SECTIONS = {
  */
 const INDEX = [
   ['setX.group.me', ['profile', 'notifications', 'appearance', 'home']],
-  ['uxb.adm.group', ['act:balance', 'roommates', 'invite', 'rules', 'notif-house', 'security', 'data'], true],
+  ['uxb.adm.group', ['act:balance', 'roommates', 'chores', 'invite', 'rules', 'notif-house', 'security', 'data'], true],
   ['uxb.adm.g.setup', ['house', 'features', 'links'], true],
   ['set.advanced', ['access', 'ai'], true],
 ];
@@ -480,9 +485,9 @@ function houseSection(ctx) {
 function rulesSection(ctx) {
   const S_ = { ...DEFAULT_SETTINGS, ...(ctx.house.settings || {}) }; const eff = effortOf(ctx.house);
   const st = (k, title, desc, min, max, step = 1, fmt) => stepRow({ title, desc, value: Number(S_[k]), min, max, step, fmt, id: 'step-' + k, onchange: (v) => setHouse(ctx, { settings: { [k]: v } }) });
-  const effort = CHORES.map((c) => h('div', { class: 'st-effort', 'data-testid': 'effort-' + c },
-    h('div', { class: 'row' }, h('div', { class: 'tile ' + c, style: { width: '36px', height: '36px', borderRadius: '11px' } }, icon(c === 'floor' ? 'broom' : c === 'bathroom' ? 'shower' : 'pot')), h('div', { class: 'grow t', style: { fontWeight: 600 } }, t('chore.' + c)), h('span', { class: 'chip' }, t('setX.rules.points', { n: eff[c] }))),
-    seg([1, 2, 3, 4, 5].map((n) => [n, String(n)]), Number(eff[c]), (v) => setHouse(ctx, { effort: { [c]: v } }))));
+  const effort = cActive(ctx, ctx.today()).map((c) => h('div', { class: 'st-effort', 'data-testid': 'effort-' + c },
+    h('div', { class: 'row' }, h('div', { class: 'tile ' + cCls(ctx, c), style: { width: '36px', height: '36px', borderRadius: '11px' } }, icon(cIcon(ctx, c))), h('div', { class: 'grow t st-ell', style: { fontWeight: 600 } }, cName(ctx, c)), h('span', { class: 'chip' }, t('setX.rules.points', { n: eff[c] }))),
+    seg([1, 2, 3, 4, 5].map((n) => [n, String(n)]), Number(eff[c]), (v) => setChoreEffort(ctx, c, v))));
   const rank = seg([['turns', t('setX.rules.rankTurns')], ['effort', t('setX.rules.rankEffort')]], S_.rankBy === 'effort' ? 'effort' : 'turns', (v) => setHouse(ctx, { settings: { rankBy: v } }));
   rank.setAttribute('data-testid', 'seg-rankBy'); rank.setAttribute('aria-label', t('setX.rules.rankBy'));
   // in vista i valori che si toccano davvero; quelli rari (vantaggio iniziale, classifica, punti fatica) in «Avanzate»
@@ -522,7 +527,7 @@ function rmIssues(list, today) {
     if ((a.from || '0000-00-00') <= (b.to || '9999-12-31') && (b.from || '0000-00-00') <= (a.to || '9999-12-31')) issues.add('slotDup');
   }
   const active = rows.filter((r) => r.name && (!r.from || r.from <= today) && (!r.to || r.to >= today));
-  if (active.length > 4) issues.add('max4');
+  if (active.length > MAX_SLOTS) issues.add('max4');
   return [...issues];
 }
 /** Persone uscite (fino al <= oggi) dopo l'ultima rotazione del codice e non ignorate. */
@@ -564,8 +569,10 @@ function roommatesSection(ctx) {
     const dateIn = (key, label, testid) => { const el = h('input', { class: 'input', type: 'date', value: r[key] || '', 'aria-label': label, 'data-testid': testid }); el.addEventListener('change', () => { r[key] = el.value || null; if (key === 'to' && r.to) r.expectedTo = null; draw(); }); return h('label', { class: 'field' }, h('span', { class: 'lbl' }, label), el); };
     const pal = S.rmColor === r._k ? h('div', { class: 'swatches st-pal' }, PALETTE.map((c) => h('button', { type: 'button', style: { background: c }, 'aria-label': c, 'aria-pressed': String(c === r.color), onclick: () => { r.color = c; S.rmColor = null; draw(); } })),
       h('label', { class: 'st-colorpick', title: t('setX.appearance.custom') }, h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(color) ? color : '#0a84ff', 'aria-label': t('setX.appearance.custom'), onchange: (e) => { r.color = e.target.value; S.rmColor = null; draw(); } }), icon('plus'))) : null;
-    const slot = seg([1, 2, 3, 4].map((n) => [n, String(n)]), Number(r.slot) || 1, (v) => { r.slot = v; refresh(); });
-    slot.setAttribute('aria-label', t('set.roommates.slot'));
+    // posti 1..N: almeno 4 (come il foglio), uno in più dell'ultimo usato, fino a MAX_SLOTS (8)
+    const nSlots = Math.min(MAX_SLOTS, Math.max(4, ...S.rm.map((x) => (Number(x.slot) || 1) + 1)));
+    const slot = seg(Array.from({ length: nSlots }, (_, k) => [k + 1, String(k + 1)]), Number(r.slot) || 1, (v) => { r.slot = v; refresh(); });
+    slot.classList.add('st-slots'); slot.setAttribute('aria-label', t('set.roommates.slot'));
     return h('section', { class: 'card st-card st-person stack tight', 'data-testid': 'rm-card-' + i },
       h('div', { class: 'row' },
         h('button', { class: 'st-dot', type: 'button', style: { background: color }, 'aria-label': t('set.roommates.color'), 'aria-expanded': String(S.rmColor === r._k), onclick: () => { S.rmColor = S.rmColor === r._k ? null : r._k; draw(); } }, (r.name || '?').trim().slice(0, 1).toUpperCase()),
@@ -622,9 +629,144 @@ function roommatesSection(ctx) {
   return h('div', { class: 'stack' },
     h('p', { class: 'muted' }, t('set.roommates.hint')),
     soonHint, hint, list, warnBox,
-    h('div', { class: 'btn-row' }, btn(t('set.roommates.add'), () => { S.rm.push({ _k: 'n' + uid(), name: '', slot: nextSlot(), from: null, to: null, color: null }); draw(); setTimeout(() => { const el = list.querySelector(`[data-testid="rm-name-${S.rm.length - 1}"]`); if (el) el.focus(); }, 30); }, { ic: 'plus', id: 'rm-add' })),
+    h('div', { class: 'btn-row' }, btn(t('set.roommates.add'), () => { const sl = nextSlot(); if (!sl) { ctx.toast(t('set.roommates.max4')); return; } S.rm.push({ _k: 'n' + uid(), name: '', slot: sl, from: null, to: null, color: null }); draw(); setTimeout(() => { const el = list.querySelector(`[data-testid="rm-name-${S.rm.length - 1}"]`); if (el) el.focus(); }, 30); }, { ic: 'plus', id: 'rm-add' })),
     bar);
-  function nextSlot() { const used = new Set(S.rm.filter((r) => !r.to || r.to >= today).map((r) => Number(r.slot))); for (let s = 1; s <= 4; s++) if (!used.has(s)) return s; return 1; }
+  function nextSlot() { const used = new Set(S.rm.filter((r) => !r.to || r.to >= today).map((r) => Number(r.slot))); for (let s = 1; s <= MAX_SLOTS; s++) if (!used.has(s)) return s; return 0; }
+}
+
+// ============================================================================
+// CHORES (mansioni della casa: aggiungi, rinomina, icona, fatica, ordine, togli) → Actions.saveChores
+// ============================================================================
+/** Fatica di una mansione: con l'elenco delle mansioni salvato passa da saveChores, altrimenti (3 predefinite) da house.effort. */
+async function setChoreEffort(ctx, id, v) {
+  const hs = ctx.house;
+  if (!(Array.isArray(hs.chores) && hs.chores.length)) return setHouse(ctx, { effort: { [id]: v } });
+  const list = cActive(ctx, ctx.today()).map((cid) => (cid === id ? { id: cid, effort: v } : { id: cid }));
+  return save(ctx, () => ctx.actions.saveChores(list));
+}
+/** Bozza di una mansione per l'editor. `fresh` = non ancora entrata in turno (si può spostare: non cambia le settimane passate). */
+function chDraft(ctx, c, today, fresh) {
+  const renamed = !c.builtin || choreRenamed(ctx.house, c.id);
+  const n = c.name;
+  const itN = !renamed ? tr('it', 'chore.' + c.id) : typeof n === 'string' ? n : String((n && (n.it || n.en)) || '');
+  const enN = !renamed ? tr('en', 'chore.' + c.id) : typeof n === 'string' ? n : String((n && (n.en || n.it)) || '');
+  const bi = renamed && !!n && typeof n === 'object' && itN !== enN;
+  const single = cName(ctx, c.id);
+  return { _k: c.id, id: c.id, icon: c.icon || 'dot', effort: Number(c.effort) || 1, from: c.from || null, fresh: fresh ?? !!(c.from && c.from > today), bi, bi0: bi, single, single0: single, it: itN, en: enN };
+}
+/** Voce da passare a saveChores: il nome solo se è cambiato (così una predefinita non rinominata resta tradotta). */
+function chOut(x) {
+  const o = { ...(x.id ? { id: x.id } : {}), icon: x.icon, effort: x.effort };
+  if (x.bi) o.name = { it: x.it.trim(), en: x.en.trim() };
+  else if (!x.id || x.single.trim() !== x.single0 || x.bi0) o.name = x.single.trim();
+  return o;
+}
+const chLabel = (x) => (x.bi ? x.it || x.en : x.single).trim();
+const chDirty = () => !!S.ch && JSON.stringify(S.ch.map(chOut)) !== S.chInit;
+function chInit(ctx) {
+  const today = ctx.today(); const all = choresOf(ctx.house); const base = JSON.stringify(ctx.house.chores || null) + JSON.stringify(ctx.house.effort || {});
+  if (!S.ch || (S.chBase !== base && !chDirty())) {
+    S.ch = all.filter((c) => !c.to || c.to >= today).map((c) => chDraft(ctx, c, today));
+    S.chBase = base; S.chInit = JSON.stringify(S.ch.map(chOut)); S.chIcon = null;
+  }
+}
+function choresSection(ctx) {
+  chInit(ctx);
+  const today = ctx.today(); const all = choresOf(ctx.house);
+  const inDraft = () => new Set(S.ch.map((x) => x.id).filter(Boolean));
+  // mansioni con uno storico fuori dalla bozza: restano salvate (con `to`) e contano nel massimo
+  const kept = () => all.filter((c) => !inDraft().has(c.id) && !(c.from && c.from > today));
+  const removed = () => all.filter((c) => c.to && c.to < today && !inDraft().has(c.id));
+  const room = () => S.ch.length + kept().length < MAX_CHORES;
+  const [errEl, setErr] = errLine('chores', { 'data-testid': 'ch-err' });
+  const saveBtn = btn(t('save'), () => chSave(), { cls: '', ic: 'check', id: 'ch-save' });
+  const cancelBtn = btn(t('cancel'), () => { S.ch = null; setErr(''); ctx.rerender(); }, { cls: 'soft', id: 'ch-cancel' });
+  const bar = h('div', { class: 'st-savebar', 'data-testid': 'ch-bar' }, cancelBtn, saveBtn);
+  const list = h('div', { class: 'stack', 'data-testid': 'ch-list' });
+  const removedBox = h('div', { class: 'stack tight' });
+  const addBtn = btn(t('chx.add'), () => {
+    if (!room()) { setErr(t('chx.max', { n: MAX_CHORES })); return; }
+    const used = new Set(S.ch.map((x) => x.icon));
+    S.ch.push({ _k: 'n' + uid(), id: null, icon: CHORE_ICONS.find((i) => !used.has(i)) || 'dot', effort: 1, from: null, fresh: true, bi: false, bi0: false, single: '', single0: '', it: '', en: '' });
+    draw();
+    setTimeout(() => { const el = list.querySelector(`[data-testid="ch-name-${S.ch.length - 1}"]`); if (el) el.focus(); }, 30);
+  }, { ic: 'plus', id: 'ch-add' });
+  const refresh = () => { const d = chDirty(); saveBtn.disabled = !d; cancelBtn.hidden = !d; bar.hidden = !d; addBtn.disabled = !room(); };
+  const draw = () => { list.replaceChildren(...S.ch.map((x, i) => card_(x, i))); drawRemoved(); refresh(); };
+  const move = (i, k) => { const j = i + k; if (j < 0 || j >= S.ch.length) return; [S.ch[i], S.ch[j]] = [S.ch[j], S.ch[i]]; draw(); setTimeout(() => { const b = list.querySelector(`[data-testid="ch-${k < 0 ? 'up' : 'down'}-${j}"]`); if (b && !b.disabled) b.focus(); }, 20); };
+  // si spostano solo le nuove: lo scambio tra due mansioni già in turno cambierebbe le settimane passate
+  const canSwap = (i, j) => j >= 0 && j < S.ch.length && (S.ch[i].fresh || S.ch[j].fresh);
+
+  function card_(x, i) {
+    const label = chLabel(x) || t('chx.ordinal', { n: i + 1 });
+    const inp = (key, aria, testid, ph) => {
+      const el = h('input', { class: 'input', value: x[key] || '', placeholder: ph || '', 'aria-label': aria, 'data-testid': testid, maxlength: 40, autocomplete: 'off', autocapitalize: 'sentences', enterkeyhint: 'done' });
+      el.addEventListener('input', () => { x[key] = el.value; setErr(''); refresh(); });
+      return el;
+    };
+    const tileCls = x.id ? cCls(ctx, x.id) : 'cx cx' + (S.ch.filter((y) => !y.id || !['floor', 'bathroom', 'kitchen'].includes(y.id)).indexOf(x) % 8);
+    const pickOpen = S.chIcon === x._k;
+    const tileBtn = h('button', { type: 'button', class: 'tile st-chtile ' + tileCls, 'aria-label': t('chx.iconOf', { name: label }), 'aria-expanded': String(pickOpen), 'data-testid': 'ch-icon-' + i, onclick: () => { S.chIcon = pickOpen ? null : x._k; draw(); } }, icon(x.icon || 'dot'));
+    const picker = pickOpen ? h('div', { class: 'st-chicons', role: 'group', 'aria-label': t('chx.icon'), 'data-testid': 'ch-iconpick-' + i },
+      CHORE_ICONS.map((ic) => h('button', { type: 'button', class: 'st-chic', 'aria-pressed': String(ic === x.icon), 'aria-label': ic, 'data-icon': ic, onclick: () => { x.icon = ic; S.chIcon = null; draw(); } }, icon(ic)))) : null;
+    const names = x.bi
+      ? h('div', { class: 'stack tight' },
+        h('label', { class: 'field' }, h('span', { class: 'lbl' }, t('chx.nameIt')), inp('it', t('chx.nameIt'), 'ch-it-' + i)),
+        h('label', { class: 'field' }, h('span', { class: 'lbl' }, t('chx.nameEn')), inp('en', t('chx.nameEn'), 'ch-en-' + i)))
+      : null;
+    const biSw = h('input', { type: 'checkbox', role: 'switch', 'aria-label': `${t('chx.bilingual')}: ${label}`, 'data-testid': 'ch-bi-' + i });
+    biSw.checked = x.bi;
+    biSw.addEventListener('change', () => {
+      x.bi = biSw.checked;
+      if (x.bi && !x.it && !x.en) { x.it = x.single; x.en = x.single; }
+      if (!x.bi && x.single.trim() === '') x.single = x.it || x.en;
+      draw();
+    });
+    const eff = seg([1, 2, 3, 4, 5].map((n) => [n, String(n)]), Number(x.effort) || 1, (v) => { x.effort = v; refresh(); });
+    eff.setAttribute('aria-label', `${t('chx.effort')}: ${label}`); eff.setAttribute('data-testid', 'ch-eff-' + i);
+    const del = h('button', { class: 'icon-btn st-del', type: 'button', 'aria-label': `${t('chx.remove')}: ${label}`, 'data-testid': 'ch-del-' + i, disabled: S.ch.length <= 1 ? true : null, title: S.ch.length <= 1 ? t('chx.min') : t('chx.remove'),
+      onclick: async () => {
+        if (S.ch.length <= 1) { setErr(t('chx.min')); return; }
+        const saved_ = !!x.id && all.some((c) => c.id === x.id);
+        if (saved_ && !(await confirmDialog({ title: t('chx.removeQ', { name: label }), text: x.fresh ? t('chx.removeNewText') : t('chx.removeText'), ok: t('chx.remove'), danger: true }))) return;
+        S.ch.splice(i, 1); if (S.chIcon === x._k) S.chIcon = null; draw();
+      } }, icon('trash'));
+    const arrows = h('div', { class: 'st-charrows' },
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('chx.up', { name: label }), 'data-testid': 'ch-up-' + i, disabled: canSwap(i, i - 1) ? null : true, onclick: () => move(i, -1) }, icon('up')),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': t('chx.down', { name: label }), 'data-testid': 'ch-down-' + i, disabled: canSwap(i, i + 1) ? null : true, onclick: () => move(i, 1) }, icon('down')));
+    const startChip = x.fresh ? chip(x.from && x.from > today ? t('chx.fromChip', { date: fmtDate(x.from, ctx.lang) }) : t('chx.newChip'), 'acc', 'calendar') : null;
+    return h('section', { class: 'card st-card st-chore stack tight', 'data-testid': 'ch-card-' + i, 'data-chore': x.id || '' },
+      h('div', { class: 'row' }, tileBtn, h('div', { class: 'grow' }, x.bi ? h('div', { class: 't st-ell', style: { fontWeight: 650 } }, label) : inp('single', t('chx.name'), 'ch-name-' + i, t('chx.newPh')))),
+      picker, names,
+      h('label', { class: 'row st-chbi' }, h('span', { class: 'grow small' }, t('chx.bilingual')), h('span', { class: 'switch' }, biSw, h('i'))),
+      h('div', { class: 'field' }, h('span', { class: 'lbl' }, t('chx.effort')), eff),
+      h('div', { class: 'row st-chfoot' }, arrows, startChip ? h('div', { class: 'st-chips grow' }, startChip) : h('div', { class: 'grow' }), del));
+  }
+  function drawRemoved() {
+    const rs = removed();
+    removedBox.replaceChildren(...(rs.length ? [sectionTitle(t('chx.removed')), h('div', { class: 'list', 'data-testid': 'ch-removed' }, rs.map((c) => h('div', { class: 'li' },
+      h('div', { class: 'tile st-chmini ' + cCls(ctx, c.id) }, icon(cIcon(ctx, c.id))),
+      h('div', { class: 'grow' }, h('div', { class: 't st-ell' }, cName(ctx, c.id)), h('div', { class: 'd' }, t('chx.endedChip', { date: fmtDate(c.to, ctx.lang, { year: true }) }))),
+      btn(t('chx.restore'), () => { if (!room()) { setErr(t('chx.max', { n: MAX_CHORES })); return; } S.ch.push(chDraft(ctx, c, today, true)); draw(); }, { ic: 'refresh', id: 'ch-restore-' + c.id, cls: 'soft sm' })))),
+    foot(t('chx.removedHint'))] : []));
+  }
+  async function chSave() {
+    setErr('');
+    if (!S.ch.length) { setErr(t('chx.min')); return; }
+    if (S.ch.some((x) => !chLabel(x))) { setErr(t('chx.nameMissing')); return; }
+    const names = S.ch.map((x) => chLabel(x).toLocaleLowerCase());
+    if (new Set(names).size !== names.length) { setErr(t('chx.dupName')); return; }
+    try { await ctx.actions.saveChores(S.ch.map(chOut)); S.ch = null; ctx.toast(t('chx.saved')); ctx.rerender(); }
+    catch (e) { console.warn(e); setErr(e && e.message === 'permission' ? t('err.permission') : e && e.message === 'invalid' ? t('chx.min') : t('error')); }
+  }
+  draw();
+  return h('div', { class: 'stack', 'data-testid': 'chores-editor' },
+    h('p', { class: 'muted' }, t('chx.hint')),
+    note('', 'info', t('chx.orderHint')),
+    list, errEl,
+    h('div', { class: 'btn-row' }, addBtn),
+    h('p', { class: 'st-foot' }, t('chx.effortHint')),
+    removedBox, bar);
 }
 
 // ============================================================================

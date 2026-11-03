@@ -249,3 +249,7 @@ button.mx-chip::after { inset: 0; }
 .mx-tile-t { font-weight: 600; line-height: 1.25; max-width: 100%; overflow-wrap: anywhere; }
 .mx-tile-d { font-size: .8125rem; color: var(--text-2); max-width: 100%; overflow-wrap: anywhere; }
 .mx-oc { height: 26px; padding: 0 6px; }
+
+/* scelta della mansione con più di 3 mansioni: i bottoni vanno a capo invece di uscire dallo schermo */
+.mx-form .seg { flex-wrap: wrap; }
+.mx-form .seg button { flex: 1 1 auto; }

@@ -2,7 +2,7 @@
 import { start, seed } from './helpers.mjs';
 const env = await start();
 let bad = 0;
-const routes = ['', 'calendar', 'trips', 'stats', 'more', 'needs', 'rules', 'lastout', 'tasks', 'requests', 'activity', 'guide', 'settings', 'settings/profile', 'settings/appearance', 'settings/home', 'settings/notifications', 'settings/house', 'settings/rules', 'settings/roommates', 'settings/features', 'settings/links', 'settings/notif-house', 'settings/invite', 'settings/access', 'settings/data', 'settings/ai', 'settings/security'];
+const routes = ['', 'calendar', 'trips', 'stats', 'more', 'needs', 'rules', 'lastout', 'tasks', 'requests', 'activity', 'guide', 'settings', 'settings/profile', 'settings/appearance', 'settings/home', 'settings/notifications', 'settings/house', 'settings/rules', 'settings/roommates', 'settings/chores', 'settings/features', 'settings/links', 'settings/notif-house', 'settings/invite', 'settings/access', 'settings/data', 'settings/ai', 'settings/security'];
 for (const [vp, lang, dark] of [[{ width: 390, height: 844 }, 'it-IT', false], [{ width: 1440, height: 900 }, 'en-US', true]]) {
   const page = await env.page({ now: '2026-10-28T10:00:00', viewport: vp, lang, dark, seed: seed({ houseExtra: { requireRules: false } }) });
   for (const r of routes) {

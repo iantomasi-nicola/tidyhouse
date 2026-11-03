@@ -3,7 +3,8 @@
 // Usato da js/screens/calendar.js, home.js e more.js. Le firme esportate sono parte del contratto (ARCHITECTURE.md).
 import { h, icon, avatar, toggle, seg, copyText, download, confetti, loadCss } from './ui.js';
 import { registerStrings, fmtWeekRange, fmtDate, dowLong } from './i18n.js';
-import { CHORES, addDays } from './engine.js';
+import { addDays } from './engine.js';
+import { cIds, cName, cIcon, cCls, cIdx } from './choreui.js';
 import { planDays, planOf, delayOf, checklistOwners, autoSub, cleanNote, noteFor, whatsappText, rankingText, buildStats, makeIcs } from './extras.js';
 import { it, en } from './strings/cal.js';
 import { it as itFlow, en as enFlow } from './strings/flow.js';
@@ -24,9 +25,10 @@ registerStrings(itReason, enReason);
 registerStrings(itRez, enRez);
 loadCss('css/calendar.css');
 
+/** Icone delle 3 mansioni predefinite (compatibilità: per tutte le mansioni usa cIcon di js/choreui.js). */
 export const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 let balOpen = false;   // pannello desktop: «Recuperi e riposi» aperto (sopravvive ai ridisegni)
-const ci = (chore) => CHORES.indexOf(chore);
+const ci = (ctx, chore) => cIds(ctx).indexOf(chore);
 const dowIdx = (date) => new Date(date + 'T00:00:00Z').getUTCDay();
 const isOk = (r) => r.kind === 'done' || r.kind === 'by';
 const isSkip = (r) => r.kind === 'skipped' || r.kind === 'skippedBy';
@@ -41,7 +43,7 @@ const active = (row) => row.nm.filter(Boolean);
 const coverCandidates = (row, assigned) => active(row).filter((id) => id !== assigned);
 
 const chip = (label, tone, ic) => h('span', { class: 'chip' + (tone ? ' ' + tone : '') }, ic ? icon(ic) : null, label);
-const tile = (chore, cls = '') => h('div', { class: 'tile ' + chore + ' ' + cls }, icon(CHORE_ICON[chore] || 'dot'));
+const tile = (ctx, chore, cls = '') => h('div', { class: 'tile ' + cCls(ctx, chore) + ' ' + cls }, icon(cIcon(ctx, chore)));
 const person = (ctx, id, cls = '') => avatar(ctx.name(id), ctx.color(id), cls);
 
 /** Etichetta e tono dello stato della settimana (dal motore). */
@@ -132,7 +134,7 @@ const actRow = (ic, tone, title, desc, attrs, onclick) => h('button', { type: 'b
 /** Voci della checklist che erano mancanti al momento del "fatto" e che lo sono ancora (se qualcuno le recupera dopo, la segnalazione sparisce). */
 export function incompleteOf(ctx, sunday, chore) {
   if (!ctx.feature('tasks')) return [];
-  const row = rowOf(ctx, sunday); const c = ci(chore);
+  const row = rowOf(ctx, sunday); const c = ci(ctx, chore);
   if (!row || c < 0 || !isOk(row.res[c])) return [];
   const texts = ((weekDoc(ctx, sunday).incomplete || {})[chore]) || [];
   if (!texts.length) return [];
@@ -150,7 +152,7 @@ function reasonField(ctx, st, sh) {
 
 /** Chip di flusso di un turno: concordato, ritardo, volontario, incompleto → [{key, tone, ic, text}]. */
 export function flowChips(ctx, sunday, chore) {
-  const row = rowOf(ctx, sunday); const c = ci(chore);
+  const row = rowOf(ctx, sunday); const c = ci(ctx, chore);
   if (!row || c < 0 || !row.assigned[c]) return [];
   const wk = weekDoc(ctx, sunday); const res = row.res[c]; const t = ctx.t; const out = [];
   const open = !res.kind;
@@ -259,7 +261,7 @@ export function undoFlow(ctx, sunday, chore, { toast = true } = {}) {
  * Ritorna true se il turno è stato segnato.
  */
 export async function markDoneFlow(ctx, sunday, chore, { value = 'done', volunteer = false, el = null, msg = null } = {}) {
-  const A = ctx.actions; const row = rowOf(ctx, sunday); const c = ci(chore);
+  const A = ctx.actions; const row = rowOf(ctx, sunday); const c = ci(ctx, chore);
   const assigned = row ? row.assigned[c] : null;
   const exec = (o) => (volunteer ? A.volunteer(sunday, chore, o) : A.completeChore(sunday, chore, { value, ...o }));
   let r;
@@ -286,10 +288,10 @@ export async function markDoneFlow(ctx, sunday, chore, { value = 'done', volunte
  * Fatto → da fare con undoResult; da fare → fatto con il controllo della checklist.
  */
 export function resultToggle(ctx, sunday, chore, { pop = false } = {}) {
-  const row = rowOf(ctx, sunday); const c = ci(chore);
+  const row = rowOf(ctx, sunday); const c = ci(ctx, chore);
   const res = row.res[c]; const on = isOk(res); const sk = isSkip(res); const A = ctx.actions;
   const can = !!row.assigned[c] && !sk && (on ? A.canResult(sunday, chore, '') : A.canResult(sunday, chore, 'done'));
-  const label = ctx.t('flow.toggle', { chore: ctx.t('chore.' + chore) });
+  const label = ctx.t('flow.toggle', { chore: cName(ctx, chore) });
   const btn = h('button', {
     type: 'button', class: 'ctoggle' + (can ? '' : ' locked'), 'data-toggle': chore, 'aria-pressed': String(on), 'aria-label': label, title: can ? null : ctx.t('flow.toggleLocked'),
     disabled: can ? null : true,
@@ -311,19 +313,19 @@ export function swapGroupOf(ctx, sunday, chore) {
   while (grew) {
     grew = false;
     for (const c of [...set]) {
-      const holder = ruled[ci(c)], receiver = swap[c];
-      for (const c2 of CHORES) {
+      const holder = ruled[ci(ctx, c)], receiver = swap[c];
+      for (const c2 of cIds(ctx)) {
         if (set.has(c2) || !swap[c2]) continue;
-        if ((holder && swap[c2] === holder) || (receiver && ruled[ci(c2)] === receiver)) { set.add(c2); grew = true; }
+        if ((holder && swap[c2] === holder) || (receiver && ruled[ci(ctx, c2)] === receiver)) { set.add(c2); grew = true; }
       }
     }
   }
-  return CHORES.filter((c) => set.has(c));
+  return cIds(ctx).filter((c) => set.has(c));
 }
 /** Gruppi di scambio della settimana (ognuno = mansioni scambiate tra loro). */
 export function swapGroups(ctx, sunday) {
   const swap = weekDoc(ctx, sunday).swap || {}; const seen = new Set(); const out = [];
-  for (const c of CHORES) { if (!swap[c] || seen.has(c)) continue; const g = swapGroupOf(ctx, sunday, c); g.forEach((x) => seen.add(x)); out.push(g); }
+  for (const c of cIds(ctx)) { if (!swap[c] || seen.has(c)) continue; const g = swapGroupOf(ctx, sunday, c); g.forEach((x) => seen.add(x)); out.push(g); }
   return out;
 }
 /** Annulla SOLO lo scambio di `chore` (con il suo partner); toast con «Annulla» che lo ripristina. */
@@ -350,7 +352,7 @@ function coverRequests(ctx, sunday, chore) {
  */
 export function adminManage(ctx, sunday, chore, { redraw = () => {}, ruled = null, sheet = null } = {}) {
   if (!ctx.isAdmin) return null;
-  const row = rowOf(ctx, sunday); const c = ci(chore); const t = ctx.t;
+  const row = rowOf(ctx, sunday); const c = ci(ctx, chore); const t = ctx.t;
   if (!row || c < 0) return null;
   const assigned = row.assigned[c];
   const part = (lbl, node) => (node ? h('div', { class: 'mg-part' }, h('div', { class: 'mg-lbl' }, lbl), node) : null);
@@ -381,7 +383,7 @@ function selfDrawing(cls, attrs, build) {
 
 // ================================================================ DETTAGLIO TURNO
 export function openChoreSheet(ctx, sunday, chore, opts = {}) {
-  const c = ci(chore);
+  const c = ci(ctx, chore);
   if (c < 0 || !rowOf(ctx, sunday)) return null;
   const st = { view: opts.view || 'main', coverTo: '*', terms: 'repay', note: '' };   // stato che non deve perdersi nei ridisegni
 
@@ -433,7 +435,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
     }
     if (st.view === 'cantdo') {
       const sub = autoSub(row, c);
-      const lower = t('chore.' + chore).toLowerCase();
+      const lower = cName(ctx, chore).toLowerCase();
       return h('div', { class: 'stack' },
         back(ctx, () => go('main')),
         h('div', { class: 'cs-title' }, t('cantdo.title')),
@@ -526,7 +528,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       plan ? chip(t('st.planned', { day: dowLong(plan, ctx.lang).toLowerCase() }), 'acc', 'calendar') : null,
       fchips.map((f) => h('span', { 'data-flow': f.key, style: { display: 'contents' } }, chip(f.text, f.tone, f.ic)))) : null;
     const hero = h('div', { class: 'cs-hero' },
-      h('div', { class: 'cs-top' }, tile(chore), h('div', { class: 'grow' }, h('div', { class: 'cs-name' }, t('chore.' + chore)), h('div', { class: 'muted small' }, `${fmtWeekRange(sunday, ctx.lang)} · ${t('cal.week', { n: row.P })}`)), stChip),
+      h('div', { class: 'cs-top' }, tile(ctx, chore), h('div', { class: 'grow' }, h('div', { class: 'cs-name' }, cName(ctx, chore)), h('div', { class: 'muted small' }, `${fmtWeekRange(sunday, ctx.lang)} · ${t('cal.week', { n: row.P })}`)), stChip),
       h('div', { class: 'cs-who' }, assigned ? person(ctx, assigned, 'lg') : h('div', { class: 'av lg cs-none' }, '–'),
         h('div', { class: 'grow' }, h('div', { class: 'lbl' }, t('chore.assignedTo')), h('div', { class: 'cs-pname', 'data-testid': 'assignee' }, aName))),
       chipsRow,
@@ -662,7 +664,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
       const mine = Object.entries(ctx.state.requests || {}).filter(([, q]) => q.kind !== 'nudge' && q.kind !== 'cover' && q.kind !== 'offer' && q.kind !== 'notice' && q.week === sunday && q.from === me && q.fromChore === chore && q.status === 'pending');
       out.push(section(t('req.title'), h('div', { class: 'stack tight' },
         mine.map(([id, q]) => h('div', { class: 'li cs-req' }, h('div', { class: 'ico' }, icon('swap')),
-          h('div', { class: 'grow' }, h('div', { class: 't' }, `${ctx.name(q.to)} · ${t('chore.' + q.toChore)}`), h('div', { class: 'd' }, t('req.pending'))),
+          h('div', { class: 'grow' }, h('div', { class: 't' }, `${ctx.name(q.to)} · ${cName(ctx, q.toChore)}`), h('div', { class: 'd' }, t('req.pending'))),
           h('button', { type: 'button', class: 'btn soft sm', onclick: () => run(ctx, () => A.cancelSwap(id), null) }, t('req.cancel')))),
         h('button', { type: 'button', class: 'btn soft block', 'data-act': 'request', onclick: () => openSwapRequestSheet(ctx, sunday, chore) }, icon('swap'), t('req.new')))));
     }
@@ -670,7 +672,7 @@ export function openChoreSheet(ctx, sunday, chore, opts = {}) {
     return h('div', { class: 'stack' }, out);
   };
 
-  return liveSheet(ctx, { title: () => ctx.t('chore.' + chore), build });
+  return liveSheet(ctx, { title: () => cName(ctx, chore), build });
 }
 
 // ================================================================ DETTAGLIO SETTIMANA
@@ -691,15 +693,16 @@ export function renderWeekDetail(ctx, sunday, { heading = false, sheet = false }
   if (row.status === 'empty' || row.status === 'none') out.push(h('div', { class: 'note warn' }, icon('home2'), ctx.t('cal.emptyHouse')));
 
   // turni
-  out.push(h('div', { class: 'list wd-chores' }, CHORES.map((chore, c) => {
+  out.push(h('div', { class: 'list wd-chores' }, cIdx(row).map((c) => {
+    const chore = cIds(ctx, row)[c];
     const id = row.assigned[c]; const oc = outcomeOf(ctx, row, c); const plan = planOf(houseW(ctx), sunday, chore);
     const res = row.res[c];
     const showOc = oc && (oc.key !== 'done' || res.kind === 'by');
     const fl = id ? flowChips(ctx, sunday, chore) : [];
     const rowEl = h('div', { class: 'chore wd-chore', 'data-chore': chore },
       h('button', { type: 'button', class: 'wd-main', 'data-open': chore, onclick: () => openChoreSheet(ctx, sunday, chore) },
-        tile(chore),
-        h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.t('chore.' + chore)),
+        tile(ctx, chore),
+        h('div', { class: 'grow' }, h('div', { class: 't' }, cName(ctx, chore)),
           h('div', { class: 's' }, id ? [person(ctx, id, 'sm'), h('span', { class: 'wd-pn' }, ctx.name(id))] : h('span', null, ctx.t('chore.noOne')),
             row.isMakeup[c] ? chip(ctx.t('chore.makeupBadge'), 'acc', 'refresh') : null,
             row.swapped[c] ? chip(ctx.t('st.swapped'), 'acc', 'swap') : null,
@@ -764,7 +767,7 @@ export function renderWeekDetail(ctx, sunday, { heading = false, sheet = false }
       const done = x.status === 'done';
       const can = canTick(ctx, sunday, x);
       const inner = [h('span', { class: 'checkcircle' + (done ? ' on' : '') }, icon('check')), h('div', { class: 'grow' }, h('div', { class: 't' }, x.task.text),
-        h('div', { class: 'd' }, `${ctx.t('chore.' + x.chore)}${x.owner ? ' · ' + ctx.name(x.owner) : ''}${x.reason === 'arrears' && !done ? ' · ' + taskNote(ctx, x) : ''}`))];
+        h('div', { class: 'd' }, `${cName(ctx, x.chore)}${x.owner ? ' · ' + ctx.name(x.owner) : ''}${x.reason === 'arrears' && !done ? ' · ' + taskNote(ctx, x) : ''}`))];
       return can ? h('button', { type: 'button', class: 'li cs-task', 'data-task': x.task.id, 'aria-pressed': String(done), onclick: () => run(ctx, () => tickTask(ctx, sunday, x, !done)) }, inner) : h('div', { class: 'li cs-task' }, inner);
     }))));
   }
@@ -773,7 +776,7 @@ export function renderWeekDetail(ctx, sunday, { heading = false, sheet = false }
   if (row.swapped.some(Boolean)) {
     const groups = swapGroups(ctx, sunday);
     out.push(section(ctx.t('cal.swapsInWeek'), h('div', { class: 'stack tight' }, groups.map((g) => h('div', { class: 'card stack tight', 'data-swap': g.join(',') },
-      g.map((chore) => h('div', { class: 'row' }, tile(chore, 'sm'), h('div', { class: 'grow' }, h('b', null, ctx.t('chore.' + chore)), ' · ', ctx.name(row.assigned[ci(chore)])))),
+      g.map((chore) => h('div', { class: 'row' }, tile(ctx, chore, 'sm'), h('div', { class: 'grow' }, h('b', null, cName(ctx, chore)), ' · ', ctx.name(row.assigned[ci(ctx, chore)])))),
       ctx.isAdmin ? h('button', { type: 'button', class: 'btn danger sm', 'data-act': 'swap-cancel-week', onclick: () => cancelSwapOf(ctx, sunday, g[0]) }, icon('x'), ctx.t('cal.swapCancel')) : null)))));
   }
 
@@ -852,14 +855,14 @@ export function openIcsSheet(ctx, sunday) {
 
   const sh = ctx.sheet({ title: ctx.t('cal.icsTitle'), body: h('div') });
   const draw = () => {
-    const mine = span.map((r) => ({ r, cs: CHORES.filter((_, i) => r.assigned[i] === st.who) })).filter((x) => x.cs.length);
+    const mine = span.map((r) => ({ r, cs: cIds(ctx, r).filter((_, i) => r.assigned[i] === st.who) })).filter((x) => x.cs.length);
     const text = st.who ? makeIcs(ctx.house, out, st.who, ctx.lang, ctx.state.weeks || {}, from, COUNT) : '';
     const n = mine.reduce((a, x) => a + x.cs.length, 0);
     sh.set(h('div', { class: 'stack' },
       h('p', { class: 'muted' }, ctx.t('cal.icsHint', { n: COUNT })),
       ctx.isAdmin && ids.length ? h('div', { class: 'field' }, h('label', null, ctx.t('cal.icsWho')),
         (() => { const s = h('select', { class: 'input', 'aria-label': ctx.t('cal.icsWho'), onchange: (e) => { st.who = e.target.value; draw(); } }, ids.map((id) => h('option', { value: id, selected: id === st.who }, ctx.name(id)))); s.value = st.who; return s; })()) : null,
-      n ? h('div', { class: 'list' }, mine.map(({ r, cs }) => h('div', { class: 'li' }, h('div', { class: 'grow' }, h('div', { class: 't' }, fmtWeekRange(r.sunday, ctx.lang)), h('div', { class: 'd' }, cs.map((c) => ctx.t('chore.' + c)).join(', '))))))
+      n ? h('div', { class: 'list' }, mine.map(({ r, cs }) => h('div', { class: 'li' }, h('div', { class: 'grow' }, h('div', { class: 't' }, fmtWeekRange(r.sunday, ctx.lang)), h('div', { class: 'd' }, cs.map((c) => cName(ctx, c)).join(', '))))))
         : h('div', { class: 'empty' }, icon('calendar'), ctx.t('cal.icsEmpty')),
       n ? h('p', { class: 'muted small' }, ctx.t('cal.icsCount', { n })) : null,
       h('button', { type: 'button', class: 'btn lg block', 'data-act': 'ics-download', disabled: !n, onclick: () => {
@@ -875,21 +878,21 @@ export function openIcsSheet(ctx, sunday) {
 export function openSwapRequestSheet(ctx, sunday, chore) {
   const row = rowOf(ctx, sunday);
   if (!row || !ctx.me) return null;
-  const mineChores = CHORES.filter((_, i) => row.assigned[i] === ctx.me);
+  const mineChores = cIds(ctx, row).filter((_, i) => row.assigned[i] === ctx.me);
   const st = { my: mineChores.includes(chore) ? chore : mineChores[0], pick: null };
   const sh = ctx.sheet({ title: ctx.t('req.new'), body: h('div') });
   const draw = () => {
     if (!mineChores.length) { sh.set(h('div', { class: 'empty' }, icon('swap'), ctx.t('req.noChores'))); return; }
     const others = [];
-    CHORES.forEach((c2, i) => { const id = row.assigned[i]; if (id && id !== ctx.me) others.push({ id, chore: c2 }); });
+    cIds(ctx, row).forEach((c2, i) => { const id = row.assigned[i]; if (id && id !== ctx.me) others.push({ id, chore: c2 }); });
     if (!others.length) { sh.set(h('div', { class: 'empty' }, icon('swap'), ctx.t('req.noChores'))); return; }
     sh.set(h('div', { class: 'stack' },
       h('p', { class: 'muted' }, ctx.t('cal.reqHint')),
-      mineChores.length > 1 ? h('div', { class: 'field' }, h('label', null, ctx.t('req.mine')), seg(mineChores.map((c) => [c, ctx.t('chore.' + c)]), st.my, (v) => { st.my = v; draw(); }))
-        : h('div', { class: 'li cs-mine' }, tile(st.my, 'sm'), h('div', { class: 'grow' }, h('div', { class: 'lbl' }, ctx.t('req.mine')), h('div', { class: 't' }, ctx.t('chore.' + st.my)))),
+      mineChores.length > 1 ? h('div', { class: 'field' }, h('label', null, ctx.t('req.mine')), seg(mineChores.map((c) => [c, cName(ctx, c)]), st.my, (v) => { st.my = v; draw(); }))
+        : h('div', { class: 'li cs-mine' }, tile(ctx, st.my, 'sm'), h('div', { class: 'grow' }, h('div', { class: 'lbl' }, ctx.t('req.mine')), h('div', { class: 't' }, cName(ctx, st.my)))),
       h('div', { class: 'eyebrow' }, ctx.t('cal.reqPick')),
       h('div', { class: 'list' }, others.map((o) => h('button', { type: 'button', class: 'li cs-pick' + (st.pick && st.pick.id === o.id && st.pick.chore === o.chore ? ' sug' : ''), 'data-who': o.id, 'data-chore': o.chore, 'aria-pressed': String(!!(st.pick && st.pick.id === o.id && st.pick.chore === o.chore)), onclick: () => { st.pick = o; draw(); } },
-        person(ctx, o.id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(o.id)), h('div', { class: 'd' }, `${ctx.t('req.theirs')}: ${ctx.t('chore.' + o.chore)}`)),
+        person(ctx, o.id), h('div', { class: 'grow' }, h('div', { class: 't' }, ctx.name(o.id)), h('div', { class: 'd' }, `${ctx.t('req.theirs')}: ${cName(ctx, o.chore)}`)),
         st.pick && st.pick.id === o.id && st.pick.chore === o.chore ? icon('check') : null))),
       h('button', { type: 'button', class: 'btn lg block', 'data-act': 'req-send', disabled: !st.pick, onclick: async () => {
         if (await run(ctx, () => ctx.actions.requestSwap({ week: sunday, myChore: st.my, otherId: st.pick.id, otherChore: st.pick.chore }), ctx.t('req.sent'))) sh.close();

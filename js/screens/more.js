@@ -2,7 +2,8 @@
 // Esporta anche `renderRulesContent(houseOrCtx)` (usato dal gate regole) e `openLastOutSheet(ctx)`.
 import { h, icon, loadCss, liRow, empty, avatar, toggle, stepper, seg, confirmDialog, confetti, clear } from '../ui.js';
 import { t, tr, getLang, fmtDate, fmtWeekRange, dowLong, registerStrings } from '../i18n.js';
-import { CHORES, DEFAULT_SETTINGS, addDays } from '../engine.js';
+import { DEFAULT_SETTINGS, addDays } from '../engine.js';
+import { cIds, cName, cIcon, cCls, cActive } from '../choreui.js';
 import { LASTOUT_DEFAULT_KEYS, TASK_TEMPLATES, SHARED_TEMPLATES, sharedStatus, tasksForWeek, checklistFor, nextDueWeek, weekIndex, weekOfDate, uid, cleanNote } from '../extras.js';
 import { it, en } from '../strings/more.js';
 import { it as it2, en as en2 } from '../strings/more2.js';
@@ -24,7 +25,6 @@ registerStrings(itFlow, enFlow);
 registerStrings(itB, enB);
 
 const REPO = 'https://github.com/iantomasi-nicola/tidyhouse';
-const CHORE_ICON = { floor: 'broom', bathroom: 'shower', kitchen: 'pot' };
 
 // ================================================================ utilità
 const p2 = (x) => String(x).padStart(2, '0');
@@ -196,12 +196,12 @@ export async function openFixPicker(ctx) {
     return h('div', { class: 'stack', 'data-testid': 'fix-picker' }, h('p', { class: 'muted small' }, t('uxb.adm.fixHint')),
       rows.map((row) => h('section', null,
         h('div', { class: 'eyebrow' }, h('span', null, row.isCur ? `${t('uxb.adm.thisWeek')} · ${fmtWeekRange(row.sunday, ctx.lang)}` : fmtWeekRange(row.sunday, ctx.lang))),
-        h('div', { class: 'list' }, CHORES.map((c, i) => {
+        h('div', { class: 'list' }, cIds(null, row).map((c, i) => {
           const who = row.assigned[i]; if (!who) return null;
           const oc = mod.outcomeOf(ctx, row, i);
           return h('button', { type: 'button', class: 'li', 'data-fix': `${row.sunday}:${c}`, onclick: () => edit.openResultEditSheet(ctx, row.sunday, c) },
-            h('i', { class: 'mx-ct ' + c }, icon(CHORE_ICON[c])),
-            h('div', { class: 'grow' }, h('div', { class: 't' }, `${t('chore.' + c)} · ${ctx.name(who)}`), h('div', { class: 'd' }, oc ? oc.label : t('uxb.adm.notYet'))),
+            h('i', { class: 'mx-ct ' + cCls(null, c) }, icon(cIcon(null, c))),
+            h('div', { class: 'grow' }, h('div', { class: 't' }, `${cName(null, c)} · ${ctx.name(who)}`), h('div', { class: 'd' }, oc ? oc.label : t('uxb.adm.notYet'))),
             h('div', { class: 'end' }, oc ? chip(oc.tone + ' mx-oc', icon(oc.ic)) : null, icon('chevron')));
         })))));
   } });
@@ -658,7 +658,7 @@ const tplHas = (tasks, x) => { const names = [t(x.key), tr('it', x.key), tr('en'
 function openTaskSheet(ctx, task, preset = {}) {
   const house = ctx.house;
   const cur = weekOfDate(house, ctx.today());
-  const S = { id: task ? task.id : uid(), chore: (task && task.chore) || preset.chore || 'floor', text: (task && task.text) || preset.text || '', every: (task && parseInt(task.every, 10)) || preset.every || 1,
+  const S = { id: task ? task.id : uid(), chore: (task && task.chore) || preset.chore || cActive(null)[0], text: (task && task.text) || preset.text || '', every: (task && parseInt(task.every, 10)) || preset.every || 1,
     anchor: task && task.anchor ? task.anchor : cur, enabled: task ? task.enabled !== false : true };
   // anchor è una data qualsiasi: la porto alla domenica della sua settimana
   S.anchor = weekOfDate(house, S.anchor);
@@ -671,7 +671,7 @@ function openTaskSheet(ctx, task, preset = {}) {
     anchors.map((a) => h('option', { value: a, selected: a === S.anchor }, `${fmtWeekRange(a)}${a === cur ? ' · ' + t('moreX.thisWeek') : ''}`)));
   const s = ctx.sheet({ title: task ? t('edit') : t('tasks.add'), full: true, body: h('form', { class: 'stack mx-form', onsubmit: (e) => { e.preventDefault(); save(); } },
     h('div', { class: 'field' }, h('label', { for: 'mx-task-text' }, t('tasks.name')), textI),
-    h('div', { class: 'field' }, h('div', { class: 'lbl' }, t('tasks.forChore')), seg(CHORES.map((c) => [c, t('chore.' + c)]), S.chore, (v) => { S.chore = v; })),
+    h('div', { class: 'field' }, h('div', { class: 'lbl' }, t('tasks.forChore')), seg(cActive(null).map((c) => [c, cName(null, c)]), S.chore, (v) => { S.chore = v; })),
     h('div', { class: 'row-between' }, h('div', { class: 'lbl mx-lblb' }, t('tasks.every')), h('div', { class: 'row' }, stepper(S.every, { min: 1, max: 26, onchange: (v) => { S.every = v; } }), h('span', { class: 'muted' }, t('tasks.weeks')))),
     h('p', { class: 'small muted' }, t('moreY.t.everyHint')),
     h('div', { class: 'field' }, h('label', { for: 'mx-task-anchor' }, t('tasks.firstDue')), anchorSel),
@@ -715,7 +715,7 @@ async function addAllTemplates(ctx, chore) {
 /** "Questa settimana per Pavimenti: 4 voci (2 settimanali + 2 ogni 2 sett.)" */
 function previewText(ctx, chore, cur, weeks) {
   const items = checklistFor(ctx.house, weeks, cur, chore);
-  const name = t('chore.' + chore);
+  const name = cName(null, chore);
   if (!items.length) return t('moreY.t.prev0', { chore: name });
   const weekly = items.filter((x) => x.every === 1).length; const byX = {};
   items.filter((x) => x.every > 1).forEach((x) => { byX[x.every] = (byX[x.every] || 0) + 1; });
@@ -763,10 +763,10 @@ function tasksPage(ctx) {
     const choreOn = !off[c];
     const head2 = h('div', { class: 'card mx-chcard' + (choreOn ? '' : ' off'), 'data-testid': 'chore-' + c },
       h('div', { class: 'row' },
-        h('i', { class: 'mx-ct lg ' + c }, icon(CHORE_ICON[c])),
-        h('div', { class: 'grow' }, h('div', { class: 'mx-ch-name' }, t('chore.' + c)), h('div', { class: 'small muted' }, list.length ? countLabel(list.length) : t('tasks.empty'))),
+        h('i', { class: 'mx-ct lg ' + cCls(null, c) }, icon(cIcon(null, c))),
+        h('div', { class: 'grow' }, h('div', { class: 'mx-ch-name' }, cName(null, c)), h('div', { class: 'small muted' }, list.length ? countLabel(list.length) : t('tasks.empty'))),
         admin
-          ? h('label', { class: 'mx-chsw' }, h('span', { class: 'mx-lblb' }, t('moreY.t.active')), toggle(choreOn, (v) => attempt(ctx, () => ctx.actions.setHouse({ checklistOff: { [c]: v ? null : true } })), `${t('moreY.t.active')}: ${t('chore.' + c)}`))
+          ? h('label', { class: 'mx-chsw' }, h('span', { class: 'mx-lblb' }, t('moreY.t.active')), toggle(choreOn, (v) => attempt(ctx, () => ctx.actions.setHouse({ checklistOff: { [c]: v ? null : true } })), `${t('moreY.t.active')}: ${cName(null, c)}`))
           : chip(choreOn ? 'ok' : '', choreOn ? t('moreY.t.active') : t('moreY.t.choreOff'))),
       choreOn
         ? (list.length ? h('p', { class: 'mx-prev', 'data-testid': 'prev-' + c }, icon('list'), previewText(ctx, c, cur, weeks)) : null)
@@ -781,8 +781,8 @@ function tasksPage(ctx) {
 
   const kids = [head(t('tasks.title'), { right: admin ? h('button', { type: 'button', class: 'btn sm', onclick: () => openTaskSheet(ctx, null) }, icon('plus'), t('tasks.add')) : null }),
     h('p', { class: 'muted' }, t('tasks.hint'))];
-  for (const c of CHORES) kids.push(choreBlock(c));
-  const known = new Set(CHORES);
+  for (const c of cActive(null)) kids.push(choreBlock(c));
+  const known = new Set(cActive(null));
   const other = tasks.filter((x) => !known.has(x.chore));
   if (other.length) kids.push(h('section', null, h('div', { class: 'eyebrow' }, t('moreY.t.otherChore')), h('div', { class: 'list' }, other.map((x) => rowFor(x, true)))));
   if (!tasks.length) kids.push(h('div', { class: 'card' }, empty('list', t('tasks.empty'))));
@@ -791,12 +791,12 @@ function tasksPage(ctx) {
     const missing = TASK_TEMPLATES.filter((x) => !tplHas(tasks, x));
     if (missing.length) {
       kids.push(h('section', { class: 'stack tight mx-sugg' }, h('div', { class: 'eyebrow' }, t('tasks.templates')), h('p', { class: 'small muted' }, t('moreY.t.suggestHint')),
-        CHORES.map((c) => {
+        cActive(null).map((c) => {
           const m = missing.filter((x) => x.chore === c); if (!m.length) return null;
           return h('div', { class: 'stack tight' },
-            h('button', { type: 'button', class: 'btn tonal block', 'data-testid': 'addall-' + c, onclick: () => addAllTemplates(ctx, c) }, icon('plus'), t('moreY.t.addAll', { chore: t('chore.' + c), n: m.length })),
+            h('button', { type: 'button', class: 'btn tonal block', 'data-testid': 'addall-' + c, onclick: () => addAllTemplates(ctx, c) }, icon('plus'), t('moreY.t.addAll', { chore: cName(null, c), n: m.length })),
             h('div', { class: 'mx-tpl' }, m.map((x) => h('button', { type: 'button', class: 'mx-tplbtn', onclick: () => openTaskSheet(ctx, null, { chore: x.chore, text: t(x.key), every: x.every }) },
-              h('i', { class: 'mx-ct ' + x.chore }, icon(CHORE_ICON[x.chore])), h('span', { class: 'grow' }, t(x.key)), h('span', { class: 'chip' }, everyLabel(x.every))))));
+              h('i', { class: 'mx-ct ' + cCls(null, x.chore) }, icon(cIcon(null, x.chore))), h('span', { class: 'grow' }, t(x.key)), h('span', { class: 'chip' }, everyLabel(x.every))))));
         })));
     }
   }
@@ -915,13 +915,13 @@ function sharedPage(ctx) {
 // ================================================================ scambi, sostituzioni, offerte e avvisi
 async function askSwap(ctx) {
   const out = ctx.calc.out; const row = out.cur >= 0 ? out.rows[out.cur] : null;
-  const mine = row && ctx.me ? CHORES.filter((c, i) => row.assigned[i] === ctx.me) : [];
+  const mine = row && ctx.me ? cIds(null, row).filter((c, i) => row.assigned[i] === ctx.me) : [];
   if (!mine.length) { ctx.toast(t('req.noChores')); return; }
   const open = async (chore) => {
     try { const m = await import('../choresheet.js'); m.openSwapRequestSheet(ctx, row.sunday, chore); } catch (e) { console.warn(e); ctx.toast(t('error')); }
   };
   if (mine.length === 1) return open(mine[0]);
-  const s = ctx.sheet({ title: t('req.mine'), body: h('div', { class: 'list' }, mine.map((c) => liRow({ ic: CHORE_ICON[c], title: t('chore.' + c), desc: fmtWeekRange(row.sunday), onclick: () => { s.close(); open(c); } }))) });
+  const s = ctx.sheet({ title: t('req.mine'), body: h('div', { class: 'list' }, mine.map((c) => liRow({ ic: cIcon(null, c), title: cName(null, c), desc: fmtWeekRange(row.sunday), onclick: () => { s.close(); open(c); } }))) });
 }
 /** Tipo di richiesta: 'swap' (scambio, senza kind), 'cover' (cerco sostituto), 'offer' (mi offro), 'notice' (avviso), 'nudge' (sollecito). */
 const reqKind = (r) => (['cover', 'offer', 'notice', 'nudge'].includes(r.kind) ? r.kind : 'swap');
@@ -950,7 +950,7 @@ async function answerRequest(ctx, r, ok) {
   })) === true;
 }
 const wkLabel = (r) => (r.week ? fmtWeekRange(r.week) : '');
-const choreLow = (c) => (c ? t('chore.' + c).toLowerCase() : '');
+const choreLow = (c) => (c ? cName(null, c).toLowerCase() : '');
 
 function reqLine(ctx, r) {
   const me = ctx.me; const k = reqKind(r); const week = wkLabel(r); const chore = choreLow(r.chore);
@@ -967,11 +967,11 @@ function reqLine(ctx, r) {
   const a = choreLow(r.fromChore), b = choreLow(r.toChore);
   if (r.to === me) return t('req.incoming', { name: ctx.name(r.from), theirs: b, mine: a, week });
   if (r.from === me) return t('moreX.outgoing', { to: ctx.name(r.to), mine: a, theirs: b, week });
-  return t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: t('chore.' + r.fromChore), b: t('chore.' + r.toChore), week });
+  return t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: cName(null, r.fromChore), b: cName(null, r.toChore), week });
 }
 /** Testo neutro (stessa frase per tutti): usato nelle etichette di accessibilità. */
 const reqPlain = (ctx, r) => (reqKind(r) === 'swap'
-  ? t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: t('chore.' + r.fromChore), b: t('chore.' + r.toChore), week: wkLabel(r) })
+  ? t('moreX.reqLine', { from: ctx.name(r.from), to: ctx.name(r.to), a: cName(null, r.fromChore), b: cName(null, r.toChore), week: wkLabel(r) })
   : reqLine(ctx, r));
 const statusChip = (r) => (r.status === 'accepted' ? chip('ok', icon('check'), t('moreY.st.agreed')) : r.status === 'declined' ? chip('bad', icon('x'), t('moreY.st.declined')) : chip('warn', icon('clock'), t('req.pending')));
 const termsOf = (r) => (reqKind(r) === 'swap' ? null : 'repay');   // il «regalo» non esiste più: anche le vecchie richieste valgono «con recupero»
@@ -1074,15 +1074,15 @@ const agreedKey = (p) => 'moreY.act.agreed' + (p.terms ? 'Repay' : '');
 function actText(ctx, e) {
   const p = e.p || {};
   if (!ACT_ICON[e.type]) return t('act.generic', { name: personName(ctx, e.by), text: p.text || e.type || '' });
-  if (e.type === 'makeup') return t('uxb.act.makeup', { chore: p.chore ? t('chore.' + p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '', day: p.day ? dowLong(p.day, ctx.lang) : '' });
+  if (e.type === 'makeup') return t('uxb.act.makeup', { chore: p.chore ? cName(null, p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '', day: p.day ? dowLong(p.day, ctx.lang) : '' });
   if (e.type === 'adjust') {
-    const text = Object.entries(p.d || {}).map(([k, v]) => `${k === 'credit' ? t('bal.rest') : t('chore.' + k)} ${v > 0 ? '+' : '−'}${Math.abs(v)}`).join(', ');
+    const text = Object.entries(p.d || {}).map(([k, v]) => `${k === 'credit' ? t('bal.rest') : cName(null, k)} ${v > 0 ? '+' : '−'}${Math.abs(v)}`).join(', ');
     return t('bal.act', { name: p.who ? ctx.name(p.who) : '', text });
   }
   if (e.type === 'assign') return t(Number(p.n) > 0 ? 'uxb.act.assign' : 'uxb.act.assign0', { name: personName(ctx, e.by), week: p.week ? fmtWeekRange(p.week, ctx.lang) : '' });
   const key = e.type === 'agreed' ? agreedKey(p) : ACT_NEW.has(e.type) ? 'moreY.act.' + e.type + (e.type === 'incomplete' && Number(p.n) === 1 ? '1' : '') : 'act.' + e.type;
   return t(key, {
-    name: personName(ctx, e.by), chore: p.chore ? t('chore.' + p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '',
+    name: personName(ctx, e.by), chore: p.chore ? cName(null, p.chore).toLowerCase() : '', who: p.who ? ctx.name(p.who) : '',
     day: p.day ? `${dowLong(p.day, ctx.lang)} ${fmtDate(p.day, ctx.lang)}` : '', text: p.text || '', n: p.n ?? '',
   });
 }

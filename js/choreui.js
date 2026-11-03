@@ -7,7 +7,9 @@
 //   cCls(x, id)    classe colore: l'id per le predefinite (.tile.floor …), `cx cx<k>` per le nuove (palette di ripiego in css/app.css)
 //   cOn(row, c)    la mansione di indice c è in turno in quella settimana (row.active)
 //   cIdx(row)      indici delle mansioni in turno in quella riga
-import { choresOf, DEFAULT_CHORES } from './engine.js';
+//   cActive(x)     id delle mansioni non tolte (per le liste generali: checklist, legende, fatica)
+// Il primo argomento può essere null: vale la casa aperta (window.__app.house).
+import { choresOf, DEFAULT_CHORES, todayStr } from './engine.js';
 import { choreName, choreIcon, choreRenamed } from './extras.js';
 import { getLang, tr } from './i18n.js';
 
@@ -16,7 +18,12 @@ export const CX_COLORS = 8;
 /** Icone che l'admin può scegliere per una mansione (tutte presenti in js/ui.js). */
 export const CHORE_ICONS = ['broom', 'shower', 'pot', 'trash', 'cart', 'shirt', 'leaf', 'window', 'home', 'list', 'star', 'fire', 'refresh', 'dot'];
 
-const houseOf = (x) => (x && typeof x.t === 'function' ? x.house : x) || {};
+/** Casa da ctx, da una casa o (null) da quella aperta nell'app (window.__app): utile nei moduli con helper senza ctx. */
+function houseOf(x) {
+  if (x && typeof x.t === 'function') return x.house || {};
+  if (x) return x;
+  try { return (globalThis.window && window.__app && window.__app.house) || {}; } catch { return {}; }
+}
 const isDefault = (id) => DEFAULT_CHORES.some((d) => d.id === id);
 
 /** Id delle mansioni (ordine del motore). Con una riga del calendario usa `row.chores` (stesso ordine di row.assigned). */
@@ -40,6 +47,6 @@ export const cSeg = (x, id) => (isDefault(id) ? 'seg-' + id : 'seg-cx ' + cCls(x
 export const cOn = (row, c) => !(row && Array.isArray(row.active) && row.active[c] === false);
 export const cIdx = (row) => (row && Array.isArray(row.assigned) ? row.assigned.map((_, c) => c).filter((c) => cOn(row, c)) : []);
 /** Mansioni attive oggi (senza `to` passato): quelle che si vedono nelle liste generali (checklist, legende…). */
-export function cActive(x, today) {
-  return choresOf(houseOf(x)).filter((c) => !c.to || !today || c.to >= today).map((c) => c.id);
+export function cActive(x, today = todayStr()) {
+  return choresOf(houseOf(x)).filter((c) => !c.to || c.to >= today).map((c) => c.id);
 }

@@ -2,7 +2,7 @@
 import { h, icon } from './ui.js';
 import { t, fmtDate, fmtWeekRange, registerStrings } from './i18n.js';
 import { buildPrompt, callAi, extractJson, validateAiOutput } from './ai.js';
-import { CHORES } from './engine.js';
+import { cIds, cName } from './choreui.js';
 import { loadOf } from './assignlogic.js';
 import { it, en } from './strings/set.js';
 import { it as itA, en as enA } from './strings/assign.js';
@@ -64,7 +64,7 @@ export function openAiImportSheet(ctx) {
     const wk = (w) => (/^\d{4}-\d{2}-\d{2}$/.test(w) ? fmtWeekRange(w, ctx.lang) : '');
     return h('div', { class: 'stack tight', 'data-testid': 'ai-rejected' }, h('div', { class: 'eyebrow' }, t('assign.ai.rejTitle')),
       list.map((x) => h('div', { class: 'small muted' }, t('assign.ai.rejItem', {
-        what: [CHORES.includes(x.chore) ? t('chore.' + x.chore) : '', wk(x.week), x.person].filter(Boolean).join(' · ') || '—',
+        what: [cIds(ctx).includes(x.chore) ? cName(ctx, x.chore) : '', wk(x.week), x.person].filter(Boolean).join(' · ') || '—',
         reason: t('assign.ai.rej.' + x.reason, { person: x.person || '?' }),
       }))));
   }
@@ -84,20 +84,21 @@ export function openAiImportSheet(ctx) {
     if (byWeek.size) box.append(h('div', { class: 'eyebrow' }, t('assign.ai.section')));
     for (const [week, list] of [...byWeek].sort((x, y) => x[0].localeCompare(y[0]))) {
       const row = rowsAll.find((x) => x.sunday === week); if (!row) continue;
-      const after = row.assigned.slice(); for (const a of list) after[CHORES.indexOf(a.chore)] = a.personId;
-      const load = loadOf(after);
+      const CH = cIds(ctx, row);
+      const after = row.assigned.slice(); for (const a of list) after[CH.indexOf(a.chore)] = a.personId;
+      const load = loadOf(after, CH);
       for (const a of list) {
-        const i = CHORES.indexOf(a.chore), from = row.assigned[i];
+        const i = CH.indexOf(a.chore), from = row.assigned[i];
         const dup = from === a.personId, many = (load[a.personId] || []).length;
         const sub = [dup ? t('setX.ai.dup') : '', row.closed ? t('assign.ai.closed') : '', many > 1 ? t('assign.ai.multi', { name: ctx.name(a.personId), n: many }) : ''].filter(Boolean).join(' · ');
-        const { inp, el } = chk(t('assign.ai.item', { chore: t('chore.' + a.chore), week: fmtWeekRange(week, ctx.lang), from: from ? ctx.name(from) : t('assign.nobody'), to: ctx.name(a.personId) }), sub, !dup);
+        const { inp, el } = chk(t('assign.ai.item', { chore: cName(ctx, a.chore), week: fmtWeekRange(week, ctx.lang), from: from ? ctx.name(from) : t('assign.nobody'), to: ctx.name(a.personId) }), sub, !dup);
         items.push({ inp, assign: a }); box.append(el);
       }
     }
     for (const r of res.results) {
       const p = r.value.startsWith('by:') ? t('st.doneBy', { name: ctx.name(r.value.slice(3)) }) : r.value === 'done' ? t('st.done') : t('st.skipped');
       const dup = (((ctx.state.weeks || {})[r.week] || {}).result || {})[r.chore] === r.value;
-      const { inp, el } = chk(t('ai.parse.result', { chore: t('chore.' + r.chore), week: fmtWeekRange(r.week, ctx.lang), what: p }), [ctx.name(((ctx.calc.out.rows.find((x) => x.sunday === r.week) || {}).assigned || [])[['floor', 'bathroom', 'kitchen'].indexOf(r.chore)]), dup ? t('setX.ai.dup') : ''].filter(Boolean).join(' · '), !dup);
+      const { inp, el } = chk(t('ai.parse.result', { chore: cName(ctx, r.chore), week: fmtWeekRange(r.week, ctx.lang), what: p }), [ctx.name(((ctx.calc.out.rows.find((x) => x.sunday === r.week) || {}).assigned || [])[cIds(ctx).indexOf(r.chore)]), dup ? t('setX.ai.dup') : ''].filter(Boolean).join(' · '), !dup);
       items.push({ inp, run: () => ctx.actions.setResult(r.week, r.chore, r.value) }); box.append(el);
     }
     const rej = rejectedBox(res.rejected || []);
@@ -114,7 +115,7 @@ export function openAiImportSheet(ctx) {
     for (const x of todo.filter((y) => y.assign)) (groups.get(x.assign.week) || groups.set(x.assign.week, {}).get(x.assign.week))[x.assign.chore] = x.assign.personId;
     for (const [week, wanted] of groups) {
       try {
-        const changes = Object.entries(wanted).map(([c, id]) => t('assign.logChange', { chore: t('chore.' + c).toLowerCase(), name: ctx.name(id) })).join(', ');
+        const changes = Object.entries(wanted).map(([c, id]) => t('assign.logChange', { chore: cName(ctx, c).toLowerCase(), name: ctx.name(id) })).join(', ');
         await ctx.actions.setWeekAssignments(week, wanted, { merge: true, explicit: true, logText: t('assign.log', { week: fmtWeekRange(week, ctx.lang), changes }) });
         ok += Object.keys(wanted).length;
       } catch { ko += Object.keys(wanted).length; }
