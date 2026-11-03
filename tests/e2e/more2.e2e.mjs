@@ -282,7 +282,7 @@ const TASKS = [
   { id: 'b1', chore: 'bathroom', text: 'Pulisci il WC', every: 1, anchor: '2026-10-04', enabled: true },
   { id: 'b2', chore: 'bathroom', text: 'Pulisci le fughe della doccia', every: 4, anchor: '2026-10-04', enabled: true },
 ];
-await scenario('tasks: checklist per mansione, raggruppo per frequenza, anteprima somma, interruttori, suggerimenti', async () => {
+await scenario('tasks: extra delle mansioni per scadenza, anteprima somma, interruttori, modelli, aggiunta in un gesto, modifica in linea, spunta', async () => {
   const page = await open({ seed: S({ houseExtra: { tasks: TASKS } }) });
   await goto(page, '/tasks');
   const prev = (c) => page.locator(`[data-testid=prev-${c}]`).innerText();
@@ -290,63 +290,120 @@ await scenario('tasks: checklist per mansione, raggruppo per frequenza, anteprim
   assert.match(await prev('bathroom'), /Questa settimana per Bagno: 2 voci \(1 settimanale \+ 1 ogni 4 sett\.\)/);
   assert.equal(await page.locator('[data-testid=prev-kitchen]').count(), 0, 'cucina senza voci: nessuna anteprima');
   const t = await body(page);
-  assert.match(t, /Ogni settimana/); assert.match(t, /Ogni 2 settimane/); assert.match(t, /Ogni 8 settimane/); assert.match(t, /Prossima:/);
+  assert.match(t, /Extra delle mansioni/); assert.match(t, /Ogni 2 settimane/); assert.match(t, /Ogni 8 settimane/); assert.match(t, /Prossima:/);
+  assert.match(t, /Da fare questa settimana|Tocca a/); assert.doesNotMatch(t, /Checklist ricorrenti/);
+  // ordine per scadenza: le voci non in scadenza (f5, tra 8 settimane) stanno in fondo anche se inserite prima delle altre
+  const floor = await page.locator('[data-testid=chore-floor] + .list [data-task]').evaluateAll((els) => els.map((e) => e.dataset.task));
+  assert.equal(floor.length, 5); assert.equal(floor.at(-1), 'f5');
   await shot(page, 'tasks-it-mobile');
-  // interruttore singolo: spengo una voce ogni 2 settimane
+  // interruttore singolo: spengo una voce ogni 2 settimane (va in fondo)
   await page.locator('.mx-task', { hasText: 'Pulisci il filtro' }).locator('.switch').click();
   await page.waitForFunction(() => /3 voci \(2 settimanali \+ 1 ogni 2 sett\.\)/.test(document.body.innerText));
   assert.equal((await store(page)).house.tasks.find((x) => x.id === 'f4').enabled, false);
+  assert.equal(await page.locator('[data-testid=chore-floor] + .list [data-task]').last().getAttribute('data-task'), 'f4', 'disattivata: in fondo');
   // interruttore della mansione: spenta -> le voci spariscono e non bloccano "fatto"
   assert.equal((await page.evaluate(() => window.__app.actions.pendingChecklist('2026-11-01', 'bathroom'))).length, 2);
   await page.locator('[data-testid=chore-bathroom] .switch').click();
-  await page.waitForFunction(() => /Spenta: queste voci non compaiono/.test(document.body.innerText));
+  await page.waitForFunction(() => /Spenti: queste voci non compaiono/.test(document.body.innerText));
   assert.equal((await store(page)).house.checklistOff.bathroom, true);
   assert.equal((await page.evaluate(() => window.__app.actions.pendingChecklist('2026-11-01', 'bathroom'))).length, 0, 'spenta: nessuna voce blocca "fatto"');
   const r = await page.evaluate(() => window.__app.actions.completeChore('2026-11-01', 'bathroom'));
   assert.equal(r.ok, true);
   await page.evaluate(() => window.__app.actions.undoResult('2026-11-01', 'bathroom'));
   await page.locator('[data-testid=chore-bathroom] .switch').click();
-  await page.waitForFunction(() => !/Spenta: queste voci non compaiono/.test(document.body.innerText));
+  await page.waitForFunction(() => !/Spenti: queste voci non compaiono/.test(document.body.innerText));
   assert.equal((await store(page)).house.checklistOff && (await store(page)).house.checklistOff.bathroom, undefined);
-  // suggerimenti: tutti quelli della cucina (sfalsati nel tempo)
-  await page.locator('[data-testid=addall-kitchen]').click();
+  // modelli: «+» della Cucina (mansione già scelta) e tutti insieme (sfalsati nel tempo)
+  await page.locator('[data-testid=tk-add-kitchen]').click();
+  await page.waitForSelector('[data-testid=tk-tplall]');
+  assert.equal(await page.locator('[data-testid=tk-who-kitchen]').getAttribute('aria-checked'), 'true', 'la mansione è già scelta');
+  await page.locator('[data-testid=tk-tplall]').click();
   await page.waitForFunction(() => document.querySelectorAll('[data-task]').length === 7 + 6);
   const st = await store(page);
   const kit = st.house.tasks.filter((x) => x.chore === 'kitchen');
   assert.equal(kit.length, 6);
   for (const s of ['Pulisci piano cucina e fornelli', 'Pulisci il lavello', 'Svuota e lava il cestino']) assert.ok(kit.some((x) => x.text === s && x.every === 1), s);
-  assert.equal((await prev('kitchen')).trim(), 'Questa settimana per Cucina: 4 voci (3 settimanali + 1 ogni 4 sett.)');
-  assert.equal(await page.locator('[data-testid=addall-kitchen]').count(), 0, 'niente più da aggiungere per la cucina');
-  // suggerimento singolo -> sheet precompilato, ogni 1 settimana
-  await page.getByRole('button', { name: /Pulisci doccia\/vasca/ }).click();
-  assert.equal(await page.inputValue('#mx-task-text'), 'Pulisci doccia/vasca');
-  await page.locator('.sheet').getByRole('button', { name: /^Annulla/ }).click(); await wait(page, 500);
-  // modifica: il campo testo resta stabile con aggiornamenti remoti
-  await page.getByRole('button', { name: /Modifica: Lava i pavimenti/ }).click();
-  await page.waitForSelector('#mx-task-text'); await wait(page, 450);
-  await page.click('#mx-task-text'); await page.fill('#mx-task-text', '');
-  await page.evaluate(() => { window.__tin = document.getElementById('mx-task-text'); });
+  await page.waitForFunction(() => /Questa settimana per Cucina: 4 voci \(3 settimanali \+ 1 ogni 4 sett\.\)/.test(document.body.innerText));
+  assert.equal(await page.locator('[data-testid=tk-tplall]').count(), 0, 'niente più da aggiungere per la cucina');
+  await page.locator('.toast-action').click();   // Annulla: via le sei voci
+  await page.waitForFunction(() => document.querySelectorAll('[data-task]').length === 7);
+  await page.locator('[data-testid=tk-cancel]').click(); await wait(page, 500);
+  // modello singolo con un tocco (Bagno), Annulla lo toglie
+  await page.locator('[data-testid=tk-add-bathroom]').click();
+  await page.locator('[data-testid="tk-tpl-tasks.t.w.bath2"]').click();
+  await page.waitForFunction(() => (window.__app.house.tasks || []).some((x) => x.text === 'Pulisci doccia/vasca' && x.every === 1 && x.chore === 'bathroom'));
+  await page.locator('.toast-action').click();
+  await page.waitForFunction(() => !(window.__app.house.tasks || []).some((x) => x.text === 'Pulisci doccia/vasca'));
+  await page.locator('[data-testid=tk-cancel]').click(); await wait(page, 500);
+  // aggiunta in un gesto: testo + mansione + frequenza, Invio
+  await page.locator('[data-testid=tk-add]').click();
+  await page.waitForSelector('#tk-text'); await wait(page, 450);
+  await page.locator('[data-testid=tk-who-kitchen]').click();
+  await page.locator('[data-testid=tk-freq-4]').click();
+  await page.fill('#tk-text', 'Pulisci il microonde'); await page.keyboard.press('Enter');
+  await page.waitForFunction(() => (window.__app.house.tasks || []).some((x) => x.text === 'Pulisci il microonde'));
+  const nt = (await store(page)).house.tasks.find((x) => x.text === 'Pulisci il microonde');
+  assert.equal(nt.chore, 'kitchen'); assert.equal(nt.every, 4); assert.equal(nt.enabled, true);
+  await wait(page, 500);
+  // modifica in linea: il campo testo resta stabile con aggiornamenti remoti
+  await page.locator('[data-testid=task-open-f2]').click();
+  await page.waitForSelector('[data-testid=tk-panel-f2] #tk-text'); await wait(page, 450);
+  await page.click('#tk-text'); await page.fill('#tk-text', '');
+  await page.evaluate(() => { window.__tin = document.getElementById('tk-text'); });
   await Promise.all([page.keyboard.type('Lava bene i pavimenti', { delay: 60 }),
-    page.evaluate(async () => { const s = window.__app.store; for (let i = 0; i < 8; i++) { s.setDoc('weeks', '2026-11-01', { note: 'x' + i }); s.setDoc('needs', 'q' + i, { text: 'q' + i, by: 'bruno', at: new Date().toISOString(), done: false }); await new Promise((r) => setTimeout(r, 120)); } })]);
-  assert.equal(await page.inputValue('#mx-task-text'), 'Lava bene i pavimenti');
-  assert.equal(await page.evaluate(() => document.getElementById('mx-task-text') === window.__tin && document.activeElement === window.__tin), true);
-  await page.locator('.sheet').getByRole('button', { name: /^Salva/ }).click();
+    page.evaluate(async () => { const s = window.__app.store; for (let i = 0; i < 8; i++) { s.setDoc('weeks', '2026-11-08', { note: 'x' + i }); s.setDoc('needs', 'q' + i, { text: 'q' + i, by: 'bruno', at: new Date().toISOString(), done: false }); await new Promise((r) => setTimeout(r, 120)); } })]);
+  assert.equal(await page.inputValue('#tk-text'), 'Lava bene i pavimenti');
+  assert.equal(await page.evaluate(() => document.getElementById('tk-text') === window.__tin && document.activeElement === window.__tin), true);
+  await page.locator('[data-testid=tk-save]').click();
   await page.waitForFunction(() => /Lava bene i pavimenti/.test(document.body.innerText));
   assert.equal((await store(page)).house.tasks.find((x) => x.id === 'f2').text, 'Lava bene i pavimenti');
+  // elimina dall'editor con «Annulla» (niente dialogo di conferma)
+  await wait(page, 500);
+  await page.locator('[data-testid=task-open-' + nt.id + ']').click();
+  await page.waitForSelector('[data-testid=tk-del]'); await wait(page, 300);
+  await page.locator('[data-testid=tk-del]').click();
+  await page.waitForFunction((i) => !(window.__app.house.tasks || []).some((x) => x.id === i), nt.id);
+  await page.locator('.toast-action').click();
+  await page.waitForFunction((i) => (window.__app.house.tasks || []).some((x) => x.id === i), nt.id);
+  // spunta dalla pagina: chi ha il turno (qui l'admin) segna la voce, con nome di chi l'ha fatta; si può togliere
+  await wait(page, 500);
+  await page.locator('[data-testid=task-tick-f1]').click();
+  await page.waitForFunction(() => ((window.__app.state.weeks['2026-11-01'] || {}).tasksDone || {}).f1);
+  assert.match(await page.locator('[data-task=f1]').innerText(), /Fatto da Anna/);
+  await page.locator('[data-testid=task-tick-f1]').click();
+  await page.waitForFunction(() => !((window.__app.state.weeks['2026-11-01'] || {}).tasksDone || {}).f1);
   await noOverflow(page, 'tasks'); await noRawKeys(page, 'tasks');
   await done(page);
-  // non admin: sola lettura
+  // non admin: sola lettura (può solo spuntare le voci del proprio turno)
   const p2 = await open({ seed: S({ admin: false, houseExtra: { tasks: TASKS, checklistOff: { bathroom: true } } }) });
   await goto(p2, '/tasks');
   assert.equal(await p2.locator('.switch').count(), 0);
-  assert.equal(await p2.getByRole('button', { name: /Nuovo compito/ }).count(), 0);
+  assert.equal(await p2.locator('[data-testid=tk-add]').count(), 0);
+  assert.equal(await p2.locator('[data-testid^=tk-add-]').count(), 0);
   assert.equal(await p2.locator('[data-testid^=addall-]').count(), 0);
-  assert.match(await body(p2), /Solo l'admin può modificare/); assert.match(await body(p2), /Checklist spenta/);
+  assert.match(await body(p2), /Solo l'admin può aggiungere o modificare/); assert.match(await body(p2), /Extra spenti/);
   await shot(p2, 'tasks-readonly'); await done(p2);
   const p3 = await open({ seed: S({ houseExtra: { lang: 'en', tasks: TASKS } }), lang: 'en-US', viewport: D, dark: true });
   await goto(p3, '/tasks'); await noRawKeys(p3, 'tasks en');
   assert.equal((await p3.locator('[data-testid=prev-floor]').innerText()).trim(), 'This week for Floor: 4 items (2 weekly + 2 every 2 wks)');
+  assert.match(await body(p3), /Chore extras/);
+  await noOverflow(p3, 'tasks desktop');
   await shot(p3, 'tasks-en-desktop-dark'); await done(p3);
+});
+
+await scenario('tasks: stati vuoti utili (admin: modelli per mansione; non admin: chiedi all\'admin)', async () => {
+  const page = await open({ seed: S({ houseExtra: { tasks: [], shared: [] } }) });
+  await goto(page, '/tasks');
+  assert.match(await page.locator('[data-testid=turn-empty]').innerText(), /Nessun compito a turno/);
+  assert.equal(await page.locator('[data-testid=tk-tpl-shared\\.t\\.trash]').count(), 1, 'modello a un tocco già nello stato vuoto');
+  assert.match(await page.locator('[data-testid=extra-empty]').innerText(), /Nessun extra delle mansioni/);
+  await page.locator('[data-testid=addall-bathroom]').click();
+  await page.waitForFunction(() => (window.__app.house.tasks || []).filter((x) => x.chore === 'bathroom').length === 6);
+  await shot(page, 'tasks-empty-it'); await noOverflow(page, 'tasks empty'); await done(page);
+  const p2 = await open({ seed: S({ admin: false, houseExtra: { tasks: [], shared: [] } }) });
+  await goto(p2, '/tasks');
+  assert.match(await body(p2), /Chiedi all'admin di aggiungerne/); assert.equal(await p2.locator('[data-testid=tk-tpl-shared\\.t\\.trash]').count(), 0);
+  await done(p2);
 });
 
 await scenario('lastout: editor con campi persistenti', async () => {

@@ -20,6 +20,7 @@
 | Audit UX nucleo + difetti noti (`js/app.js`, `js/ui.js`, `css/app.css`, `js/actions.js`, onboarding) — `docs/ux/core.md` | **Claude (sessione 2, agente UX-C)** | in corso | idem |
 | Manutenzione: `tests/e2e/settings.e2e.mjs`, `npm run e2e`, CI (`.github/workflows/ci.yml`), `README.md` | **Claude (sessione 2, agente manutenzione)** | in corso | idem |
 | Controllo admin su recuperi/riposi e «con/senza recupero» (`js/engine.js` solo blocco `adj`, `js/actions.js` adjustBalance, nuovo `js/balance.js`, `js/weekassign.js`, `js/choresheet.js` export, `js/strings/balance.js`) | **Claude (sessione 3)** | pronto sul branch, non ancora su main | |
+| Pagina «Compiti» unica (a turno + extra delle mansioni): `js/screens/more.js` (sezione compiti), widget shared/checklist in `js/screens/home.js`, etichette in `settings.js` (Funzioni), `css/more.css`, stringhe `more*/flow` — `docs/ux/tasks-checklist.md` | **Claude (agente UX compiti)** | pronto sul branch worktree-agent-ad7809bc1fe775b84, non su main | nessun cambio a engine/extras/actions/store |
 | Verifiche sul campo (notifiche push su iPhone/iPad/Android) | utente + IA | in corso | vedi `HANDOFF.md` |
 
 ## Domande aperte / messaggi tra IA

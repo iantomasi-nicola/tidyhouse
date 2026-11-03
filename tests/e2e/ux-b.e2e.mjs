@@ -211,7 +211,7 @@ await scenario('tap target ≥ 44 px su Altro e Impostazioni (390 e 320 con test
 });
 
 // ============================================================ BLOCCO 2 · Impostazioni
-await scenario('funzioni: ogni interruttore ha icona e una riga che spiega cosa cambia (anche «Compiti condivisi»)', async () => {
+await scenario('funzioni: ogni interruttore ha icona e una riga che spiega cosa cambia (anche «Da fare a turno»)', async () => {
   const p = await open({ seed: S() });
   await goto(p, '/settings/features');
   const rows = await p.evaluate(() => [...document.querySelectorAll('[data-testid^="feat-"][data-testid$="-row"]')].map((r) => ({ id: r.getAttribute('data-testid'), ico: !!r.querySelector('.ico svg'), d: (r.querySelector('.d') || {}).textContent || '' })));
@@ -293,14 +293,14 @@ await scenario('impostazioni: parole semplici nelle regole e testo «Chiave API�
 
 await scenario('funzioni: ogni interruttore ha un effetto visibile subito (hub, navigazione) e torna indietro', async () => {
   const p = await open({ seed: S() });
-  const hubRow = { needs: '#/needs', tasks: '#/tasks', lastout: '#/lastout', requests: '#/requests', rules: '#/rules', activity: '#/activity', shared: '#/more/shared' };
+  const hubRow = { needs: '#/needs', tasks: '#/tasks', lastout: '#/lastout', requests: '#/requests', rules: '#/rules', activity: '#/activity', shared: '#/tasks' };   // «Compiti» è una sola riga: sparisce solo se sono spente entrambe le funzioni (a turno ed extra)
   await goto(p, '/settings/features');
   for (const [k, href] of Object.entries(hubRow)) {
     await p.waitForTimeout(420);
     await p.locator(tid('feat-' + k + '-row')).click();
     await p.waitForFunction((x) => window.__app.house.features && window.__app.house.features[x] === false, k);
     await hop(p, '/more');
-    assert.equal(await p.locator(`a.li[href="${href}"]`).count(), 0, `${k}: la riga dell'hub deve sparire`);
+    assert.equal(await p.locator(`a.li[href="${href}"]`).count(), k === 'tasks' || k === 'shared' ? 1 : 0, `${k}: la riga dell'hub deve sparire (Compiti resta se l'altra metà è accesa)`);
     await hop(p, '/settings/features'); await p.waitForTimeout(420);
     await p.locator(tid('feat-' + k + '-row')).click();
     await p.waitForFunction((x) => window.__app.house.features[x] === true, k);
@@ -308,6 +308,14 @@ await scenario('funzioni: ogni interruttore ha un effetto visibile subito (hub, 
     assert.equal(await p.locator(`a.li[href="${href}"]`).count(), 1, `${k}: la riga torna`);
     await hop(p, '/settings/features');
   }
+  // «Compiti»: spente entrambe le metà la riga sparisce
+  await p.waitForTimeout(420); await p.locator(tid('feat-tasks-row')).click();
+  await p.waitForFunction(() => window.__app.house.features.tasks === false); await p.waitForTimeout(420);
+  await p.locator(tid('feat-shared-row')).click();
+  await p.waitForFunction(() => window.__app.house.features.shared === false);
+  await hop(p, '/more'); assert.equal(await p.locator('a.li[href="#/tasks"]').count(), 0, 'Compiti: riga sparita con entrambe spente');
+  await hop(p, '/settings/features'); await p.waitForTimeout(420); await p.locator(tid('feat-tasks-row')).click(); await p.waitForTimeout(420); await p.locator(tid('feat-shared-row')).click();
+  await p.waitForFunction(() => window.__app.house.features.shared === true && window.__app.house.features.tasks === true);
   // statistiche + classifica spente: sparisce la scheda in navigazione
   await p.waitForTimeout(420); await p.locator(tid('feat-stats-row')).click();
   await p.waitForFunction(() => window.__app.house.features.stats === false); await p.waitForTimeout(420);

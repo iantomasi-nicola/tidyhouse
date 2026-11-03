@@ -608,7 +608,7 @@ await scenario('hub: voci, badge, admin/non admin, feature spente', async () => 
   const page = await open({ seed: s });
   await goto(page, '/more');
   const t = await body(page);
-  for (const x of ['Scorte e spesa', 'Scambi turno', 'Ultimo che esce', 'Checklist ricorrenti', 'Regole della casa', 'Registro attività', 'Gestione casa', 'Recuperi e riposi', 'Cambia turni', 'Correggi chi ha pulito', 'Nuova assenza', 'Coinquilini', 'Invito e codice', 'Dati ed export', 'Tutte le impostazioni', "Installa l'app", 'Informazioni', 'Versione \\d+\\.\\d+\\.\\d+']) assert.match(t, new RegExp(x), x);
+  for (const x of ['Scorte e spesa', 'Scambi turno', 'Ultimo che esce', 'Compiti', 'Regole della casa', 'Registro attività', 'Gestione casa', 'Recuperi e riposi', 'Cambia turni', 'Correggi chi ha pulito', 'Nuova assenza', 'Coinquilini', 'Invito e codice', 'Dati ed export', 'Tutte le impostazioni', "Installa l'app", 'Informazioni', 'Versione \\d+\\.\\d+\\.\\d+']) assert.match(t, new RegExp(x), x);
   assert.match(t, /2 da comprare/);
   assert.equal(await page.locator('a.li[href="#/needs"] .chip').innerText(), '2');
   assert.equal(await page.locator('a.li[href="#/requests"] .chip').innerText(), '1');
@@ -760,46 +760,49 @@ await scenario('lastout: spunte, completamento, reset, editor, sheet', async () 
   await shot(p2, 'lastout-en-dark'); await done(p2);
 });
 
-await scenario('tasks: CRUD admin, suggerimenti, sola lettura', async () => {
+await scenario('tasks: CRUD admin (extra delle mansioni), modelli, sola lettura', async () => {
   const page = await open({ seed: S() });
   await goto(page, '/tasks');
   let t = await body(page);
-  assert.match(t, /Svuota il contenitore dell'aspirapolvere/); assert.match(t, /Cambia il tappetino/); assert.match(t, /Suggerimenti/);
-  assert.match(t, /Da fare questa settimana/);
+  assert.match(t, /Svuota il contenitore dell'aspirapolvere/); assert.match(t, /Cambia il tappetino/); assert.match(t, /Extra delle mansioni/);
+  assert.match(t, /Da fare questa settimana|Tocca a/);
   await shot(page, 'tasks');
-  // crea
-  await page.getByRole('button', { name: /Nuovo compito/ }).click();
-  await page.fill('#mx-task-text', 'Pulisci il microonde');
-  await page.locator('.sheet .seg button', { hasText: 'Cucina' }).click();
-  await page.locator('.sheet .num button').nth(1).click(); await page.locator('.sheet .num button').nth(1).click();
-  await shot(page, 'tasks-sheet');
-  await page.locator('.sheet').getByRole('button', { name: /^Salva/ }).click();
+  // crea: un solo riquadro (testo, mansione, frequenza)
+  await page.getByRole('button', { name: /^Aggiungi$/ }).first().click();
+  await page.fill('#tk-text', 'Pulisci il microonde');
+  await page.locator('[data-testid=tk-who-kitchen]').click();
+  await page.locator('.tk-ed .num button').nth(1).click(); await page.locator('.tk-ed .num button').nth(1).click();   // ogni 1 -> 3 settimane
+  await shot(page, 'tasks-editor');
+  await page.locator('[data-testid=tk-save]').click();
   await page.waitForFunction(() => /Pulisci il microonde/.test(document.body.innerText));
-  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  await page.waitForFunction(() => !document.querySelector('[data-testid=tk-editor]'));
   let st = await store(page);
   assert.equal(st.house.tasks.length, 3);
   const nt = st.house.tasks.find((x) => x.text === 'Pulisci il microonde');
   assert.equal(nt.chore, 'kitchen'); assert.equal(nt.every, 3); assert.equal(nt.enabled, true);
-  // modifica
+  // modifica in linea
   await page.getByRole('button', { name: /Modifica: Pulisci il microonde/ }).click();
-  await page.fill('#mx-task-text', 'Pulisci il microonde a fondo');
-  await page.locator('.sheet').getByRole('button', { name: /^Salva/ }).click();
+  await page.waitForSelector('#tk-text'); await page.waitForTimeout(300);
+  await page.fill('#tk-text', 'Pulisci il microonde a fondo');
+  await page.locator('[data-testid=tk-save]').click();
   await page.waitForFunction(() => /microonde a fondo/.test(document.body.innerText));
-  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  await page.waitForFunction(() => !document.querySelector('[data-testid=tk-editor]'));
   // disattiva
   await page.locator('.mx-task', { hasText: 'microonde a fondo' }).locator('.switch').click();
   await page.waitForFunction(() => document.querySelector('.mx-task.off'));
   st = await store(page);
   assert.equal(st.house.tasks.find((x) => x.id === nt.id).enabled, false);
-  // suggerimento -> sheet precompilato
-  await page.getByRole('button', { name: /Pulisci il frigorifero/ }).click();
-  assert.equal(await page.inputValue('#mx-task-text'), 'Pulisci il frigorifero');
-  await page.locator('.sheet').getByRole('button', { name: /^Annulla/ }).click();
+  // modello della Cucina: un tocco lo aggiunge (Annulla disponibile)
+  await page.locator('[data-testid=tk-add-kitchen]').click();
+  await page.getByRole('button', { name: /Aggiungi: Pulisci il frigorifero/ }).click();
+  await page.waitForFunction(() => (window.__app.house.tasks || []).some((x) => x.text === 'Pulisci il frigorifero'));
+  await page.locator('.toast-action').click();
+  await page.waitForFunction(() => !(window.__app.house.tasks || []).some((x) => x.text === 'Pulisci il frigorifero'));
+  await page.locator('[data-testid=tk-cancel]').click();
   await page.waitForTimeout(450);
-  // elimina
+  // elimina (con Annulla, senza dialogo)
   await page.getByRole('button', { name: /Modifica: Pulisci il microonde a fondo/ }).click();
-  await page.locator('.sheet').getByRole('button', { name: /^Elimina/ }).click();
-  await page.locator('.sheet').last().getByRole('button', { name: /^Elimina/ }).click();
+  await page.locator('[data-testid=tk-del]').click();
   await page.waitForFunction(() => !/microonde/.test(document.body.innerText));
   assert.equal((await store(page)).house.tasks.length, 2);
   await noOverflow(page, 'tasks'); await noRawKeys(page, 'tasks');
@@ -807,12 +810,12 @@ await scenario('tasks: CRUD admin, suggerimenti, sola lettura', async () => {
   // non admin: sola lettura
   const p2 = await open({ seed: S({ admin: false }) });
   await goto(p2, '/tasks');
-  assert.equal(await p2.getByRole('button', { name: /Nuovo compito/ }).count(), 0);
   assert.equal(await p2.locator('.mx-task .switch').count(), 0);
-  assert.match(await body(p2), /Solo l'admin può modificare/);
+  assert.equal(await p2.getByRole('button', { name: /^Aggiungi$/ }).count(), 0);
+  assert.match(await body(p2), /Solo l'admin può aggiungere o modificare/);
   await shot(p2, 'tasks-readonly'); await done(p2);
-  // feature spenta
-  const p3 = await open({ seed: S({ houseExtra: { features: { tasks: false } } }) });
+  // funzioni spente: «Compiti» sparisce solo con entrambe spente
+  const p3 = await open({ seed: S({ houseExtra: { features: { tasks: false, shared: false } } }) });
   await goto(p3, '/tasks'); assert.match(await body(p3), /Funzione disattivata/); await done(p3);
   const p4 = await open({ seed: S({ houseExtra: { lang: 'en' } }), lang: 'en-US', viewport: D, dark: true });
   await goto(p4, '/tasks'); await noRawKeys(p4, 'tasks en'); await shot(p4, 'tasks-en-desktop-dark'); await done(p4);

@@ -816,7 +816,12 @@ function editorCard(ctx) {
             [...opts].sort().map((a) => h('option', { value: a, selected: a === d.anchor }, `${fmtWeekRange(a)}${a === cur ? ' · ' + t('moreX.thisWeek') : ''}`)))),
         h('p', { class: 'small muted' }, t('moreY.t.everyHint'))));
     }
-    if (!isNew) kids.push(h('div', { class: 'row-between' }, h('div', { class: 'lbl tk-lbl' }, t('tasks.enabled')), toggle(d.enabled, (v) => { d.enabled = v; }, t('tasks.enabled'))));
+    if (!isNew) kids.push(h('div', { class: 'row-between' }, h('div', { class: 'lbl tk-lbl' }, t('tasks.enabled')), toggle(d.enabled, (v) => {
+      d.enabled = v;   // l'interruttore agisce subito (un tocco), come quello della riga; il resto della bozza si salva con «Salva»
+      attempt(ctx, () => (isTurn()
+        ? ctx.actions.saveShared(sharedPayload((ctx.house.shared || []).map((y) => (y.id === ED.id ? { ...y, enabled: v } : y))))
+        : ctx.actions.setHouse({ tasks: (ctx.house.tasks || []).map((y) => (y.id === ED.id ? { ...y, enabled: v } : y)) })));
+    }, t('tasks.enabled'))));
     kids.push(h('div', { class: 'btn-row tk-actions' },
       !isNew ? h('button', { type: 'button', class: 'btn danger', 'data-testid': 'tk-del', onclick: async () => { if (await removeRecord(ctx, kindTurn ? 'turn' : 'extra', ED.id)) closeEd(ctx); } }, icon('trash'), t('delete')) : null,
       h('button', { type: 'button', class: 'btn soft', 'data-testid': 'tk-cancel', onclick: () => closeEd(ctx) }, t('cancel')),
@@ -953,8 +958,8 @@ function tasksPage(ctx, sub = 'tasks') {
       }
       const canT = !!x && !dis && canTick(ctx, cur, x); const isDone = !!x && x.status === 'done';
       const circle = canT
-        ? h('button', { type: 'button', class: 'checkcircle' + (isDone ? ' on' : ''), role: 'checkbox', 'aria-checked': String(isDone), 'aria-label': `${task.text}`, 'data-testid': 'task-tick-' + task.id, onclick: async () => { try { await tickTask(ctx, cur, x, !isDone); ctx.haptic(ctx.prefs.haptics, 8); } catch { ctx.toast(t('error')); } } }, icon('check'))
-        : h('span', { class: 'checkcircle' + (isDone ? ' on' : ' idle'), 'aria-hidden': 'true' }, icon('check'));
+        ? h('button', { type: 'button', class: 'tk-tick', role: 'checkbox', 'aria-checked': String(isDone), 'aria-label': `${task.text}`, 'data-testid': 'task-tick-' + task.id, onclick: async () => { try { await tickTask(ctx, cur, x, !isDone); ctx.haptic(ctx.prefs.haptics, 8); } catch { ctx.toast(t('error')); } } }, h('span', { class: 'checkcircle' + (isDone ? ' on' : '') }, icon('check')))
+        : h('span', { class: 'tk-tick', 'aria-hidden': 'true' }, h('span', { class: 'checkcircle' + (isDone ? ' on' : ' idle') }, icon('check')));
       const main = h('div', { class: 'grow' }, h('div', { class: 't' }, task.text), h('div', { class: 'd' }, desc), status ? h('div', { class: 'mx-st' }, status) : null);
       const cls = 'li mx-task tk-row' + (dis || !choreOn ? ' off' : '');
       if (!admin) return h('div', { class: 'tk-item', 'data-task': task.id }, h('div', { class: cls }, circle, main));

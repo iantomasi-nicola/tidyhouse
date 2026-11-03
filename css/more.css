@@ -259,9 +259,8 @@ button.mx-chip::after { inset: 0; }
 .tk-row .mx-taskmain { align-items: center; gap: 12px; }
 .tk-row .mx-taskmain .grow { min-width: 0; }
 .tk-row .mx-ct.lg { align-self: flex-start; }
-.tk-row .checkcircle { align-self: flex-start; margin-top: 2px; }
-.tk-row .checkcircle.idle { opacity: .35; }
-.tk-row > .checkcircle.idle { border-style: dashed; }
+.tk-tick { width: 44px; height: 44px; flex: none; display: grid; place-items: center; margin: -8px -6px -8px -12px; align-self: flex-start; border-radius: 50%; }
+.tk-tick .checkcircle.idle { opacity: .35; border-style: dashed; }
 .tk-row > .switch { margin-top: 0; align-self: center; }
 .tk-turn { margin-top: 6px; }
 .tk-done { flex: none; min-width: 44px; }
