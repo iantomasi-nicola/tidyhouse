@@ -10,9 +10,11 @@ import { Actions, buildHouse, verifyPin, localDate, importBackupOps, exportBacku
 import { requestsAwaiting, staleRequestIds, sharedStatus, feature, nameOf, colorOf, randomCode, normCode, fmtCode, uid, DEFAULT_HOME, HOME_WIDGETS, personById } from './extras.js';
 
 import { it as uxcIt, en as uxcEn } from './strings/uxc.js';
+import { it as perfIt, en as perfEn } from './strings/perf.js';
 
 registerStrings(coreIt, coreEn);
 registerStrings(uxcIt, uxcEn);
+registerStrings(perfIt, perfEn);
 const CFG = window.CASA_CONFIG || {};
 const cloudAvailable = !!(CFG.firebase && CFG.firebase.apiKey && CFG.firebase.projectId);
 const VERSION = '1.11.0';
@@ -51,7 +53,11 @@ function applyPrefs() {
   r.classList.toggle('compact', !!prefs.compact);
   const lang = prefs.lang || (S.store && S.store.state.house && S.store.state.house.lang) || detectLang();
   setLang(lang); r.lang = lang;
-  const meta = document.querySelector('meta[name="theme-color"]:not([media])') || null; if (meta) meta.content = getComputedStyle(r).getPropertyValue('--bg');
+  // barra di stato del telefono: con tema scelto a mano segue il tema dell'app, in automatico torna ai valori chiari/scuri di index.html
+  try {
+    const bg = getComputedStyle(r).getPropertyValue('--bg').trim();
+    for (const m of document.querySelectorAll('meta[name="theme-color"]')) { if (!m.dataset.orig) m.dataset.orig = m.content; m.content = prefs.theme === 'auto' || !bg ? m.dataset.orig : bg; }
+  } catch { /* ignore */ }
 }
 
 // ---------------- stato applicativo ----------------
@@ -67,12 +73,47 @@ async function attach(id, mode) {
   let res;
   try { res = await b.open(id); } catch (e) { return { ok: false, reason: navigator.onLine === false ? 'offline' : 'error', error: e }; }
   if (!res.exists) { b.close && b.close(); return { ok: false, reason: 'notfound' }; }
-  S.houseId = id; S.mode = mode;
+  S.houseId = id; S.mode = mode; S.sig = null;
+  if (mode !== 'cloud') guardPersist(b, id);
   S.store = new Store(b);
   S.actions = new Actions(S.store, { get meId() { return (regEntry(id) || {}).me || null; }, get isAdmin() { return adminOn(id, S.store && S.store.state.house); }, deviceId, now: () => new Date(), localRulesAck: () => (ls.get('cp:rules', {})[id] || null), localRulesAckSave: (v) => saveRulesAck(v), kick: () => scheduleKick(() => S.store && S.store.state.house) });
-  S.store.on(() => { S.version++; if (S.switching) return; maybeExpire(); if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; } scheduleRender(); });
+  S.store.on(() => {
+    const quiet = onlyQuietChange();   // sono cambiati solo accessi/dispositivi/registro: il piano non cambia
+    if (!quiet) S.version++;
+    if (S.switching) return;
+    maybeExpire();
+    if (S.stage === 'app' && S.ready && S.actions.rulesRequired() && !S.actions.rulesAccepted()) { evaluate(); return; }
+    // le schermate che non mostrano quei dati non si ridisegnano (resta da aggiornare la barra in alto: stato di sincronizzazione)
+    if (quiet && S.stage === 'app' && S.ready && QUIET_OK.has(S.route.root) && shell && shell.isConnected) { try { updateTop(); } catch { /* ignore */ } quietSkips++; return; }
+    scheduleRender();
+  });
   S.version++;
   return { ok: true };
+}
+// Raccolte che Home, Settimane, Assenze e Classifica non leggono mai (le usano solo Altro/Registro e Impostazioni): una loro modifica non ridisegna quelle schermate.
+const QUIET_COLLS = ['members', 'log', 'views'];
+const QUIET_OK = new Set(['', 'calendar', 'trips', 'stats']);
+function onlyQuietChange() {
+  try {
+    const st = S.store.state; const quietSet = QUIET_COLLS;
+    const parts = []; for (const k of Object.keys(st)) if (!quietSet.includes(k)) parts.push(k, JSON.stringify(st[k]));
+    const sig = parts.join('\u0001'); const same = S.sig !== null && S.sig === sig; S.sig = sig;
+    return same;
+  } catch { S.sig = null; return false; }
+}
+/** Salvataggio locale che segnala la memoria piena (invece di perdere le modifiche senza dire nulla) e, se serve, libera spazio dai vecchi accessi. */
+function guardPersist(b, id) {
+  const key = 'cp:h:' + id;
+  const write = (h) => { localStorage.setItem(key, JSON.stringify(h)); };
+  b.persist = (h) => {
+    try { write(h); S.quotaWarnAt = 0; return; } catch { /* spazio pieno: si libera e si riprova */ }
+    try {
+      const v = h.views || {}; const ids = Object.keys(v).sort((x, y) => String(v[x].at || '').localeCompare(String(v[y].at || '')));
+      for (const k of ids.slice(0, Math.max(50, Math.floor(ids.length / 2)))) delete v[k];
+      write(h); return;
+    } catch { /* ancora pieno */ }
+    if (!S.quotaWarnAt || Date.now() - S.quotaWarnAt > 60000) { S.quotaWarnAt = Date.now(); try { toast(t('perf.quota'), 9000); } catch { /* ignore */ } }
+  };
 }
 /** Pulizia delle richieste rimaste «in attesa» su settimane chiuse da più di 14 giorni: una scrittura leggera, solo da un admin, solo se ce ne sono, una volta per richiesta e per apertura. */
 const expiring = new Set();
@@ -111,6 +152,7 @@ const ctx = {
   rerender: () => scheduleRender(true),
   get renderCount() { return renders; },
   get renderSkips() { return renderSkips; },
+  get quietSkips() { return quietSkips; },
   savePrefs(patch) { prefs = { ...prefs, ...patch }; ls.set('cp:prefs', prefs); applyPrefs(); scheduleRender(true); },
   /** Layout Home effettivo (personale oppure della casa). */
   homeLayout() {
@@ -276,7 +318,8 @@ function evaluate() {
   if (first) { try { recordView('open'); } catch { /* ignore */ } }
   registerDevice();
   maybeExpire();
-  renderApp(true);
+  renderApp(true).catch((e) => console.error("render", e));
+  armIdle();
 }
 const memberLoaded = () => true;
 /** Su mobile le notifiche sono obbligatorie (se il cloud e le chiavi push sono configurati e l'admin non l'ha disattivato). */
@@ -396,6 +439,13 @@ function registerDevice() {
 function recordView(screen) {
   if (!S.actions || !S.ready) return;
   const now = Date.now(); if (now - (lastView[screen] || 0) < 45000) return; lastView[screen] = now;   // ogni ingresso/schermata (max 1 ogni 45 s)
+  // in locale nessun server pulisce i vecchi accessi: oltre 400 si tolgono i 150 più vecchi (nel cloud ne legge 400 e il server toglie quelli oltre 60 giorni)
+  if (S.mode === 'local') {
+    try {
+      const v = S.store.state.views || {}; const ids = Object.keys(v);
+      if (ids.length >= 400) { ids.sort((x, y) => String(v[x].at || '').localeCompare(String(v[y].at || ''))); S.store.write(ids.slice(0, 150).map((id) => ({ coll: 'views', id, del: true }))).catch(() => {}); }
+    } catch { /* ignore */ }
+  }
   S.actions.recordView(screen).catch(() => {});
 }
 
@@ -419,7 +469,7 @@ const tabOf = (root) => (SUBS.includes(root) || root === 'settings' ? 'more' : O
 
 // Rendering: un solo render alla volta, richieste ravvicinate fuse in una (rAF), aggiornamenti remoti al massimo ogni MIN_GAP ms.
 const MIN_GAP = 120;
-let rafId = 0, timerId = 0, pendingForce = false, lastRenderAt = 0, renders = 0, renderSkips = 0;
+let rafId = 0, timerId = 0, pendingForce = false, lastRenderAt = 0, renders = 0, renderSkips = 0, quietSkips = 0;
 let shell = null, mainEl = null, navEl = null, topEl = null, renderToken = 0, lastPath = null, navSig = '', topSig = '';
 const scrollMemo = new Map(); let popNav = false;
 function scheduleRender(force) {
@@ -432,7 +482,7 @@ function scheduleRender(force) {
 }
 function queueRender() {
   if (rafId) return;
-  rafId = requestAnimationFrame(() => { rafId = 0; const f = pendingForce; pendingForce = false; lastRenderAt = performance.now(); renderApp(f); });
+  rafId = requestAnimationFrame(() => { rafId = 0; const f = pendingForce; pendingForce = false; lastRenderAt = performance.now(); renderApp(f).catch((e) => console.error('render', e)); });
 }
 // Si sta scrivendo/scegliendo in un campo della pagina? (i campi dentro gli sheet vivono fuori dal rerender)
 let compFlag = false, compAt = 0;   // composizione IME in corso (si azzera da sola se la tastiera non chiude mai la composizione)
@@ -538,6 +588,7 @@ async function renderApp(force) {
   if (mustDefer(force, lastPath !== route.path)) { S.deferred = true; return; }
   S.deferred = false;
   const token = ++renderToken;
+  S.renderDay = localDate(new Date());
   const root = route.root; const name = SCREENS[root] ?? 'home';
   const tab = tabOf(root);
   const samePage = lastPath === route.path;
@@ -549,7 +600,9 @@ async function renderApp(force) {
     node = await mod.render(ctx, params);
   } catch (e) {
     console.error(e);
-    node = h('div', { class: 'card stack' }, h('h2', null, t('error')), h('p', { class: 'muted small' }, String(e && e.message || e)), h('a', { class: 'btn soft', href: '#/' }, t('nav.home')));
+    // se manca un file (aggiornamento a metà, rete assente) il pulsante ricarica l'app; il link alla Home resta
+    node = h('div', { class: 'card stack' }, h('h2', null, t('error')), h('p', { class: 'muted small' }, String(e && e.message || e)),
+      h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => location.reload() }, icon('refresh'), t('refresh.now')), h('a', { class: 'btn soft', href: '#/' }, t('nav.home'))));
   }
   if (token !== renderToken) return;
   await cssReady();   // il foglio di stile della schermata è già caricato quando compare il contenuto
@@ -675,8 +728,28 @@ async function startFromHash() {
 }
 
 // (l'avviso periodico «aggiorna la pagina» è stato tolto: restano il tasto Aggiorna nella Home e l'avviso di nuova versione)
+/** App rimasta aperta (o in background) a cavallo di mezzanotte o di un cambio di fuso: la data è cambiata, quindi si ridisegna (cambia la settimana, il «oggi», le scadenze). */
+function checkDay() {
+  if (S.stage !== 'app' || !S.ready || document.visibilityState !== 'visible') return;
+  try { if (S.renderDay && localDate(new Date()) !== S.renderDay) scheduleRender(true); } catch { /* ignore */ }
+}
+setInterval(checkDay, 60000);
+/** A schermata mostrata, nei tempi morti si preparano le schermate principali (sola lettura dei moduli: nessuna esecuzione, nessuna scrittura). Non con «risparmio dati» o rete 2G. */
+let idleArmed = false;
+function armIdle() {
+  if (idleArmed) return; idleArmed = true;
+  const go = () => {
+    try {
+      // solo se i file arrivano dalla cache del service worker (nessun traffico di rete in più)
+      if (!(navigator.serviceWorker && navigator.serviceWorker.controller)) return;
+      const c = navigator.connection; if (c && (c.saveData || /(^|-)2g$/.test(c.effectiveType || ''))) return;
+      for (const f of ['calendar', 'trips', 'stats', 'more']) { const l = document.createElement('link'); l.rel = 'modulepreload'; l.href = new URL(`./screens/${f}.js`, import.meta.url).href; document.head.append(l); }
+    } catch { /* ignore */ }
+  };
+  if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 5000 }); else setTimeout(go, 2500);
+}
 function setupRefreshPrompt() {
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { registerDevice(); maybeExpire(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { checkDay(); registerDevice(); maybeExpire(); try { recordView('open'); } catch { /* ignore */ } if (S.stage === 'push' || (S.stage === 'app' && needPushGate())) evaluate(); if (S.deferred) scheduleRender(true); } });
   window.addEventListener('focus', flushDeferred);
   document.addEventListener('focusout', () => { setTimeout(flushDeferred, 60); });
 }
