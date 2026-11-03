@@ -248,7 +248,7 @@ await scenario('indice impostazioni: rapide in cima (tema in 1 tap), ricerca, «
   assert.equal(await p.locator(tid('st-freq')).count(), 0);
   for (let i = 0; i < 2; i++) { await hop(p, '/settings/features'); await hop(p, '/settings'); }
   await p.waitForSelector(tid('st-freq') + ' a[href="#/settings/features"]');
-  assert.equal(await p.locator('a.li[href^="#/settings/"]').count(), 15, 'le 15 sezioni restano raggiungibili dall\'indice');
+  assert.equal(await p.locator('a.li[href^="#/settings/"]').count(), 16, 'le 16 sezioni (con Mansioni) restano raggiungibili dall\'indice');
   await noOverflow(p, 'settings'); await noRawKeys(p, 'settings'); await shot(p, 'settings-index-390'); await done(p);
   // non admin: la ricerca non porta a sezioni vietate
   const n = await open({ seed: S({ admin: false, me: 'bruno' }) });

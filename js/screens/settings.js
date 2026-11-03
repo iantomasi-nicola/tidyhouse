@@ -158,7 +158,7 @@ const SECTIONS = {
 };
 /**
  * Indice raggruppato per intento e, dentro ogni gruppo, per frequenza d'uso. Le chiavi «act:…» non sono sezioni ma
- * azioni che aprono un foglio (solo admin). Le 15 sezioni restano tutte, ognuna una volta sola.
+ * azioni che aprono un foglio (solo admin). Le 16 sezioni restano tutte, ognuna una volta sola.
  */
 const INDEX = [
   ['setX.group.me', ['profile', 'notifications', 'appearance', 'home']],
