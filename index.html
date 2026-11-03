@@ -16,8 +16,34 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" sizes="any">
   <link rel="icon" href="icons/favicon-32.png" type="image/png" sizes="32x32">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <script>
+    // Tema, colore e dimensione testo scelti sul dispositivo si applicano PRIMA del primo disegno (niente lampo chiaro con tema scuro scelto a mano).
+    (function () {
+      try {
+        var p = JSON.parse(localStorage.getItem('cp:prefs') || '{}') || {}, r = document.documentElement;
+        if (p.theme === 'dark' || p.theme === 'light') r.setAttribute('data-theme', p.theme);
+        if (p.accent) r.style.setProperty('--accent', p.accent);
+        if (p.textSize) r.style.setProperty('--fs', String(p.textSize));
+        if (p.reduceMotion) r.classList.add('no-motion');
+        if (p.compact) r.classList.add('compact');
+        // all'apertura sulla Home i file della Home partono subito, in parallelo con app.js (meno attese in fila)
+        if (/^(#\/?)?$/.test(location.hash)) {
+          var add = function (rel, href, as) { var l = document.createElement('link'); l.rel = rel; l.href = href; if (as) l.as = as; document.head.appendChild(l); };
+          ['js/screens/home.js', 'js/choresheet.js'].forEach(function (f) { add('modulepreload', f); });
+          ['css/home.css'].forEach(function (f) { add('preload', f, 'style'); });
+        }
+      } catch (e) { /* localStorage non disponibile */ }
+    })();
+  </script>
   <link rel="stylesheet" href="css/app.css">
-  <script src="config.js"></script>
+  <link rel="modulepreload" href="js/app.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <link rel="modulepreload" href="js/i18n.js">
+  <link rel="modulepreload" href="js/engine.js">
+  <link rel="modulepreload" href="js/store.js">
+  <link rel="modulepreload" href="js/actions.js">
+  <link rel="modulepreload" href="js/extras.js">
+  <script src="config.js" defer></script>
 </head>
 <body>
   <div id="boot" class="boot" aria-hidden="true"><div class="boot-mark"></div></div>
