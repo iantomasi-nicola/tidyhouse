@@ -59,7 +59,7 @@ const views = Object.fromEntries(Array.from({ length: 3 }, (_, i) => ['v' + i, {
 // ============================================================================
 await test('indice: personali + admin, non-admin vede solo personali', async (mk) => {
   const page = await mk();
-  assert.equal(await page.locator('a.li[href^="#/settings/"]').count(), 15);
+  assert.equal(await page.locator('a.li[href^="#/settings/"]').count(), 16);   // 15 + Mansioni
   await shot(page, 'index-admin-390');
   const p2 = await env.page({ now: NOW, seed: seed({ admin: false, houseExtra: { requireRules: false } }) });
   await p2.goto(env.url + '/#/settings'); await p2.waitForSelector(tid('settings-index'));
