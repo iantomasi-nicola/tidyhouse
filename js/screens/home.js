@@ -350,8 +350,8 @@ function widgetChecklist(ctx, M) {
   const t = ctx.t;
   if (!ctx.feature('tasks') || !M.row) return null;
   const { row, me } = M;
-  // a ciascuno le voci di cui è responsabile (anche arretrati di una mansione che questa settimana ha un altro); l'admin vede tutto
-  const list = ownedItems(ctx, row.sunday).filter((x) => x.owner && (x.owner === me || ctx.isAdmin));
+  // le mie voci (anche arretrati di una mansione che questa settimana ha un altro) + quelle di altri solo se non spuntate in ritardo (arretrati/scadute): così si vede chi non ha fatto
+  const list = ownedItems(ctx, row.sunday).filter((x) => x.owner && (x.owner === me || (x.status !== 'done' && (x.reason === 'arrears' || x.status === 'overdue'))));
   if (!list.length) return null;
   const done = list.filter((x) => x.status === 'done').length;
   const rows = list.map((x) => {
