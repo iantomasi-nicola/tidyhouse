@@ -416,6 +416,31 @@ await scenario('Classifica: l\'admin toglie e rimette il badge TR (non admin non
   await np.close();
 });
 
+await scenario('Extra di tutti: l\'admin vede le voci di ognuno per settimana e le segna fatte / da fare', async () => {
+  const tasks = [{ id: 't1', chore: 'floor', text: 'Cambia il tappetino', every: 1, enabled: true }, { id: 't2', chore: 'bathroom', text: 'Pulisci lo specchio', every: 1, enabled: true }];
+  const page = await mk({ path: '#/tasks', houseExtra: { tasks } });
+  await page.waitForSelector('[data-testid="tkc-open"]', { timeout: 8000 });
+  await page.click('[data-testid="tkc-open"]'); await page.waitForSelector('#layer .sheet.on [data-task="t1"]'); await page.waitForTimeout(450);
+  assert.ok(await page.locator('#layer .sheet [data-person]').count() >= 2, 'raggruppato per persona (almeno 2 responsabili)');
+  const tick = page.locator('#layer .sheet [data-task="t1"]').first();
+  assert.equal(await tick.getAttribute('aria-checked'), 'false');
+  await tick.click(); await page.waitForTimeout(700);
+  assert.ok(await page.evaluate((w) => !!((window.__app.state.weeks[w] || {}).tasksDone || {}).t1, CUR), 'segnato fatto dall\'admin');
+  assert.equal(await page.locator('#layer .sheet [data-task="t1"]').first().getAttribute('aria-checked'), 'true');
+  await page.locator('#layer .sheet [data-task="t1"]').first().click(); await page.waitForTimeout(700);
+  assert.ok(await page.evaluate((w) => !((window.__app.state.weeks[w] || {}).tasksDone || {}).t1, CUR), 'tolto');
+  const w0 = await page.locator('[data-testid="tkc-week"]').innerText();
+  await page.click('#layer .sheet [data-act="tkc-prev"]'); await page.waitForTimeout(500);
+  assert.notEqual(await page.locator('[data-testid="tkc-week"]').innerText(), w0, 'settimana precedente');
+  assert.equal(await page.locator('#layer .sheet [data-act="tkc-next"]').isDisabled(), false);
+  await noOverflow(page, 'extra di tutti');
+  noErrors(page, 'extra di tutti'); await page.close();
+  const np = await mk({ path: '#/tasks', admin: false, me: 'bruno', houseExtra: { tasks } });
+  await np.waitForTimeout(600);
+  assert.equal(await np.locator('[data-testid="tkc-open"]').count(), 0, 'solo admin');
+  await np.close();
+});
+
 await scenario('Assegna la settimana: persona uguale alle regole → nessuna scelta; da «Senza» a «Con recupero» toglie lo scambio', async () => {
   const page = await mk({ path: '#/' });
   const before = await rowOf(page);

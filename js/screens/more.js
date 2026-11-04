@@ -15,11 +15,13 @@ import { normNeed, frequentNeeds, distinctNeeds, starterNeeds, splitPasted } fro
 import { it as itFlow, en as enFlow } from '../strings/flow.js';   // flow.shared.* (testi condivisi con la Home)
 import { it as itB, en as enB } from '../strings/uxb.js';
 import { it as itBal, en as enBal } from '../strings/balance.js';
+import { it as itTkc, en as enTkc } from '../strings/taskcheck.js';
 
 registerStrings(it, en);
 registerStrings(it2, en2);
 registerStrings(it3, en3);
 registerStrings(itBal, enBal);
+registerStrings(itTkc, enTkc);
 registerStrings(itHow, enHow);
 registerStrings(itReason, enReason);
 registerStrings(itFlow, enFlow);
@@ -995,6 +997,7 @@ function tasksPage(ctx, sub = 'tasks') {
       h('div', { class: 'grow' }, h('h2', { class: 'tk-h2' }, h('i', { class: 'mx-ct extra' }, icon('list')), t('tk.extra.title')), h('p', { class: 'small muted' }, t('tk.extra.hint'))),
       left ? chip('warn', t('shared.dueN', { n: left })) : null);
     const kids = [head2];
+    if (admin && tasks.length) kids.push(h('button', { type: 'button', class: 'btn tonal block', 'data-testid': 'tkc-open', onclick: async () => { try { (await import('../taskcheck.js')).openTaskCheckSheet(ctx); } catch (e) { console.warn(e); ctx.toast(t('error')); } } }, icon('eye'), t('tkc.btn')));
     if (!tasks.length) {
       const miss = admin ? TASK_TEMPLATES.filter((x) => !tplHas(tasks, x)) : [];
       kids.push(h('div', { class: 'card stack tight', 'data-testid': 'extra-empty' }, empty('list', t('tk.extra.empty'), admin ? t('tk.extra.emptyHint') : t('tk.empty.ask')),
