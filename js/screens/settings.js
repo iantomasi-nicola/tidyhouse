@@ -12,6 +12,7 @@ import { validateRoommates, addDays, DEFAULT_SETTINGS, MAX_SLOTS, MAX_CHORES, ch
 import { choreRenamed } from '../extras.js';
 import { cName, cIcon, cCls, cActive, CHORE_ICONS } from '../choreui.js';
 import { it as itCh, en as enCh } from '../strings/chores.js';
+import { it as itHs, en as enHs } from '../strings/houses.js';
 import { exportBackup, verifyPin, hashPin, newSalt } from '../actions.js';
 import { encryptBackup, decryptBackup } from '../backupcrypto.js';
 import * as push from '../push.js';
@@ -23,6 +24,7 @@ import { renderViewsLog, openFixPicker, openAssignCurrent } from './more.js';   
 registerStrings(it, en);
 registerStrings(itB, enB);
 registerStrings(itCh, enCh);
+registerStrings(itHs, enHs);
 loadCss('css/settings.css');
 
 const README = 'https://github.com/iantomasi-nicola/tidyhouse#readme';
@@ -286,6 +288,12 @@ function profile(ctx) {
   }
   return h('div', { class: 'stack' },
     group(t('set.whoAmI'), who.length ? who : [h('div', { class: 'li muted' }, t('acc.noPeople'))]),
+    // più case sullo stesso dispositivo: passa con un tocco senza uscire (e senza dimenticare la casa)
+    group(t('hs.title'), [
+      ...(ctx.houses() || []).map((x) => { const cur = x.id === ctx.houseId; return h('button', { class: 'li', type: 'button', 'data-testid': 'house-' + x.id, 'aria-pressed': String(cur), 'aria-label': cur ? t('hs.current') : t('hs.switchTo', { name: x.name || ctx.code() }), onclick: () => { if (!cur) ctx.switchHouse(x.id); } },
+        h('div', { class: 'ico' }, icon('home2')), h('div', { class: 'grow' }, h('div', { class: 't' }, x.name || (cur ? ctx.house.name : x.id)), cur ? h('div', { class: 'd' }, t('hs.current')) : null), cur ? h('span', { class: 'st-check' }, icon('check')) : icon('chevron')); }),
+      h('button', { class: 'li', type: 'button', 'data-testid': 'house-add', onclick: () => ctx.addAnotherHouse() }, h('div', { class: 'ico g' }, icon('plus')), h('div', { class: 'grow' }, h('div', { class: 't' }, t('hs.add')), h('div', { class: 'd' }, t('hs.addHint')))),
+    ]),
     group(t('set.deviceName'), [
       textRow({ title: t('set.deviceName'), value: ctx.prefs.deviceName || '', placeholder: dev.label, id: 'device-name', maxlength: 40,
         onchange: (v) => save(ctx, async () => { const name = v.trim().slice(0, 40); ctx.savePrefs({ deviceName: name }); await ctx.actions.touchMember({ name: name || dev.label }); }) }),

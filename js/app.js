@@ -220,6 +220,8 @@ const ctx = {
   async deleteHouse() { const id = S.houseId; const b = S.store.b; if (b.wipe) await b.wipe(); regRemove(id); ls.del('cp:last'); detach(); evaluate(); },
   async switchHouse(id) { const e = regEntry(id); if (!e) return; const r = await attach(id, e.mode); if (r.ok) { ls.set('cp:last', id); evaluate(); } else toast(t('join.invalid')); },
   houses: () => registry(),
+  /** Torna alla schermata iniziale SENZA dimenticare questa casa (resta nell'elenco «Le mie case»). */
+  addAnotherHouse() { ls.del('cp:last'); detach(); evaluate(); },
   cloudStatusLabel() { return this.mode === 'cloud' ? t('data.mode.cloud') : t('data.mode.local'); },
 };
 window.__app = ctx; // utile per debug e test end-to-end
